@@ -1,5 +1,6 @@
 package dev.morpheus.app
 
+import dev.morpheus.app.ui.t
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -130,6 +131,67 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         keep("last-room", room.id)
         AppState.room = room.id
         AppState.screen = "room"
+    }
+
+    private var sheetIds = 0
+    private val _sheet = MutableStateFlow<SheetRequest?>(null)
+
+    /** The long-press sheet, if one is open (every long press opens this one). */
+    val sheet: StateFlow<SheetRequest?> = _sheet.asStateFlow()
+
+    /**
+     * Open the sheet with the rows `load` makes (the desktop's menu for the thing pressed). `onOutcome` is told what only
+     * the screen can do (reply, edit, a reaction, delete). A tap that opens it (not a long press) has no haptic.
+     */
+    fun openSheet(
+        title: String,
+        longPress: Boolean = true,
+        startFull: Boolean = false,
+        quickReactions: List<String> = emptyList(),
+        onOutcome: (uniffi.morpheus_ffi.MenuOutcome) -> Unit = {},
+        load: suspend () -> List<uniffi.morpheus_ffi.MenuRow>,
+    ) {
+        viewModelScope.launch {
+            try {
+                val rows = load()
+                _sheet.value = SheetRequest(++sheetIds, title, rows, longPress, startFull, quickReactions, onOutcome)
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+
+    fun closeSheet() {
+        _sheet.value = null
+    }
+
+    /** A quick reaction of a message sheet. */
+    fun chooseReaction(key: String) {
+        val request = _sheet.value ?: return
+        closeSheet()
+        request.onOutcome(uniffi.morpheus_ffi.MenuOutcome.React(key))
+    }
+
+    /** The row at `path` of the open sheet was chosen: do it here, or tell the screen. */
+    fun chooseSheetItem(path: String) {
+        val request = _sheet.value ?: return
+        closeSheet()
+        if (path == "reorder") { openReorder(); return }
+        viewModelScope.launch {
+            try {
+                when (val outcome = morpheus.runMenuItem(path)) {
+                    is uniffi.morpheus_ffi.MenuOutcome.Done -> {}
+                    is uniffi.morpheus_ffi.MenuOutcome.Copy -> {
+                        val clipboard = morpheusApp?.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", outcome.text))
+                    }
+                    is uniffi.morpheus_ffi.MenuOutcome.NotYet -> _error.value = t("%{name} is not on the phone yet.", "name" to outcome.label)
+                    else -> request.onOutcome(outcome)
+                }
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
     }
 
     private val _settingsOpen = MutableStateFlow(false)
@@ -532,6 +594,10 @@ object AppState {
     @Volatile
     var lastLink: String = ""
 
+    /** Long-press haptics fired (the debug bridge reports it; #325). */
+    @Volatile
+    var haptics: Int = 0
+
     /** The room on screen (the debug bridge reports it). */
     @Volatile
     var room: String = ""
@@ -575,3 +641,14 @@ object AppState {
 /** The three places of the bottom bar. */
 enum class Tab { Servers, Dms, Profile }
 
+
+/** An open long-press sheet: its rows and what to do with what only the screen can. */
+class SheetRequest(
+    val id: Int,
+    val title: String,
+    val rows: List<uniffi.morpheus_ffi.MenuRow>,
+    val longPress: Boolean,
+    val startFull: Boolean,
+    val quickReactions: List<String>,
+    val onOutcome: (uniffi.morpheus_ffi.MenuOutcome) -> Unit,
+)

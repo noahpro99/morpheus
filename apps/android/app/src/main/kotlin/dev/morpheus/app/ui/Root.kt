@@ -75,6 +75,7 @@ fun Root(model: AppModel) {
                     }
                 }
             }
+            if (screen is Screen.SignedIn) ActionSheetHost(model)
             rings.lastOrNull()?.takeIf { screen is Screen.SignedIn }?.let { ring ->
                 Box(Modifier.align(Alignment.TopCenter)) { RingCard(ring, { model.answerRing(ring) }, { model.declineRing(ring) }) }
             }

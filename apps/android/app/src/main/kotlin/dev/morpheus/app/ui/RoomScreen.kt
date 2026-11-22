@@ -103,7 +103,6 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val sidebar by app.sidebar.collectAsState()
     val title = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.name ?: room.name
     val editing by model.editing.collectAsState()
-    var actions by remember { mutableStateOf<MessageItem?>(null) }
     var info by remember(room.id) { mutableStateOf(false) }
     var searching by remember(room.id) { mutableStateOf(false) }
     val typingLine by model.typing.collectAsState()
@@ -124,7 +123,6 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             searching -> searching = false
             info -> info = false
             viewing != null -> viewing = null
-            actions != null -> actions = null
             editing != null -> model.edit(null)
             pager.currentPage != 1 -> scope.launch { pager.animateScrollToPage(1) }
             else -> onClose()
@@ -158,7 +156,22 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             }
             Timeline(
                 model, rows, Modifier.weight(1f),
-                onActions = { actions = it },
+                onActions = { message, held ->
+                    app.openSheet(
+                        message.senderName, longPress = held, startFull = !held, quickReactions = quickReactions,
+                        onOutcome = { outcome ->
+                            when (outcome) {
+                                is uniffi.morpheus_ffi.MenuOutcome.Reply -> model.replyTo(message)
+                                is uniffi.morpheus_ffi.MenuOutcome.Edit -> model.edit(message)
+                                is uniffi.morpheus_ffi.MenuOutcome.Thread -> thread = message.eventId
+                                is uniffi.morpheus_ffi.MenuOutcome.React -> message.eventId?.let { model.react(it, outcome.key) }
+                                is uniffi.morpheus_ffi.MenuOutcome.Delete -> message.eventId?.let { model.delete(it) }
+                                is uniffi.morpheus_ffi.MenuOutcome.OpenRoom -> {}
+                                else -> {}
+                            }
+                        },
+                    ) { app.morpheus.messageMenuRows(room.id, message) }
+                },
                 onThread = { thread = it },
                 onImage = { viewing = it },
                 onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
@@ -197,33 +210,6 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             }
             Composer(model, editing, onAttach = { picker.launch("*/*") }) { model.send(it) }
         } }
-        actions?.let { message ->
-            Actions(
-                message,
-                canThread = threadRoot == null && message.eventId != null,
-                onThread = {
-                    thread = message.eventId
-                    actions = null
-                },
-                onReact = { key ->
-                    message.eventId?.let { model.react(it, key) }
-                    actions = null
-                },
-                onReply = {
-                    model.replyTo(message)
-                    actions = null
-                },
-                onEdit = {
-                    model.edit(message)
-                    actions = null
-                },
-                onDelete = {
-                    message.eventId?.let { model.delete(it) }
-                    actions = null
-                },
-                onDismiss = { actions = null },
-            )
-        }
         viewing?.let { ImageViewer(it) { viewing = null } }
         thread?.let { root ->
             Box(Modifier.fillMaxSize().testTag("thread-panel")) { RoomScreen(app, room, root) { thread = null } }
@@ -243,7 +229,7 @@ private fun Timeline(
     model: RoomModel,
     rows: List<TimelineRow>,
     modifier: Modifier,
-    onActions: (MessageItem) -> Unit,
+    onActions: (MessageItem, Boolean) -> Unit,
     onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
@@ -352,7 +338,7 @@ private fun rowKey(row: TimelineRow): String = when (row) {
 private fun MessageRow(
     message: MessageItem,
     model: RoomModel,
-    onActions: (MessageItem) -> Unit,
+    onActions: (MessageItem, Boolean) -> Unit,
     onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
@@ -366,8 +352,8 @@ private fun MessageRow(
             .fillMaxWidth()
             .alpha(if (message.sending) 0.6f else 1f)
             .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent)
-            .pointerInput(message.key) { detectTapGestures { onActions(message) } }
-            .semantics { onClick("Message actions") { onActions(message); true } }
+            .pointerInput(message.key) { detectTapGestures(onLongPress = { onActions(message, true) }, onTap = { onActions(message, false) }) }
+            .semantics { onClick("Message actions") { onActions(message, false); true } }
             .padding(horizontal = Space.md, vertical = if (message.showHeader) Space.sm else 1.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
@@ -405,7 +391,7 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> LinkedText(body, message.edited) { onActions(message) }
+                is MessageBody.Text -> LinkedText(body, message.edited) { onActions(message, false) }
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
                 is MessageBody.File -> Text(
@@ -541,65 +527,6 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
         ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp, tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
     }
     if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
-    }
-}
-
-@Composable
-private fun Actions(
-    message: MessageItem,
-    canThread: Boolean,
-    onThread: () -> Unit,
-    onReact: (String) -> Unit,
-    onReply: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0x99000000))
-            .pointerInput(Unit) { detectTapGestures { onDismiss() } }
-            .testTag("actions-scrim"),
-    ) {
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Palette.Raised, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .pointerInput(Unit) { detectTapGestures { } }
-                .padding(16.dp)
-                .testTag("actions"),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(message.senderName, color = Palette.Muted, fontSize = 12.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (emoji in quickReactions) {
-                    Box(
-                        Modifier
-                            .size(48.dp)
-                            .background(Palette.Surface, RoundedCornerShape(24.dp))
-                            .pointerInput(emoji) { detectTapGestures { onReact(emoji) } }
-                            .testTag("react-$emoji"),
-                        contentAlignment = Alignment.Center,
-                    ) { Text(emoji, fontSize = 22.sp) }
-                }
-            }
-            TextButton(onReply, Modifier.testTag("action-reply")) { Text(t("Reply")) }
-            if (canThread) TextButton(onThread, Modifier.testTag("action-thread")) { Text(if (message.thread == null) "Start a thread" else "Open thread") }
-            val clipboard = LocalClipboardManager.current
-            val text = (message.body as? MessageBody.Text)?.text
-            if (text != null) {
-                TextButton({ clipboard.setText(AnnotatedString(text)); onDismiss() }, Modifier.testTag("action-copy")) { Text(t("Copy text")) }
-            }
-            if (message.canEdit) TextButton(onEdit, Modifier.testTag("action-edit")) { Text(t("Edit")) }
-            if (message.canDelete) {
-                var sure by remember { mutableStateOf(false) }
-                TextButton({ if (sure) onDelete() else sure = true }, Modifier.testTag("action-delete")) {
-                    Text(if (sure) "Tap again to delete" else "Delete", color = Palette.Danger)
-                }
-            }
-        }
     }
 }
 

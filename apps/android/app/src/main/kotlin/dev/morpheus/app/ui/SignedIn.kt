@@ -110,7 +110,10 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     val scopes = bar.scopes.filter { it.kind != ScopeKind.DMS }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
     Row(modifier.fillMaxSize().background(Palette.Background)) {
-        Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = { model.openReorder() }) { model.selectScope(it.key) }
+        Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = { model.openSheet(it.title) {
+            // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
+            model.morpheus.serverMenuRows(it.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder", t("Reorder servers"), "move", false, false, false, null, emptyList())
+        } }) { model.selectScope(it.key) }
         if (scope == null) {
             EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
         } else {
@@ -197,7 +200,7 @@ private fun RowScope.TabItem(
 }
 
 @Composable
-private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: () -> Unit, onSelect: (ScopeItem) -> Unit) {
+private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
     // A long press on a server picks it up: drag it to where it goes. Let go without moving and the servers screen
     // (folders, order) opens. The order is the account's, so every device has it.
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.row + Space.sm).toPx() }
@@ -226,14 +229,14 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                                 onDragEnd = {
                                     val by = Math.round(shift / step)
                                     dragging = null; shift = 0f
-                                    if (by == 0) onManage() else {
+                                    if (by == 0) onManage(scope) else {
                                         val order = scopes.toMutableList()
                                         order.add((index + by).coerceIn(0, order.lastIndex), order.removeAt(index))
                                         onReorder(order.filter { it.kind == ScopeKind.SERVER }.map { it.key.removePrefix("space:") })
                                     }
                                 },
                                 // A press let go without a move ends as a cancel.
-                                onDragCancel = { val still = dragging == scope.key && shift == 0f; dragging = null; shift = 0f; if (still) onManage() },
+                                onDragCancel = { val still = dragging == scope.key && shift == 0f; dragging = null; shift = 0f; if (still) onManage(scope) },
                             )
                         },
                     ),
@@ -334,15 +337,13 @@ private fun ChannelList(
 @Composable
 private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel, selected: Boolean) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
-    var menu by remember { mutableStateOf(false) }
-    var choosing by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = 1.dp).clip(RoundedCornerShape(Radius.md)).background(if (selected) Palette.Raised else Color.Transparent)) {
         Column {
             Row(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = if (room.isDm) 60.dp else Size.row - 8.dp)
-                    .combinedClickable(onClick = { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }, onLongClick = { menu = true })
+                    .combinedClickable(onClick = { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }, onLongClick = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } })
                     .padding(start = Space.sm, end = 96.dp)
                     .testTag("room-${room.name}"),
                 verticalAlignment = Alignment.CenterVertically,
@@ -353,8 +354,8 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                 } else {
                     GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (unread) Palette.Text else Palette.Muted)
                 }
-                if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.testTag("pin-${room.name}"), size = 16.dp, tint = Palette.Muted)
-                if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.testTag("muted-room-${room.name}"), size = 16.dp, tint = Palette.Muted)
+                if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp, tint = Palette.Muted)
+                if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp, tint = Palette.Muted)
                 Text(
                     room.name,
                     maxLines = 1,
@@ -379,31 +380,6 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                         }
                     }
                 }
-            }
-        }
-        // In the tree, not a popup window: the list itself carries it (and so do the tests).
-        if (menu) {
-            if (choosing) {
-                Column(Modifier.align(Alignment.CenterEnd).background(Palette.Raised, RoundedCornerShape(Radius.md)).testTag("mute-choices")) {
-                    for ((index, choice) in remember { uniffi.morpheus_ffi.muteChoices() }.withIndex()) {
-                        TextButton({ menu = false; choosing = false; model.muteRoom(room.id, choice.ms) }, Modifier.testTag("mute-choice-$index")) {
-                            Text(choice.label, style = Type.secondary)
-                        }
-                    }
-                }
-            } else Row(Modifier.align(Alignment.CenterEnd).background(Palette.Raised, RoundedCornerShape(Radius.md)).testTag("dm-menu")) {
-                if (room.isDm) {
-                    TextButton({ menu = false; model.setDmMark(room.id, "pinned", !room.pinned) }, Modifier.testTag("dm-pin")) {
-                        Text(if (room.pinned) t("Unpin") else t("Pin"), style = Type.secondary)
-                    }
-                    TextButton({ menu = false; model.setDmMark(room.id, "closed", true) }, Modifier.testTag("dm-close")) {
-                        Text(t("Close"), style = Type.secondary)
-                    }
-                }
-                TextButton({ if (room.muted) { menu = false; model.muteRoom(room.id, null) } else choosing = true }, Modifier.testTag("room-mute")) {
-                    Text(if (room.muted) t("Unmute") else t("Mute"), style = Type.secondary)
-                }
-                IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Close"), "dm-cancel", { menu = false; choosing = false }, tint = Palette.Muted)
             }
         }
         Row(

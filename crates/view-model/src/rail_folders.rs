@@ -56,6 +56,17 @@ pub fn rows(prefs: &Value) -> Vec<RailRow> {
         .collect()
 }
 
+/// The folders a server can be moved to: id, name and whether it is in it (what `space_menu` takes).
+pub fn folder_choices(prefs: &Value, space: &str) -> Vec<(String, String, bool)> {
+    rows(prefs)
+        .into_iter()
+        .filter_map(|row| match row {
+            RailRow::Folder { id, name, spaces } => Some((id, name, spaces.iter().any(|s| s == space))),
+            RailRow::Server(_) => None,
+        })
+        .collect()
+}
+
 fn from_rows(rows: &[RailRow]) -> Vec<Value> {
     rows.iter()
         .map(|row| match row {
@@ -160,6 +171,12 @@ mod tests {
                 { "space": "!d:x" },
             ]
         })
+    }
+
+    #[test]
+    fn the_folders_a_server_can_move_to_say_whether_it_is_in_them() {
+        assert_eq!(folder_choices(&sample(), "!b:x"), vec![("f1".to_owned(), "Work".to_owned(), true)]);
+        assert_eq!(folder_choices(&sample(), "!a:x"), vec![("f1".to_owned(), "Work".to_owned(), false)]);
     }
 
     #[test]

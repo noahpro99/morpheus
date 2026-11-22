@@ -171,6 +171,7 @@ impl Morpheus {
         let mut updates = session.room_list().await?;
         let dir = self.dir.clone();
         let (overrides, changed) = (self.muted_now.clone(), self.layout_changed.clone());
+        let rooms_now = self.rooms_now.clone();
         let task = runtime().spawn(async move {
             let mut rooms: Vec<RoomSummary> = Vec::new();
             let load = || async { Layout::load(&session).await.with_mutes(&overrides) };
@@ -183,6 +184,9 @@ impl Morpheus {
                         let Some(batch) = batch else { break };
                         for diff in batch {
                             diffs::apply(&mut rooms, diff);
+                        }
+                        if let Ok(mut now) = rooms_now.lock() {
+                            now.clone_from(&rooms);
                         }
                         layout = load().await;
                     }

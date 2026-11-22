@@ -2,6 +2,7 @@ package dev.morpheus.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import uniffi.morpheus_ffi.MemberRow
 import uniffi.morpheus_ffi.ProfileCard
 
 /** The people in the open room: the pane a swipe to the left in the chat uncovers. A tap opens a person's card. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun MembersPane(app: AppModel, model: RoomModel) {
     var members by remember { mutableStateOf<List<MemberRow>?>(null) }
@@ -50,9 +52,12 @@ fun MembersPane(app: AppModel, model: RoomModel) {
                         when (row) {
                             is MemberRow.Heading -> SectionHeader(row.title, Modifier.testTag("member-heading"))
                             is MemberRow.Member -> Row(
-                                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable {
-                                    scope.launch { card = try { model.profile(row.member.userId) } catch (_: Exception) { null } }
-                                }.padding(horizontal = Space.lg).testTag("member-${row.member.name}"),
+                                Modifier.fillMaxWidth().heightIn(min = 56.dp).combinedClickable(
+                                    onClick = { scope.launch { card = try { model.profile(row.member.userId) } catch (_: Exception) { null } } },
+                                    onLongClick = {
+                                        app.openSheet(row.member.name, onOutcome = { o -> if (o is uniffi.morpheus_ffi.MenuOutcome.OpenRoom) app.openRoomWhenKnown(o.roomId) }) { app.morpheus.memberMenuRows(model.room.id, row.member.userId) }
+                                    },
+                                ).padding(horizontal = Space.lg).testTag("member-${row.member.name}"),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Space.md),
                             ) {

@@ -26,6 +26,7 @@ mod calls;
 mod composer;
 mod error;
 mod media;
+mod menus;
 mod people;
 mod push;
 mod rings;
@@ -151,6 +152,10 @@ pub struct Morpheus {
     pub(crate) muted_now: Arc<Mutex<std::collections::HashMap<String, bool>>>,
     /// Poked when the account's layout (marks, mutes, the rail) is changed here, so the list follows at once.
     pub(crate) layout_changed: Arc<tokio::sync::Notify>,
+    /// The room list as the sidebar last saw it, for the menus of long presses.
+    pub(crate) rooms_now: Arc<Mutex<Vec<morpheus_core::RoomSummary>>>,
+    /// The menu the sheet shows now.
+    pub(crate) menu: Mutex<Option<crate::menus::Stored>>,
 }
 
 impl Morpheus {
@@ -182,6 +187,8 @@ impl Morpheus {
             session: Mutex::new(None),
             muted_now: Arc::default(),
             layout_changed: Arc::default(),
+            rooms_now: Arc::default(),
+            menu: Mutex::new(None),
         }))
     }
 
