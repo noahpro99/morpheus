@@ -255,9 +255,9 @@ private fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(label, color = Palette.Muted, fontSize = 13.sp)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ value = steps(value - 0.1f); onChange(value) }, Modifier.testTag("$tag-less")) { Text("−", fontSize = 22.sp) }
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_minus, t("Less"), "$tag-less", { value = steps(value - 0.1f); onChange(value) })
             Text("${Math.round(value * 100)}%", Modifier.testTag("$tag-label"))
-            TextButton({ value = steps(value + 0.1f); onChange(value) }, Modifier.testTag("$tag-more")) { Text("+", fontSize = 22.sp) }
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("More"), "$tag-more", { value = steps(value + 0.1f); onChange(value) })
             Slider(value, { value = steps(it); onChange(value) }, Modifier.weight(1f).testTag("$tag-slider"), valueRange = 0f..2f)
         }
     }
