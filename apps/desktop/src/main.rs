@@ -676,7 +676,10 @@ pub(crate) fn quit(cx: &mut App) {
     status_feed::shutdown();
     if let Some(root) = cx.try_global::<MainRoot>().map(|root| root.0.clone()) {
         root.update(cx, |root, cx| {
-            root.with_shell(cx, |shell, _| shell.leave_before_quit())
+            root.with_shell(cx, |shell, _| {
+                shell.restore_status_before_quit();
+                shell.leave_before_quit()
+            })
         });
     }
     std::process::exit(0);

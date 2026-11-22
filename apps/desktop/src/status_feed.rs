@@ -282,6 +282,19 @@ impl crate::shell::Shell {
         let tick = env_ms("MORPHEUS_ACTIVITY_TICK_MS", 2_000);
         cx.spawn(async move |this, cx| {
             let mut tracker = Tracker::default();
+            let own = session.user_id().map(|u| u.to_string()).unwrap_or_default();
+            // A status left up by a run that quit or crashed while an activity showed.
+            if let Some(marker) = activity::Marker::load(&crate::data_dir())
+                && marker.user == own
+            {
+                if let Ok(profile) = session.own_profile().await
+                    && let Some(activity::Change(text)) = marker.recover(&own, profile.status.as_deref())
+                {
+                    session.set_status(text).await.ok();
+                    this.update(cx, |this, cx| this.reload_own_profile(cx)).ok();
+                }
+                activity::Marker::store(&crate::data_dir(), None);
+            }
             // The room whose public link is known, and that link.
             let mut linked: (Option<morpheus_core::OwnedRoomId>, Option<String>) = (None, None);
             loop {
@@ -292,7 +305,9 @@ impl crate::shell::Shell {
                         Ok(profile) => profile.status,
                         Err(_) => continue,
                     };
-                    if let Some(activity::Change(text)) = tracker.step(wanted.as_deref(), current.as_deref()) {
+                    let change = tracker.step(wanted.as_deref(), current.as_deref());
+                    activity::Marker::store(&crate::data_dir(), tracker.marker(&own).as_ref());
+                    if let Some(activity::Change(text)) = change {
                         if session.set_status(text).await.is_ok()
                             && this.update(cx, |this, cx| this.reload_own_profile(cx)).is_err()
                         {
@@ -324,5 +339,31 @@ impl crate::shell::Shell {
             }
         })
         .detach();
+    }
+}
+
+impl crate::shell::Shell {
+    /// On quit: puts the status back if an activity set it (at most a few seconds).
+    pub fn restore_status_before_quit(&mut self) {
+        let Some(session) = self.session.clone() else {
+            return;
+        };
+        let own = session.user_id().map(|u| u.to_string()).unwrap_or_default();
+        let dir = crate::data_dir();
+        let Some(marker) = activity::Marker::load(&dir).filter(|m| m.user == own) else {
+            return;
+        };
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_secs(4));
+            std::process::exit(0);
+        });
+        futures::executor::block_on(async {
+            if let Ok(profile) = session.own_profile().await
+                && let Some(activity::Change(text)) = marker.recover(&own, profile.status.as_deref())
+            {
+                session.set_status(text).await.ok();
+            }
+        });
+        activity::Marker::store(&dir, None);
     }
 }

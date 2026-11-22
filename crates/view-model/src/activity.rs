@@ -251,6 +251,69 @@ impl Tracker {
     }
 }
 
+// ---- surviving a quit or a crash ---------------------------------------------------------
+
+/// What is kept on disk while a status set from an activity is up, so quitting (or a
+/// crash) can put the user's own status back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    pub user: String,
+    pub ours: String,
+    pub before: Option<String>,
+}
+
+const MARKER_FILE: &str = "activity-auto-status.json";
+
+impl Marker {
+    pub fn to_json(&self) -> String {
+        json!({ "user": self.user, "ours": self.ours, "before": self.before }).to_string()
+    }
+
+    pub fn from_json(text: &str) -> Option<Marker> {
+        let v: Value = serde_json::from_str(text).ok()?;
+        Some(Marker {
+            user: v.get("user")?.as_str()?.to_owned(),
+            ours: v.get("ours")?.as_str()?.to_owned(),
+            before: v.get("before").and_then(Value::as_str).map(str::to_owned),
+        })
+    }
+
+    pub fn load(dir: &Path) -> Option<Marker> {
+        Marker::from_json(&std::fs::read_to_string(dir.join(MARKER_FILE)).ok()?)
+    }
+
+    /// Keeps `marker`, or forgets it (None).
+    pub fn store(dir: &Path, marker: Option<&Marker>) {
+        let path = dir.join(MARKER_FILE);
+        match marker {
+            Some(m) => {
+                std::fs::write(path, m.to_json()).ok();
+            }
+            None => {
+                std::fs::remove_file(path).ok();
+            }
+        }
+    }
+
+    /// What to do on quit or at the next launch for `user`, whose status is `current`:
+    /// put the old one back, but only if the status is still the one set here.
+    pub fn recover(&self, user: &str, current: Option<&str>) -> Option<Change> {
+        let current = current.map(str::trim).filter(|s| !s.is_empty());
+        (self.user == user && current == Some(self.ours.as_str())).then(|| Change(self.before.clone()))
+    }
+}
+
+impl Tracker {
+    /// What to keep on disk now: the status set here and the one before it.
+    pub fn marker(&self, user: &str) -> Option<Marker> {
+        Some(Marker {
+            user: user.to_owned(),
+            ours: self.ours.clone()?,
+            before: self.before.clone(),
+        })
+    }
+}
+
 // ---- the socket's protocol ---------------------------------------------------------------------
 
 /// One line from a client.
@@ -494,6 +557,36 @@ mod tests {
         assert_eq!(t.step(None, Some("Playing Hades")), Some(Change(None)));
     }
 
+
+    #[test]
+    fn a_marker_puts_the_old_status_back_only_while_the_status_is_still_ours() {
+        let mut t = Tracker::default();
+        assert_eq!(t.marker("@a:x"), None);
+        t.step(Some("Playing Hades"), Some("Busy"));
+        let m = t.marker("@a:x").expect("marker");
+        assert_eq!(m.recover("@a:x", Some("Playing Hades")), Some(Change(Some("Busy".into()))));
+        assert_eq!(m.recover("@a:x", Some("Typed since")), None);
+        assert_eq!(m.recover("@b:x", Some("Playing Hades")), None, "another account");
+        assert_eq!(Marker::from_json(&m.to_json()), Some(m));
+        t.step(None, Some("Playing Hades"));
+        assert_eq!(t.marker("@a:x"), None, "nothing to recover once it ended");
+        let none = Marker { user: "@a:x".into(), ours: "Playing X".into(), before: None };
+        assert_eq!(none.recover("@a:x", Some("Playing X")), Some(Change(None)));
+        assert_eq!(Marker::from_json(&none.to_json()), Some(none));
+    }
+
+    #[test]
+    fn a_marker_is_kept_in_a_file_and_forgotten() {
+        let dir = std::env::temp_dir().join(format!("morpheus-marker-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        assert_eq!(Marker::load(&dir), None);
+        let m = Marker { user: "@a:x".into(), ours: "Playing X".into(), before: Some("Busy".into()) };
+        Marker::store(&dir, Some(&m));
+        assert_eq!(Marker::load(&dir), Some(m));
+        Marker::store(&dir, None);
+        assert_eq!(Marker::load(&dir), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
     #[test]
     fn a_set_line_is_read() {
         let r = parse_request(
