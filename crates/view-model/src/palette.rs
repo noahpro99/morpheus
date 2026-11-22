@@ -533,3 +533,57 @@ mod label_tests {
         assert!(!labels.iter().any(|l| l.starts_with("Mute: ") || l.starts_with("Notifications: ")), "{labels:?}");
     }
 }
+
+/// "Join voice: <channel>" for each voice channel of `rooms` (the ones of the
+/// open server or list) the person is not in the call of: the open channel
+/// first, then the rest in list order (#314).
+pub fn join_voice(
+    rooms: &[morpheus_core::RoomSummary],
+    open: Option<&morpheus_core::OwnedRoomId>,
+    in_call: Option<&morpheus_core::OwnedRoomId>,
+) -> Vec<ContextEntry> {
+    let mut voice: Vec<&morpheus_core::RoomSummary> = rooms
+        .iter()
+        .filter(|r| r.is_voice && !r.is_space && !r.invited && in_call != Some(&r.id))
+        .collect();
+    voice.sort_by_key(|r| open != Some(&r.id));
+    voice
+        .into_iter()
+        .map(|r| ContextEntry {
+            label: format!("Join voice: {}", r.name),
+            icon: "phone",
+            action: crate::menu::MenuAction::JoinVoice(r.id.clone()),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod join_voice_tests {
+    use super::*;
+    use crate::menu::MenuAction;
+
+    fn channels() -> Vec<morpheus_core::RoomSummary> {
+        let mut lounge = crate::test_room::room("!lounge:x", "Lounge");
+        lounge.is_voice = true;
+        let mut stage = crate::test_room::room("!stage:x", "Stage");
+        stage.is_voice = true;
+        vec![crate::test_room::room("!general:x", "general"), lounge, stage]
+    }
+
+    #[test]
+    fn every_voice_channel_has_a_join_entry_named_for_it() {
+        let found = join_voice(&channels(), None, None);
+        let labels: Vec<&str> = found.iter().map(|e| e.label.as_str()).collect();
+        assert_eq!(labels, ["Join voice: Lounge", "Join voice: Stage"]);
+        assert_eq!(found[0].action, MenuAction::JoinVoice("!lounge:x".try_into().expect("id")));
+    }
+
+    #[test]
+    fn the_open_channel_comes_first_and_the_one_in_the_call_is_left_out() {
+        let open: morpheus_core::OwnedRoomId = "!stage:x".try_into().expect("id");
+        let labels: Vec<String> = join_voice(&channels(), Some(&open), None).into_iter().map(|e| e.label).collect();
+        assert_eq!(labels, ["Join voice: Stage", "Join voice: Lounge"]);
+        let labels: Vec<String> = join_voice(&channels(), None, Some(&open)).into_iter().map(|e| e.label).collect();
+        assert_eq!(labels, ["Join voice: Lounge"]);
+    }
+}

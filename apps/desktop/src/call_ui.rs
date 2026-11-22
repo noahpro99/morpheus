@@ -1904,7 +1904,9 @@ pub fn voice_page(
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.join_call(id.clone(), name.clone(), cx)
                         }))
+                        .tip(t("Join voice (Enter)"))
                         .e2e("button", "primary join-voice")
+                        .attr("title", "Join voice (Enter)")
                         .text(t("Join voice")),
                 )
                 .e2e("div", "voice-page-join")

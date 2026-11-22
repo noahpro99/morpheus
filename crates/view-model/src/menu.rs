@@ -125,6 +125,8 @@ pub enum MenuAction {
     CallHideVideo(OwnedUserId),
     /// Starts (true) or stops sharing this device's screen in the call (`calls::call_menu`).
     CallShareScreen(bool),
+    /// Join this voice channel's call (the palette's "Join voice: <channel>").
+    JoinVoice(OwnedRoomId),
 }
 
 /// Which device a call's quick list picks.

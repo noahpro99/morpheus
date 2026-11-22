@@ -641,6 +641,10 @@ impl crate::shell::Shell {
             });
             found.extend(contextual(&menu, &name));
         }
+        // The voice channels of this list or server: join one by name (#314).
+        let in_scope = crate::model::rooms_in_scope(&self.rooms, &self.scope);
+        let in_call = self.calls.state.as_ref().map(|c| c.room_id.clone());
+        found.extend(crate::view_model::palette::join_voice(&in_scope, self.selected.as_ref(), in_call.as_ref()));
         // The call you are in: share your screen, and each person's mute and Hide video.
         if let Some(call) = &self.calls.state {
             found.extend(contextual_call(&call_menu(call.screen), "call"));

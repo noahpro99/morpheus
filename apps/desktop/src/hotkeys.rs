@@ -370,6 +370,28 @@ impl Shell {
             }
             return true;
         }
+        // Enter on a voice channel's page joins its call, unless a text input has the
+        // focus (#314).
+        if key == "enter"
+            && !ctrl
+            && !m.alt
+            && !m.shift
+            && !self.modal_open(cx)
+            && !self.inbox_open
+            && self.welcome.is_none()
+            && !self.friends_open
+            && self.root_focus.as_ref().is_some_and(|focus| focus.is_focused(window))
+            && let Some(room) = self
+                .selected
+                .as_ref()
+                .and_then(|id| self.rooms.iter().find(|r| &r.id == id))
+                .filter(|r| r.is_voice && !r.is_space && !r.invited)
+                .filter(|r| !self.calls.in_call(&r.id))
+        {
+            let (id, name) = (room.id.clone(), room.name.clone());
+            self.join_call(id, name, cx);
+            return true;
+        }
         // Vim mode: the timeline's keys.
         if crate::vim::enabled() && self.vim_nav(event, window, cx) {
             return true;

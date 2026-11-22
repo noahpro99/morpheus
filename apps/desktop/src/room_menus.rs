@@ -468,6 +468,11 @@ impl Shell {
                 let at = self.menu_at;
                 self.press_screen(on, at, cx)
             }
+            MenuAction::JoinVoice(room) => {
+                let name = self.rooms.iter().find(|r| r.id == room).map(|r| r.name.clone()).unwrap_or_default();
+                self.open_room_now(room.clone(), cx);
+                self.join_call(room, name, cx)
+            }
             MenuAction::VoiceSettings => {
                 self.open_settings(crate::view_model::keys::SettingsFocus::VoiceVideo, cx)
             }
