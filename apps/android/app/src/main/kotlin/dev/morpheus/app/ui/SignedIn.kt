@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.graphics.Color
@@ -200,8 +202,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.row + Space.sm).toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    PullDown(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background)) {
     LazyColumn(
-        Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail"),
+        Modifier.fillMaxSize().testTag("rail"),
         contentPadding = PaddingValues(bottom = Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -272,6 +275,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
             }
         }
     }
+    }
 }
 
 @Composable
@@ -309,6 +313,7 @@ private fun ChannelList(
             val listState = rememberLazyListState()
             // A new invitation goes above the rooms: the list stays on the room it was showing, so go and look.
             LaunchedEffect(invites.size) { if (invites.isNotEmpty()) listState.animateScrollToItem(0) }
+            PullDown(Modifier.fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize().testTag("rooms-list"), state = listState, contentPadding = PaddingValues(bottom = Space.lg)) {
                 if (invites.isNotEmpty()) {
                     item(key = "invites-heading") { SectionHeader(t("Invites")) }
@@ -318,6 +323,7 @@ private fun ChannelList(
                     section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
                     items(section.rooms, key = { it.id }) { room -> RoomRow(room, onOpenRoom, model, room.id == selectedRoom) }
                 }
+            }
             }
         }
     }
@@ -484,5 +490,35 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
             androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text(t("Accept")) }
             TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text(t("Decline")) }
         }
+    }
+}
+
+/**
+ * A list that can be pulled down past its top and stays there, up to half its height: the top item is then
+ * about half way up the screen, where a thumb reaches. A drag up gives the pull back before the list scrolls.
+ * A launch is not pulled: it starts at the top.
+ */
+@Composable
+private fun PullDown(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    var pull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var most by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val connection = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (pull <= 0f || available.y >= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                val used = minOf(pull, -available.y)
+                pull -= used
+                return androidx.compose.ui.geometry.Offset(0f, -used)
+            }
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (available.y <= 0f || most <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                val used = minOf(available.y, most - pull)
+                pull += used
+                return androidx.compose.ui.geometry.Offset(0f, used)
+            }
+        }
+    }
+    Box(modifier.onSizeChanged { most = it.height / 2f }.nestedScroll(connection)) {
+        Box(Modifier.fillMaxSize().graphicsLayer { translationY = pull }) { content() }
     }
 }
