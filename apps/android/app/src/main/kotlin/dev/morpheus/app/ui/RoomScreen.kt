@@ -206,6 +206,18 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Cancel editing"), "edit-cancel", { model.edit(null) }, tint = Palette.Muted)
                 }
             }
+            // Messages that did not go stay here, to send again or drop (the text is not lost with the composer).
+            val unsent by model.failed.collectAsState()
+            for (item in unsent) {
+                Row(Modifier.fillMaxWidth().background(Palette.Raised).padding(start = Space.lg).testTag("send-failed"), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(t("Not sent: %{text}", "text" to (item.text ?: t("a change"))), Modifier.testTag("send-failed-text"), color = Palette.Danger, style = Type.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(item.reason, color = Palette.Muted, style = Type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    TextButton({ model.retry(item.id) }, Modifier.testTag("send-retry")) { Text(t("Retry")) }
+                    TextButton({ model.discard(item.id) }, Modifier.testTag("send-discard")) { Text(t("Discard")) }
+                }
+            }
             val problem by model.error.collectAsState()
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)

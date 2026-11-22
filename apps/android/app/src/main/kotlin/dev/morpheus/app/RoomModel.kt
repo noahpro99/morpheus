@@ -32,6 +32,52 @@ class RoomModel(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var timeline: RoomTimeline? = null
+
+    /** What is waiting to be sent, in order: a send made before the room is open (just after a launch or opening it) waits, it is not lost. */
+    private class Outgoing(val id: Long, val text: String?, val run: suspend (RoomTimeline) -> Unit)
+
+    private val outbox = kotlinx.coroutines.channels.Channel<Outgoing>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    private val opened = kotlinx.coroutines.CompletableDeferred<RoomTimeline?>()
+    private var outgoingIds = 0L
+    private val failedWhat = HashMap<Long, Outgoing>()
+    private val _failed = MutableStateFlow<List<FailedSend>>(emptyList())
+
+    /** Messages that did not go, with why; each can be sent again or dropped. */
+    val failed: StateFlow<List<FailedSend>> = _failed.asStateFlow()
+
+    /** Sends outlive the screen: leaving a room straight after sending still sends. */
+    private val detached = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val consumer = detached.launch {
+        for (item in outbox) {
+            val open = opened.await()
+            try {
+                if (open == null) throw IllegalStateException("The room could not be opened.")
+                item.run(open)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failedWhat[item.id] = item
+                _failed.value = _failed.value + FailedSend(item.id, item.text, e.sentence())
+            }
+        }
+    }
+
+    private fun enqueue(text: String? = null, run: suspend (RoomTimeline) -> Unit) {
+        outbox.trySend(Outgoing(++outgoingIds, text, run))
+    }
+
+    /** Send a message that did not go again. */
+    fun retry(id: Long) {
+        val item = failedWhat.remove(id) ?: return
+        _failed.value = _failed.value.filter { it.id != id }
+        outbox.trySend(item)
+    }
+
+    /** Give up on a message that did not go. */
+    fun discard(id: Long) {
+        failedWhat.remove(id)
+        _failed.value = _failed.value.filter { it.id != id }
+    }
     private val _loadingOlder = MutableStateFlow(false)
 
     /** A request for older messages is out (the screen asks again when it ends, if it still needs more). */
@@ -92,6 +138,7 @@ class RoomModel(
                     }
                 }
                 timeline = if (threadRoot == null) morpheus.openRoom(room.id, listener) else morpheus.openThread(room.id, threadRoot, listener)
+                opened.complete(timeline)
                 typingHandle = timeline?.watchTyping(object : uniffi.morpheus_ffi.TypingListener {
                     override fun onTyping(line: String?) {
                         _typing.value = line
@@ -99,6 +146,7 @@ class RoomModel(
                 })
             } catch (e: Exception) {
                 _error.value = e.sentence()
+                opened.complete(null)
             }
         }
     }
@@ -117,26 +165,23 @@ class RoomModel(
         if (message != null) _replyingTo.value = null
     }
 
-    fun delete(eventId: String) = launchSafely { timeline?.deleteMessage(eventId) }
+    fun delete(eventId: String) = enqueue { it.deleteMessage(eventId) }
 
     fun send(text: String) {
         val editing = _editing.value
         if (editing?.eventId != null) {
             _editing.value = null
-            launchSafely { timeline?.editMessage(editing.eventId!!, text) }
+            enqueue(text) { it.editMessage(editing.eventId!!, text) }
             return
         }
         val reply = _replyingTo.value
         _replyingTo.value = null
-        launchSafely {
-            val open = timeline ?: return@launchSafely
-            if (reply?.eventId != null) open.sendReply(text, reply.eventId!!) else open.sendText(text)
-        }
+        enqueue(text) { open -> if (reply?.eventId != null) open.sendReply(text, reply.eventId!!) else open.sendText(text) }
     }
 
-    fun sendFile(name: String, mime: String, bytes: ByteArray) = launchSafely { timeline?.sendFile(name, mime, bytes) }
+    fun sendFile(name: String, mime: String, bytes: ByteArray) = enqueue { it.sendFile(name, mime, bytes) }
 
-    fun react(eventId: String, key: String) = launchSafely { timeline?.toggleReaction(eventId, key) }
+    fun react(eventId: String, key: String) = enqueue { it.toggleReaction(eventId, key) }
 
     /** Older messages, one request at a time. */
     fun loadOlder() {
@@ -236,9 +281,18 @@ class RoomModel(
     }
 
     fun close() {
-        scope.cancel()
-        typingHandle?.cancel()
-        timeline?.close()
-        timeline = null
+        // What was sent but is waiting still goes; the room closes behind it.
+        outbox.close()
+        detached.launch {
+            consumer.join()
+            scope.cancel()
+            typingHandle?.cancel()
+            timeline?.close()
+            timeline = null
+            detached.cancel()
+        }
     }
 }
+
+/** A message that did not go: its text (none for a file, reaction or edit), and why. */
+class FailedSend(val id: Long, val text: String?, val reason: String)
