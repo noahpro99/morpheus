@@ -127,6 +127,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     fun open(room: RoomItem) {
         _room.value = room
         keep("room", room.id)
+        keep("last-room", room.id)
         AppState.room = room.id
         AppState.screen = "room"
     }
@@ -327,6 +328,13 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    /** The chat opened most recently, whichever it was (a channel of any server, a DM) and across launches: the swipe from the lists goes back to it. */
+    fun reopenLast() {
+        val id = kept?.getString("last-room", null) ?: return
+        val bar = sidebar.value ?: return
+        bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == id }?.let { open(it) }
+    }
+
     fun closeRoom() {
         _room.value = null
         keep("room", null)
@@ -484,7 +492,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _room.value = null
         AppState.room = ""
         _screen.value = Screen.SignedOut
-        listOf("account", "room", "scope", "tab").forEach { keep(it, null) }
+        listOf("account", "room", "last-room", "scope", "tab").forEach { keep(it, null) }
         viewModelScope.launch {
             try {
                 morpheus.logout()

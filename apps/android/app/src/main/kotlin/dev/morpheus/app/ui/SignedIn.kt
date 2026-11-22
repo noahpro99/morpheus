@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
@@ -81,7 +82,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean =
     // Back from Direct messages or Profile goes to Servers, the home; only from there does it leave the app.
     androidx.activity.compose.BackHandler(enabled = tab != Tab.Servers) { model.selectTab(Tab.Servers) }
     Column(Modifier.fillMaxSize().testTag("signed-in")) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(Modifier.weight(1f).fillMaxWidth().lastRoomSwipe(model)) {
             when (tab) {
                 Tab.Servers -> ServersPane(model, onOpenRoom)
                 Tab.Dms -> DmsPane(model, onOpenRoom)
@@ -489,6 +490,17 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
             TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text(t("Decline")) }
         }
     }
+}
+
+
+/** A swipe from the lists over to the chat (a finger drag to the left, as the chat is the pane to their right) opens the chat opened most recently, wherever it was. */
+private fun Modifier.lastRoomSwipe(model: AppModel): Modifier = pointerInput(model) {
+    var total = 0f
+    detectHorizontalDragGestures(
+        onDragStart = { total = 0f },
+        onDragEnd = { if (total < -(size.width / 6f)) model.reopenLast() },
+        onDragCancel = { total = 0f },
+    ) { _, amount -> total += amount }
 }
 
 
