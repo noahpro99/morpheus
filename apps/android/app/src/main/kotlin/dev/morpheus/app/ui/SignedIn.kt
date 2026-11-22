@@ -143,7 +143,7 @@ fun BottomBar(model: AppModel, tab: Tab) {
             TabItem(Tab.Servers, tab, t("Servers"), "tab-servers", mentions = serverNews, dot = serverUnread, onClick = { model.selectTab(Tab.Servers) }) { on ->
                 GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) Palette.Accent else Palette.Muted)
             }
-            TabItem(Tab.Dms, tab, t("Messages"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
+            TabItem(Tab.Dms, tab, t("DMs"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
                 GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) Palette.Accent else Palette.Muted)
             }
             TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) }) { on ->
@@ -283,7 +283,7 @@ private fun ChannelList(
     Column(modifier.background(Palette.Surface)) {
         Row(Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.xs).height(Size.topBar), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                scope.title,
+                if (scope.kind == ScopeKind.DMS) t("DMs") else scope.title,
                 Modifier.weight(1f).testTag("scope-title"),
                 style = Type.title,
                 maxLines = 1,
