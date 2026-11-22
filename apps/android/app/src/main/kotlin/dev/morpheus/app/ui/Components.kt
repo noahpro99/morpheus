@@ -93,7 +93,7 @@ fun TopBar(
             Modifier.fillMaxWidth().heightIn(min = Size.topBar).padding(horizontal = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, "Back", backTag ?: "back", onBack)
+            if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), backTag ?: "back", onBack)
             else Box(Modifier.width(Space.md))
             Text(
                 title,

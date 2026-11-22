@@ -71,6 +71,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -177,7 +179,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                         color = Palette.Muted,
                         fontSize = 13.sp,
                     )
-                    TextButton({ model.replyTo(null) }, Modifier.testTag("reply-cancel")) { Text("✕") }
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Cancel reply"), "reply-cancel", { model.replyTo(null) }, tint = Palette.Muted)
                 }
             }
             editing?.let {
@@ -186,7 +188,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(t("Editing your message"), Modifier.weight(1f).testTag("edit-banner"), color = Palette.Muted, fontSize = 13.sp)
-                    TextButton({ model.edit(null) }, Modifier.testTag("edit-cancel")) { Text("✕") }
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Cancel editing"), "edit-cancel", { model.edit(null) }, tint = Palette.Muted)
                 }
             }
             val problem by model.error.collectAsState()
@@ -524,7 +526,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
                 focusedTextColor = Palette.Text, unfocusedTextColor = Palette.Text, cursorColor = Palette.Accent,
             ),
             trailingIcon = {
-                Text("😀", Modifier.size(40.dp).clickable { panel = !panel }.wrapContentSize().testTag("emoji-button"), style = Type.heading)
+                Box(Modifier.size(40.dp).clip(CircleShape).clickable { panel = !panel }.semantics { contentDescription = t("Emoji"); role = Role.Button }.testTag("emoji-button"), contentAlignment = Alignment.Center) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = Palette.Muted) }
             },
         )
         val canSend = text.isNotBlank()
@@ -536,7 +538,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
                 .semantics { contentDescription = t("Send") }
                 .testTag("send"),
             contentAlignment = Alignment.Center,
-        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 22.dp, tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp, tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
     }
     if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
     }

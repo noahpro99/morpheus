@@ -350,14 +350,10 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                 if (room.isDm) {
                     Avatar(room.avatar, room.name, Size.avatar)
                 } else {
-                    Text(
-                        if (room.isVoice) "🔊" else "#",
-                        Modifier.width(Size.avatarSm), textAlign = TextAlign.Center,
-                        color = if (unread) Palette.Text else Palette.Muted, style = Type.heading,
-                    )
+                    GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (unread) Palette.Text else Palette.Muted)
                 }
-                if (room.pinned) Text("📌", Modifier.testTag("pin-${room.name}"), style = Type.caption)
-                if (room.muted) Text("🔕", Modifier.testTag("muted-room-${room.name}"), style = Type.caption)
+                if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.testTag("pin-${room.name}"), size = 16.dp, tint = Palette.Muted)
+                if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.testTag("muted-room-${room.name}"), size = 16.dp, tint = Palette.Muted)
                 Text(
                     room.name,
                     maxLines = 1,
@@ -373,11 +369,13 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                     for (member in room.call) {
                         LaunchedEffect(member.userId) { model.wantName(member.userId) }
                         val name = model.nameOf(member.userId, names)
-                        Text(
-                            name + if (member.muted || member.deafened) " 🔇" else "",
-                            Modifier.testTag("in-call-${room.name}-$name"),
-                            color = Palette.Muted, style = Type.secondary,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                            Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = Type.secondary)
+                            if (member.muted || member.deafened) GlyphIcon(
+                                if (member.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_mic_off,
+                                Modifier.testTag("in-call-muted-${room.name}-$name"), size = 14.dp, tint = Palette.Muted,
+                            )
+                        }
                     }
                 }
             }
@@ -404,7 +402,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                 TextButton({ if (room.muted) { menu = false; model.muteRoom(room.id, null) } else choosing = true }, Modifier.testTag("room-mute")) {
                     Text(if (room.muted) t("Unmute") else t("Mute"), style = Type.secondary)
                 }
-                TextButton({ menu = false; choosing = false }, Modifier.testTag("dm-cancel")) { Text("✕", style = Type.secondary) }
+                IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Close"), "dm-cancel", { menu = false; choosing = false }, tint = Palette.Muted)
             }
         }
         Row(
@@ -470,7 +468,7 @@ private fun SecurityBanner(model: AppModel) {
         Modifier.fillMaxWidth().background(Palette.Raised).clickable { model.openSecurity() }.padding(Space.lg).testTag("verify-banner"),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, size = 20.dp, tint = Palette.Accent)
+        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, tint = Palette.Accent)
         Text(t("Verify this device to read your encrypted messages"), Modifier.weight(1f), style = Type.secondary)
         GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
     }
@@ -492,6 +490,7 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
         }
     }
 }
+
 
 /**
  * A list that can be pulled down past its top and stays there, up to half its height: the top item is then

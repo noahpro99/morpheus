@@ -39,6 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -140,10 +144,10 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
             }
         }
         if (card.kind == CardKind.SCREEN) {
-            TextButton({ calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd).testTag("stop-watching-${card.name}")) { Text("✕", color = Color.White) }
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Stop watching"), "stop-watching-${card.name}", { calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
         }
         if ((card.kind == CardKind.PERSON || card.kind == CardKind.CAMERA) && person != null && !person.me) {
-            TextButton({ openVolume(card.userId) }, Modifier.align(Alignment.TopEnd).testTag("person-volume-${card.name}")) { Text("🔊", fontSize = 16.sp) }
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_volume_2, t("Volume"), "person-volume-${card.name}", { openVolume(card.userId) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
         }
         Row(
             Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
@@ -156,8 +160,8 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
                 color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (card.kind != CardKind.SCREEN && card.kind != CardKind.UNWATCHED_SCREEN) {
-                if (person?.deafened == true) Text("🔇", Modifier.testTag("deafened-${card.name}"), fontSize = 12.sp)
-                else if (person?.muted == true) Text("🔇", Modifier.testTag("muted-${card.name}"), fontSize = 12.sp)
+                if (person?.deafened == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_headphone_off, Modifier.testTag("deafened-${card.name}"), size = 16.dp, tint = Color.White)
+                else if (person?.muted == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_mic_off, Modifier.testTag("muted-${card.name}"), size = 16.dp, tint = Color.White)
             }
         }
     }
@@ -198,25 +202,26 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
             Button({ calls.dismiss() }, Modifier.testTag("call-dismiss")) { Text(t("Close")) }
             return@Row
         }
-        Control(if (snapshot.muted) "🔇" else "🎙️", "call-mute", snapshot.muted) { calls.toggleMute() }
-        Control("🎧", "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
-        if (snapshot.canSendVideo) Control("📷", "call-camera", snapshot.camera) { calls.toggleCamera() }
-        if (snapshot.camera && calls.canFlipCamera) Control("🔄", "call-camera-flip", false) { calls.flipCamera() }
-        Control(if (speaker) "🔊" else "📞", "call-speaker", speaker) { calls.toggleSpeaker() }
-        Control("⚙", "call-settings", false) { openSettings() }
+        Control(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "call-mute", snapshot.muted) { calls.toggleMute() }
+        Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_headphones, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
+        if (snapshot.canSendVideo) Control(dev.morpheus.app.R.drawable.ic_lucide_video, t("Camera"), "call-camera", snapshot.camera) { calls.toggleCamera() }
+        if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_lucide_refresh_cw, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
+        Control(if (speaker) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_phone, t("Speaker"), "call-speaker", speaker) { calls.toggleSpeaker() }
+        Control(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Call settings"), "call-settings", false) { openSettings() }
         Box(
-            Modifier.size(48.dp).clip(CircleShape).background(Palette.Danger).clickable { calls.hangUp() }.testTag("call-hangup"),
+            Modifier.size(48.dp).clip(CircleShape).background(Palette.Danger).clickable { calls.hangUp() }.semantics { contentDescription = t("Hang up"); role = Role.Button }.testTag("call-hangup"),
             contentAlignment = Alignment.Center,
-        ) { Text("✆", color = Palette.OnDanger, fontSize = 22.sp) }
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_phone_off, tint = Palette.OnDanger) }
     }
 }
 
 @Composable
-private fun Control(glyph: String, tag: String, on: Boolean, onClick: () -> Unit) {
+private fun Control(@androidx.annotation.DrawableRes icon: Int, description: String, tag: String, on: Boolean, onClick: () -> Unit) {
+    val fill = if (on) Palette.Accent else Palette.Raised
     Box(
-        Modifier.size(48.dp).clip(CircleShape).background(if (on) Palette.Accent else Palette.Raised).clickable { onClick() }.testTag(tag),
+        Modifier.size(48.dp).clip(CircleShape).background(fill).clickable { onClick() }.semantics { contentDescription = description; role = Role.Button }.testTag(tag),
         contentAlignment = Alignment.Center,
-    ) { Text(glyph, fontSize = 20.sp) }
+    ) { GlyphIcon(icon, tint = if (on) onColour(Palette.Accent) else Palette.Text) }
 }
 
 /** The call going, as a bar over the rest of the app: back to it, mute, hang up. */
@@ -233,8 +238,8 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
                 color = Palette.OnAccent, fontSize = 12.sp, modifier = Modifier.testTag("call-bar-state"),
             )
         }
-        TextButton({ calls.toggleMute() }, Modifier.testTag("bar-mute")) { Text(if (snapshot.muted) "🔇" else "🎙️", fontSize = 18.sp) }
-        TextButton({ calls.hangUp() }, Modifier.testTag("bar-hangup")) { Text("✆", color = Palette.OnAccent, fontSize = 18.sp) }
+        IconAction(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "bar-mute", { calls.toggleMute() }, tint = onColour(Palette.Accent))
+        IconAction(dev.morpheus.app.R.drawable.ic_lucide_phone_off, t("Hang up"), "bar-hangup", { calls.hangUp() }, tint = onColour(Palette.Accent))
     }
 }
 

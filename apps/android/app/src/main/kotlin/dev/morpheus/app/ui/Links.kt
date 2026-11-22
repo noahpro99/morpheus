@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -96,7 +98,7 @@ fun PreviewCardView(model: RoomModel, url: String, eventId: String) {
     ) {
         Row {
             Text(shown.site ?: "", Modifier.weight(1f), color = Palette.Muted, fontSize = 12.sp, maxLines = 1)
-            Text("✕", Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.testTag("preview-dismiss"), color = Palette.Muted)
+            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_x, Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.semantics { contentDescription = t("Dismiss preview") }.testTag("preview-dismiss"), size = 18.dp, tint = Palette.Muted)
         }
         shown.title?.let { Text(it, Modifier.testTag("preview-title"), color = Palette.Accent, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         shown.description?.let { Text(it, Modifier.testTag("preview-description"), fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis) }
