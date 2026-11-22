@@ -106,12 +106,12 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     }
     val scopes = bar.scopes.filter { it.kind != ScopeKind.DMS }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
-    Row(modifier.fillMaxSize()) {
+    Row(modifier.fillMaxSize().background(Palette.Background)) {
         Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = { model.openReorder() }) { model.selectScope(it.key) }
         if (scope == null) {
             EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
         } else {
-            ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom)
+            ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom, rounded = true)
         }
     }
 }
@@ -202,7 +202,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     LazyColumn(
         Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail"),
-        contentPadding = PaddingValues(vertical = Space.md),
+        contentPadding = PaddingValues(bottom = Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -277,10 +277,12 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
 @Composable
 private fun ChannelList(
     scope: ScopeItem, invites: List<InviteItem>, model: AppModel, onOpenRoom: (RoomItem) -> Unit,
-    modifier: Modifier, selectedRoom: String?,
+    modifier: Modifier, selectedRoom: String?, rounded: Boolean = false,
 ) {
     androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.listDrawn() }
-    Column(modifier.background(Palette.Surface)) {
+    Column(
+        modifier.then(if (rounded) Modifier.clip(RoundedCornerShape(topStart = Radius.lg)) else Modifier).background(Palette.Surface).testTag("channel-panel"),
+    ) {
         Row(Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.xs).height(Size.topBar), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (scope.kind == ScopeKind.DMS) t("DMs") else scope.title,
