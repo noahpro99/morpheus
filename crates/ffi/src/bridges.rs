@@ -203,6 +203,7 @@ impl Morpheus {
             let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
             let mut open: Option<(morpheus_core::TimelineHandle, morpheus_core::TimelineUpdates)> = None;
             let mut entries: morpheus_core::Vector<morpheus_core::TimelineEntry> = morpheus_core::Vector::new();
+            let mut anchor: Option<String> = None;
             let fail = |login: &mut Login, qr: &mut Option<Vec<u8>>, why: String| {
                 login.status = Status::Error(why);
                 *qr = None;
@@ -238,6 +239,7 @@ impl Morpheus {
                                             }
                                         }
                                     }
+                                    anchor = vm::message_ids(&entries).last().map(|id| (*id).to_owned());
                                     open = Some((timeline.handle, timeline.updates));
                                 }
                                 Err(err) => {
@@ -272,14 +274,7 @@ impl Morpheus {
                                 // history, not what the bot said to this command (a stale "logged in" moved a
                                 // login on, #316). A message that was seen is only looked at again if it changed.
                                 if !seen.contains_key(&id) {
-                                    let order: Vec<(bool, &str)> = entries
-                                        .iter()
-                                        .filter_map(|entry| match entry {
-                                            morpheus_core::TimelineEntry::Message(m) => Some((m.is_own, m.unique_id.as_str())),
-                                            _ => None,
-                                        })
-                                        .collect();
-                                    if !vm::after_my_last(&order, &id) {
+                                    if !vm::after_anchor(&vm::message_ids(&entries), anchor.as_deref(), &id) {
                                         seen.insert(id, vm::fingerprint(&kind));
                                         continue;
                                     }

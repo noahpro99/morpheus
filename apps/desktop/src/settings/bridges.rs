@@ -220,14 +220,17 @@ impl SettingsView {
             };
             let handle = open.handle.clone();
             let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            let mut entries: morpheus_core::Vector<morpheus_core::TimelineEntry> = morpheus_core::Vector::new();
             // What was said before is not an answer: the first batch is the history.
             if let Some(first) = open.updates.next().await {
                 for diff in &first {
+                    diff.clone().apply(&mut entries);
                     for message in vm::messages_in(diff, &bot) {
                         seen.insert(message.0, vm::fingerprint(&message.1));
                     }
                 }
             }
+            let anchor: Option<String> = vm::message_ids(&entries).last().map(|id| (*id).to_owned());
             this.update(cx, |this, _| {
                 if let Some(row) = this.bridges.row(&bot) {
                     row.handle = Some(handle.clone());
@@ -242,7 +245,16 @@ impl SettingsView {
             }
             while let Some(diffs) = open.updates.next().await {
                 for diff in &diffs {
+                    diff.clone().apply(&mut entries);
                     for (id, kind) in vm::messages_in(diff, &bot) {
+                        // Older pages load after the first batch and arrive above my message: history, not
+                        // what the bot said to this command (#319, Android's #316).
+                        if !seen.contains_key(&id) {
+                            if !vm::after_anchor(&vm::message_ids(&entries), anchor.as_deref(), &id) {
+                                seen.insert(id, vm::fingerprint(&kind));
+                                continue;
+                            }
+                        }
                         if seen.insert(id, vm::fingerprint(&kind)).is_some_and(|before| before == vm::fingerprint(&kind)) {
                             continue;
                         }

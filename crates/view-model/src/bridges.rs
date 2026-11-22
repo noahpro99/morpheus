@@ -329,15 +329,30 @@ pub fn local_qr(reply: &Reply) -> Option<Vec<u8>> {
     reply.image.then(|| qr_png(&qr_payload_of(&reply.text)?)).flatten()
 }
 
-/// Whether the message `id` stands after my last message in the conversation's order (`order`:
-/// for each message, whether it is mine, and its id): a bot's answer. What the timeline loads
-/// from before (older pages arrive after the first batch, inserted above my message) is history,
-/// not an answer, and must not move a login on.
-pub fn after_my_last(order: &[(bool, &str)], id: &str) -> bool {
-    let Some(at) = order.iter().position(|(_, other)| *other == id) else {
+/// The ids of the messages of a timeline, in order.
+pub fn message_ids(entries: &morpheus_core::Vector<morpheus_core::TimelineEntry>) -> Vec<&str> {
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            morpheus_core::TimelineEntry::Message(m) => Some(m.unique_id.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether the message `id` stands after `anchor` (the newest message of the first batch the timeline gave,
+/// before a command was sent; None for an empty room) in the conversation's order `ids`: a bot's answer.
+/// What the timeline loads from before (older pages arrive after the first batch, inserted above it) is
+/// history, not an answer, and must not move a login on. Answers come after the anchor, including before a
+/// message of mine that is still being sent (the SDK keeps those last).
+pub fn after_anchor(ids: &[&str], anchor: Option<&str>, id: &str) -> bool {
+    let Some(at) = ids.iter().position(|other| *other == id) else {
         return false;
     };
-    order.iter().rposition(|(mine, _)| *mine).map_or(true, |last| at > last)
+    match anchor.and_then(|anchor| ids.iter().position(|other| *other == anchor)) {
+        Some(anchor) => at > anchor,
+        None => true,
+    }
 }
 
 /// What a bot message is now, to tell an edit (the same message with new content, as a
@@ -725,15 +740,16 @@ fn first_line(text: &str) -> String {
 mod tests {
     use super::*;
     #[test]
-    fn only_what_stands_after_my_last_message_is_an_answer() {
-        // Old pages are inserted above my command as they load: not answers.
-        let order = [(false, "old-reply"), (true, "old-command"), (false, "old-ok"), (true, "login"), (false, "flows")];
-        assert!(after_my_last(&order, "flows"));
-        assert!(!after_my_last(&order, "old-ok"));
-        assert!(!after_my_last(&order, "old-reply"));
-        assert!(!after_my_last(&order, "gone"), "a message that is not in the list is not an answer");
-        // A bot that speaks first in a room where I have said nothing: it counts.
-        assert!(after_my_last(&[(false, "hello")], "hello"));
+    fn only_what_stands_after_the_first_batch_is_an_answer() {
+        // Old pages are inserted above the first batch as they load: not answers.
+        let ids = ["old-reply", "old-ok", "last-of-batch", "flows", "echo"];
+        assert!(after_anchor(&ids, Some("last-of-batch"), "flows"));
+        assert!(after_anchor(&ids, Some("last-of-batch"), "echo"));
+        assert!(!after_anchor(&ids, Some("last-of-batch"), "old-ok"));
+        assert!(!after_anchor(&ids, Some("last-of-batch"), "old-reply"));
+        assert!(!after_anchor(&ids, Some("last-of-batch"), "gone"), "a message that is not in the list is not an answer");
+        // An empty room: everything counts.
+        assert!(after_anchor(&["hello"], None, "hello"));
     }
 
 
