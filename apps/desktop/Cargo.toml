@@ -85,7 +85,7 @@ tray-icon = { version = "0.21", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-registry = "0.5"
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_EnhancedStorage", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem", "Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security", "Win32_System_IO", "Win32_System_Pipes", "Win32_Storage_FileSystem", "Win32_Graphics_Gdi", "Win32_Storage_EnhancedStorage", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem", "Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 raw-window-handle = "0.6"
 
 # SIGTERM (logout, shutdown, `kill`) quits as the Quit item does: hanging up first.

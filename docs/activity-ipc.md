@@ -17,8 +17,7 @@ Account.
 - Linux: `$XDG_RUNTIME_DIR/morpheus-activity.sock` (else `activity.sock` in
   Morpheus's data folder), mode 0600, so only your user connects.
 - macOS: `activity.sock` in the data folder (`~/Library/Application Support/...`).
-- Windows: the named pipe `\\.\pipe\morpheus-activity` (not served yet, see the
-  issue tracker).
+- Windows: the named pipe `\\.\pipe\morpheus-activity` (local clients only).
 - `MORPHEUS_ACTIVITY_SOCK` overrides the path (testing).
 
 ## Protocol (version 1)

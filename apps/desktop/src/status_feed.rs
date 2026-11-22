@@ -77,6 +77,11 @@ pub fn start() {
             .name("activity-socket".into())
             .spawn(listen)
             .ok();
+        #[cfg(windows)]
+        std::thread::Builder::new()
+            .name("activity-pipe".into())
+            .spawn(listen_windows)
+            .ok();
     });
 }
 
@@ -170,17 +175,22 @@ fn listen() {
     for stream in listener.incoming().flatten() {
         std::thread::Builder::new()
             .name("activity-client".into())
-            .spawn(move || serve(stream))
+            .spawn(move || serve_unix(stream))
             .ok();
     }
 }
 
 #[cfg(unix)]
-fn serve(stream: std::os::unix::net::UnixStream) {
-    let Ok(mut writer) = stream.try_clone() else {
+fn serve_unix(stream: std::os::unix::net::UnixStream) {
+    let Ok(writer) = stream.try_clone() else {
         return;
     };
-    let mut reader = BufReader::new(stream);
+    serve(stream, writer);
+}
+
+/// Answers one client: a line in, a line out.
+fn serve(input: impl Read, mut writer: impl Write) {
+    let mut reader = BufReader::new(input);
     loop {
         let mut line = String::new();
         let read = reader
@@ -365,5 +375,94 @@ impl crate::shell::Shell {
             }
         });
         activity::Marker::store(&dir, None);
+    }
+}
+
+// ---- Windows: the named pipe -----------------------------------------------------------
+
+/// Serves `\\.\pipe\morpheus-activity` (or `MORPHEUS_ACTIVITY_SOCK`): one pipe instance
+/// per client, local clients only (the pipe's default access is read-only for others).
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn listen_windows() {
+    use std::os::windows::io::{FromRawHandle as _, RawHandle};
+
+    use windows::{
+        Win32::{
+            Foundation::{ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE},
+            Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
+            System::Pipes::{
+                ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
+                PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+            },
+        },
+        core::PCWSTR,
+    };
+
+    let name: Vec<u16> = socket_path().as_os_str().to_string_lossy().encode_utf16().chain([0]).collect();
+    let mut first = true;
+    loop {
+        let open_mode = if first { PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE } else { PIPE_ACCESS_DUPLEX };
+        // SAFETY: `name` is a NUL-terminated wide string that outlives the call.
+        let handle = unsafe {
+            CreateNamedPipeW(
+                PCWSTR(name.as_ptr()),
+                open_mode,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                PIPE_UNLIMITED_INSTANCES,
+                4096,
+                4096,
+                0,
+                None,
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE || handle.is_invalid() {
+            if first {
+                // Another Morpheus serves it already, or the pipe cannot be made.
+                return;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            continue;
+        }
+        first = false;
+        // SAFETY: the handle is a pipe instance made above, owned by the File from here on.
+        let pipe = unsafe { std::fs::File::from_raw_handle(handle.0 as RawHandle) };
+        // SAFETY: a valid pipe handle, no overlapped I/O.
+        let connected = unsafe { ConnectNamedPipe(handle, None) };
+        let ok = match connected {
+            Ok(()) => true,
+            Err(err) => err.code() == ERROR_PIPE_CONNECTED.to_hresult(),
+        };
+        if !ok {
+            continue;
+        }
+        let Ok(writer) = pipe.try_clone() else {
+            continue;
+        };
+        std::thread::Builder::new()
+            .name("activity-client".into())
+            .spawn(move || serve(pipe, writer))
+            .ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_client_is_answered_line_by_line() {
+        let input = "{\"op\":\"hello\",\"version\":1}\nnonsense\n\n{\"op\":\"clear\",\"source\":\"test-serve\"}\n";
+        let mut out = Vec::new();
+        serve(std::io::Cursor::new(input.as_bytes().to_vec()), &mut out);
+        let replies: Vec<serde_json::Value> = String::from_utf8(out)
+            .expect("utf8")
+            .lines()
+            .map(|l| serde_json::from_str(l).expect("json"))
+            .collect();
+        assert_eq!(replies.len(), 3);
+        assert_eq!(replies[0]["op"], "hello");
+        assert_eq!(replies[1]["ok"], false);
+        assert_eq!(replies[2]["ok"], true);
     }
 }
