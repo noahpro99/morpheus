@@ -27,6 +27,10 @@ struct Inner {
     #[cfg(not(target_arch = "wasm32"))]
     runtime: Option<Runtime>,
     data_dir: PathBuf,
+    /// The accounts signed in during this run, by folder, so switching back to one
+    /// carries on with its client and store instead of opening them a second time
+    /// (each switch used to leave a whole client with its files open behind, #339).
+    live: std::sync::Mutex<std::collections::HashMap<PathBuf, crate::session::LiveParts>>,
     /// Where session credentials go; `None` decides at runtime (see
     /// `session_store::resolve`).
     session_store_kind: Option<SessionStoreKind>,
@@ -70,6 +74,7 @@ impl Core {
                 #[cfg(not(target_arch = "wasm32"))]
                 runtime: Some(runtime),
                 data_dir,
+                live: Default::default(),
                 session_store_kind,
             }),
         })
@@ -175,5 +180,24 @@ impl PartialEq for Core {
     /// Two handles are equal when they share the same runtime and data directory.
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Core {
+    pub(crate) fn live_parts(&self, dir: &Path) -> Option<crate::session::LiveParts> {
+        self.inner.live.lock().ok()?.get(dir).cloned()
+    }
+
+    pub(crate) fn keep_live(&self, dir: PathBuf, parts: crate::session::LiveParts) {
+        if let Ok(mut live) = self.inner.live.lock() {
+            live.insert(dir, parts);
+        }
+    }
+
+    /// An account folder was signed out or replaced: its client is not to be reused.
+    pub(crate) fn forget_live(&self, dir: &Path) {
+        if let Ok(mut live) = self.inner.live.lock() {
+            live.remove(dir);
+        }
     }
 }

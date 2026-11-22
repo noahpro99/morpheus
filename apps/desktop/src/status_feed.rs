@@ -309,6 +309,10 @@ impl crate::shell::Shell {
             let mut linked: (Option<morpheus_core::OwnedRoomId>, Option<String>) = (None, None);
             loop {
                 cx.background_executor().timer(tick).await;
+                // The shell is gone (another account opened): so is this, with its session.
+                if this.update(cx, |_, _| ()).is_err() {
+                    return;
+                }
                 let wanted = shown_text();
                 if tracker.changed(wanted.as_deref()) {
                     let current = match session.own_profile().await {

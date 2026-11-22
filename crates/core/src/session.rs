@@ -67,6 +67,15 @@ pub struct Session {
     pub(crate) can_scan_qr: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// What of a signed-in account outlives its [`Session`] values: see `Core::live_parts`.
+#[derive(Clone)]
+pub(crate) struct LiveParts {
+    client: Client,
+    sync: Arc<SyncService>,
+    syncing: Arc<AtomicBool>,
+    can_scan_qr: Arc<std::sync::atomic::AtomicBool>,
+}
+
 /// Which sign-in methods a homeserver offers.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LoginFlows {
@@ -101,6 +110,23 @@ impl Core {
                 return Ok(None);
             };
 
+            // Signed in earlier in this run: carry on with it (#339).
+            if let Some(live) = core.live_parts(&dir)
+                && live.client.user_id() == Some(&stored.session.meta.user_id)
+            {
+                live.syncing.store(true, Ordering::Relaxed);
+                live.sync.start().await;
+                info!("switched back to a signed-in account");
+                return Ok(Some(Session {
+                    core: core.clone(),
+                    client: live.client,
+                    sync: live.sync,
+                    syncing: live.syncing,
+                    dir,
+                    can_scan_qr: live.can_scan_qr,
+                }));
+            }
+
             let client =
                 match build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await {
                     Ok(client) => client,
@@ -126,13 +152,13 @@ impl Core {
     }
 
     /// Ask a homeserver which login methods it supports. Resolves the
-    /// server name through `.well-known` like a login would.
+    /// server name through `.well-known` like a login would. No local
+    /// store is made for it: it is asked as you type, and a store each would
+    /// leave files open (#339).
     pub fn login_flows(&self, homeserver: String) -> CoreFuture<LoginFlows> {
-        let core = self.clone();
         self.run(async move {
             let client = tls_roots(Client::builder())
                 .server_name_or_homeserver_url(&homeserver)
-                .pipe_store(&core.data_dir().join(PROBE_STORE_DIR))
                 .build()
                 .await?;
             let types = client.matrix_auth().get_login_types().await?;
@@ -471,13 +497,23 @@ impl Session {
         }
         let syncing = Arc::new(AtomicBool::new(true));
         core.spawn(keep_syncing(Arc::downgrade(&sync), syncing.clone()));
+        let can_scan_qr = Arc::<std::sync::atomic::AtomicBool>::default();
+        core.keep_live(
+            dir.clone(),
+            LiveParts {
+                client: client.clone(),
+                sync: sync.clone(),
+                syncing: syncing.clone(),
+                can_scan_qr: can_scan_qr.clone(),
+            },
+        );
         Ok(Self {
             core,
             client,
             sync,
             syncing,
             dir,
-            can_scan_qr: Arc::default(),
+            can_scan_qr,
         })
     }
 
@@ -523,6 +559,7 @@ impl Session {
         } = self;
         syncing.store(false, Ordering::Relaxed);
         let runner = core.clone();
+        core.forget_live(&dir);
         runner.run(async move {
             sync.stop().await;
             client.logout().await?;
@@ -799,15 +836,4 @@ fn with_store(
     // looks for one before reusing a folder).
     let _ = crate::fs::write(store.join("indexeddb"), b"");
     builder.indexeddb_store(&store.to_string_lossy(), passphrase)
-}
-
-/// A throwaway store, for asking a server what it supports.
-trait PipeStore {
-    fn pipe_store(self, store: &Path) -> Self;
-}
-
-impl PipeStore for matrix_sdk::ClientBuilder {
-    fn pipe_store(self, store: &Path) -> Self {
-        with_store(self, store, None)
-    }
 }

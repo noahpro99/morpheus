@@ -75,6 +75,7 @@ mod screen_quality;
 mod search;
 mod settings;
 mod shell;
+mod fd_limit;
 mod rich_presence;
 mod status_feed;
 mod sounds;
@@ -271,10 +272,21 @@ impl Root {
         if let Ok(mut kept) = SESSION.lock() {
             *kept = Some(session.clone());
         }
-        // Each sign-in (a switch of account too) gets its own announcers; those
-        // of the account left behind go quiet with its stopped sync.
-        notify::spawn_notifier(session.clone(), || send_command(Command::Redraw));
-        notify::spawn_ring_watcher(session.clone());
+        // Each signed-in device gets its announcers once per run: switching back to an
+        // account carries on with the same client, whose announcers never ended (more
+        // would announce everything twice, and each thread holds descriptors, #339).
+        static ANNOUNCED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        let device = format!("{:?}|{:?}", session.user_id(), session.device_id());
+        if ANNOUNCED.lock().is_ok_and(|mut seen| {
+            let new = !seen.contains(&device);
+            if new {
+                seen.push(device);
+            }
+            new
+        }) {
+            notify::spawn_notifier(session.clone(), || send_command(Command::Redraw));
+            notify::spawn_ring_watcher(session.clone());
+        }
         self.show_shell(session, cx);
         for link in std::mem::take(&mut self.pending_links) {
             self.open_link(link, cx);
@@ -869,6 +881,7 @@ fn init_logging() {
 }
 
 fn main() {
+    fd_limit::raise();
     if status_feed::native_messaging_requested() {
         status_feed::run_native_host();
         return;

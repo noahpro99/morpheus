@@ -207,10 +207,21 @@ fn duplicates_to_drop(
 }
 
 impl Core {
+    /// Blocking: removes the store the server probe used to open (none since #339).
+    /// Empty account folders are left alone: one may be a sign-in in progress, and the
+    /// next sign-in reuses them.
+    fn remove_probe_store(&self) {
+        // The store the server probe used to open (gone since #339).
+        let _ = crate::fs::remove_dir_all(self.data_dir().join("probe-store"));
+    }
+}
+
+impl Core {
     /// Blocking: forgets an account folder's credentials and local store (the first
     /// account's folder is the data directory itself, so only its contents go).
     fn remove_slot(&self, key: &str) {
         let dir = slot_dir(self.data_dir(), key);
+        self.forget_live(&dir);
         let _ = session_store::resolve(&dir, self.session_store_kind()).clear();
         let _ = crate::fs::remove_dir_all(dir.join(session_store::STORE_DIR));
         if !key.is_empty() {
@@ -244,6 +255,7 @@ impl Core {
     /// Blocking: merges accounts stored twice before this fix, keeping the active
     /// one (the one in use), else the newest sign-in.
     pub(crate) fn merge_duplicates(&self) {
+        self.remove_probe_store();
         let accounts = self.stored_accounts();
         let active = read_active(self.data_dir());
         let drop = duplicates_to_drop(&accounts, None, &active);
