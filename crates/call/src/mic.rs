@@ -692,6 +692,9 @@ fn capture(shared: &Shared, mode: AudioMode) {
     // Windows: this thread as MMCSS "Pro Audio", for as long as it runs.
     #[cfg(target_os = "windows")]
     let _pro_audio = super::mmcss::ProAudio::join();
+    // Linux and macOS: the same, as a real-time audio thread (#332).
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    super::rtprio::raise();
     let mut pace = Pace::new();
     let mut timing = Timing::default();
     let mut report = Report::default();
@@ -895,6 +898,25 @@ impl Report {
     }
 }
 
+/// Sleeps now and then when `MORPHEUS_CALL_STALL` says so (#332).
+fn stall_now() {
+    static PLAN: std::sync::OnceLock<Option<(Duration, Duration)>> = std::sync::OnceLock::new();
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    let plan = PLAN.get_or_init(|| {
+        let text = std::env::var("MORPHEUS_CALL_STALL").ok()?;
+        let (period, stall) = text.split_once(':')?;
+        Some((Duration::from_millis(period.parse().ok()?), Duration::from_millis(stall.parse().ok()?)))
+    });
+    let Some((period, stall)) = *plan else { return };
+    let Ok(mut last) = LAST.lock() else { return };
+    let at = last.get_or_insert_with(Instant::now);
+    if at.elapsed() >= period {
+        *last = Some(Instant::now());
+        drop(last);
+        thread::sleep(stall);
+    }
+}
+
 /// The recording `MORPHEUS_CALL_CLIP` names, if any (a test run, #332).
 fn clip_from_env() -> Option<Vec<i16>> {
     let bytes = std::fs::read(std::env::var_os("MORPHEUS_CALL_CLIP")?).ok()?;
@@ -946,6 +968,9 @@ impl Input {
     fn next(&mut self) -> Option<(Vec<i16>, Instant)> {
         match self {
             Self::Room { next, seed, clip } => {
+                // `MORPHEUS_CALL_STALL=<period ms>:<stall ms>` (test runs): the capture
+                // thread is not run for a while now and then, as under a busy CPU.
+                stall_now();
                 let now = Instant::now();
                 if *next > now {
                     thread::sleep(*next - now);
@@ -1846,6 +1871,35 @@ mod tests {
     /// `speech_keys.pcm` (voice, a quiet room and loud typing, 10 s, 48 kHz
     /// mono s16le), `voice.pcm` (the voice alone) and `frames.mask` (a byte
     /// per 10 ms frame: 1 middle of a vowel, 2 pause, 4 a key sounding).
+    /// Voice frames Strong takes more than 10 dB out of, at several room
+    /// noise levels (#332): Strong's choppiness is syllables dropped where
+    /// the model takes the voice for noise.
+    #[test]
+    fn strong_keeps_the_voice_in_a_noisy_room() {
+        use crate::imp::speech_fixture::frame_energy;
+        for noise in [0.004f32, 0.015, 0.03, 0.06] {
+            let speech = noisy_speech(10, 0.05, noise);
+            let mix = speech.mix();
+            let out = run(NoiseSuppression::Strong, &mix);
+            let mut probe = Processor::new(NoiseSuppression::Strong, true);
+            probe.load_model();
+            let delay = probe.delay();
+            let (mut vowels, mut lost) = (0, 0);
+            for f in 100..mix.len() / HOP - 10 {
+                if !speech.speech[f] {
+                    continue;
+                }
+                vowels += 1;
+                let voice = frame_energy(&speech.voice, f, 0);
+                let kept = frame_energy(&out, f, delay);
+                if kept < voice * 0.1 {
+                    lost += 1;
+                }
+            }
+            eprintln!("NOISY room {noise}: {lost} of {vowels} vowel frames lost >10 dB");
+        }
+    }
+
     #[test]
     #[ignore = "writes the e2e fixtures"]
     fn write_the_e2e_clips() {
@@ -2061,7 +2115,7 @@ mod timing {
             }
             let mut seed = 1u32;
             let mut times = Vec::new();
-            for _ in 0..500 {
+            for _ in 0..6000 {
                 let mut frame: Vec<i16> = (0..FRAME)
                     .map(|_| {
                         seed ^= seed << 13;
@@ -2084,6 +2138,30 @@ mod timing {
                 times[times.len() - 1]
             );
         }
+        // The gate alone (level, sharpness, pitch, decision).
+        let mut gate = crate::gate::Gate::new();
+        let mut seed = 7u32;
+        let mut times = Vec::new();
+        for _ in 0..6000 {
+            let frame: Vec<i16> = (0..FRAME)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 17;
+                    seed ^= seed << 5;
+                    ((seed as i32) >> 18) as i16
+                })
+                .collect();
+            let start = Instant::now();
+            gate.push_frame(&frame);
+            times.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        times.sort_by(f64::total_cmp);
+        eprintln!(
+            "Gate alone: per 10 ms frame avg {:.3} ms p99 {:.3} max {:.3}",
+            times.iter().sum::<f64>() / times.len() as f64,
+            times[times.len() * 99 / 100],
+            times[times.len() - 1]
+        );
     }
 }
 

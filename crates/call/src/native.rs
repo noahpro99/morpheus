@@ -87,6 +87,9 @@ mod mic;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "mic_pace.rs"]
 mod mic_pace;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "rtprio.rs"]
+mod rtprio;
 #[path = "record.rs"]
 mod record;
 #[cfg(target_os = "windows")]
@@ -3027,12 +3030,24 @@ async fn inbound_audio_stats(track: &RemoteAudioTrack) -> serde_json::Value {
     let Ok(stats) = track.get_stats().await else {
         return serde_json::Value::Null;
     };
+    let mut fmtp = String::new();
+    for stat in &stats {
+        if let RtcStats::Codec(c) = stat
+            && c.codec.mime_type.contains("opus")
+        {
+            fmtp = c.codec.sdp_fmtp_line.clone();
+        }
+    }
     for stat in stats {
         if let RtcStats::InboundRtp(i) = stat {
             if i.stream.kind != "audio" {
                 continue;
             }
             return serde_json::json!({
+                "opus_fmtp": fmtp,
+                "packets_discarded": i.inbound.packets_discarded,
+                "jitter_buffer_target_delay": i.inbound.jitter_buffer_target_delay,
+                "jitter_buffer_minimum_delay": i.inbound.jitter_buffer_minimum_delay,
                 "total_samples": i.inbound.total_samples_received,
                 "concealed_samples": i.inbound.concealed_samples,
                 "silent_concealed_samples": i.inbound.silent_concealed_samples,
