@@ -224,3 +224,55 @@ impl Morpheus {
         Ok(self.session()?.set_default_notify_mode(dm, mode).await?)
     }
 }
+
+/// A group on the Settings list (the desktop's pages, as the phone shows them).
+#[derive(uniffi::Record)]
+pub struct SettingsGroup {
+    /// Stable: `Account`, `Notifications`, `Appearance`, ...
+    pub key: String,
+    /// English; the app translates it.
+    pub label: String,
+    /// The desktop's icon name (`user`, `bell`, ...).
+    pub glyph: String,
+}
+
+/// One setting the search found: its name and the group and anchor it lives under.
+#[derive(uniffi::Record)]
+pub struct SettingHit {
+    pub label: String,
+    pub group: String,
+    pub anchor: String,
+}
+
+/// The desktop's settings pages, in its order (no Startup: that is for a desktop window).
+#[uniffi::export]
+pub fn settings_groups() -> Vec<SettingsGroup> {
+    morpheus_view_model::settings::SettingsPage::listed(false)
+        .into_iter()
+        .map(|page| SettingsGroup { key: format!("{page:?}"), label: page.label().to_owned(), glyph: page.glyph().to_owned() })
+        .collect()
+}
+
+/// The settings whose name or words match every word of `query` (the desktop's search, one index).
+#[uniffi::export]
+pub fn search_settings(query: String) -> Vec<SettingHit> {
+    morpheus_view_model::settings::find_settings(&query, false)
+        .into_iter()
+        .map(|entry| SettingHit { label: entry.label.to_owned(), group: format!("{:?}", entry.page), anchor: entry.anchor.to_owned() })
+        .collect()
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    #[test]
+    fn groups_are_the_desktops_pages_and_theme_is_found_under_appearance() {
+        let keys: Vec<String> = settings_groups().into_iter().map(|g| g.key).collect();
+        assert!(keys.starts_with(&["Account".to_owned(), "Security".to_owned()]), "{keys:?}");
+        assert!(!keys.contains(&"Startup".to_owned()));
+        let hits = search_settings("theme".into());
+        assert!(hits.iter().any(|h| h.group == "Appearance" && h.anchor == "theme"), "{}", hits.len());
+        assert!(search_settings("   ".into()).is_empty());
+    }
+}

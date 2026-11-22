@@ -128,7 +128,19 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
 
+    /** The Settings group open (`Account`, `Appearance`, ...), or null on the list of groups; the setting a search found. */
+    private val _settingsPage = MutableStateFlow<String?>(null)
+    val settingsPage: StateFlow<String?> = _settingsPage.asStateFlow()
+    private val _settingsAnchor = MutableStateFlow<String?>(null)
+    val settingsAnchor: StateFlow<String?> = _settingsAnchor.asStateFlow()
+
+    fun openSettingsPage(group: String?, anchor: String? = null) {
+        _settingsPage.value = group
+        _settingsAnchor.value = anchor
+    }
+
     fun openSettings() {
+        _settingsPage.value = null
         _settingsOpen.value = true
         AppState.screen = "settings"
     }
@@ -147,6 +159,11 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     }
 
     fun closeSettings() {
+        // Back from a group is the list of groups.
+        if (_settingsPage.value != null && !_bridgesOpen.value) {
+            _settingsPage.value = null
+            return
+        }
         _bridgesOpen.value = false
         _settingsOpen.value = false
         AppState.screen = _screen.value.name()

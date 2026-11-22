@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +50,7 @@ import uniffi.morpheus_ffi.NotifyDefaults
 @Composable
 fun SettingsScreen(app: AppModel) {
     BackHandler { app.closeSettings() }
+    val page by app.settingsPage.collectAsState()
     val language by app.language.collectAsState()
     val look by app.appearance.collectAsState()
     val t: (String) -> String = remember(language) { { app.t(it) } }
@@ -66,12 +68,13 @@ fun SettingsScreen(app: AppModel) {
 
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("settings-screen")) {
         TopBar(t("Settings"), backTag = "settings-back", onBack = { app.closeSettings() }, titleTag = "settings-title")
-        Column(
+        if (page == null) SettingsGroups(app, t, Modifier.weight(1f)) else Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (page == "Appearance") {
             Heading(t("Appearance"))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.testTag("setting-theme"), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for (choice in app.morpheus.themes()) {
                     val chosen = look.theme == choice.key && look.colour == null
                     Column(
@@ -118,7 +121,9 @@ fun SettingsScreen(app: AppModel) {
                     attempt { app.useLanguage(choice.code) }
                 }
             }
+            }
 
+            if (page == "Notifications") {
             Heading(t("Notifications"))
             var defaults by remember { mutableStateOf<NotifyDefaults?>(null) }
             LaunchedEffect(Unit) { try { defaults = app.morpheus.notifyDefaults() } catch (_: Exception) {} }
@@ -150,13 +155,18 @@ fun SettingsScreen(app: AppModel) {
             Choice(t("Also in encrypted rooms (the homeserver is told the link)"), previews.inEncrypted, "previews-encrypted") {
                 attempt { app.morpheus.setPreviewSettings(previews.enabled, !previews.inEncrypted); previews = app.morpheus.previewSettings() }
             }
+            }
 
+            if (page == "Bridges") {
             Heading(t("Bridges"))
             Button({ app.openBridges() }, Modifier.testTag("settings-bridges")) { Text(t("Connect a network")) }
+            }
 
+            if (page == "Account") {
             Heading(t("Account"))
             Text(account?.userId.orEmpty(), Modifier.testTag("settings-account"), color = Palette.Muted)
             Button({ app.signOut() }, Modifier.testTag("settings-sign-out")) { Text(t("Sign out")) }
+            }
             problem?.let { Text(it, Modifier.testTag("settings-error"), color = Palette.Danger, fontSize = 14.sp) }
         }
     }
@@ -179,4 +189,54 @@ private fun Choice(label: String, chosen: Boolean, tag: String, onPick: () -> Un
         Text(if (chosen) "●" else "○", Modifier.width(24.dp), color = if (chosen) Palette.Accent else Palette.Muted, style = Type.heading)
         Text(label, style = Type.body)
     }
+}
+
+/** What the phone has under each of the desktop's groups. */
+private val supported = listOf("Account", "Notifications", "Appearance", "Bridges")
+
+/** The groups, each opening its page, with the search bar at the bottom (the desktop's index, through the core). */
+@Composable
+private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modifier) {
+    var query by remember { mutableStateOf("") }
+    val hits = remember(query) { if (query.isBlank()) emptyList() else uniffi.morpheus_ffi.searchSettings(query).filter { it.group in supported } }
+    val groups = remember { uniffi.morpheus_ffi.settingsGroups().filter { it.key in supported } }
+    Column(modifier.fillMaxWidth().testTag("settings-groups")) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            if (query.isNotBlank()) {
+                if (hits.isEmpty()) Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = Palette.Muted)
+                for (hit in hits) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = Size.row).clickable { app.openSettingsPage(hit.group, hit.anchor) }.padding(horizontal = Space.lg).testTag("settings-hit-${hit.anchor}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) { Text(t(hit.label), Modifier.weight(1f), style = Type.body); Text(t(groups.firstOrNull { it.key == hit.group }?.label ?: hit.group), color = Palette.Muted, style = Type.secondary) }
+                }
+            } else {
+                for (group in groups) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = Size.row).clickable { app.openSettingsPage(group.key) }.padding(horizontal = Space.lg).testTag("settings-group-${group.key.lowercase()}"),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.lg),
+                    ) {
+                        val icon = glyphDrawable(group.glyph)
+                        if (icon != null) GlyphIcon(icon, tint = Palette.Muted)
+                        Text(t(group.label), Modifier.weight(1f), style = Type.body)
+                        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
+        androidx.compose.material3.OutlinedTextField(
+            query, { query = it }, Modifier.fillMaxWidth().padding(Space.md).testTag("settings-search"),
+            placeholder = { Text(t("Search settings")) }, singleLine = true,
+            leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, tint = Palette.Muted) },
+        )
+    }
+}
+
+/** The generated drawable for a desktop icon name (`user`, `bell`), if there is one. */
+@Composable
+private fun glyphDrawable(name: String): Int? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val id = context.resources.getIdentifier("ic_lucide_" + name.replace('-', '_'), "drawable", context.packageName)
+    return id.takeIf { it != 0 }
 }
