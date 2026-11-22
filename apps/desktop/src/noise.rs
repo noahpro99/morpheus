@@ -144,7 +144,9 @@ impl Shell {
         // Strong given way to Standard (too slow here) is settled too.
         let settled = morpheus_call::applied_noise_suppression() == expected
             || morpheus_call::strong_too_slow().is_some();
-        if (testing || !settled) && !self.calls.mic_refresh.replace(true) {
+        // A call with Settings open moves its sensitivity meter too.
+        let metering = in_call && self.settings.is_some();
+        if (testing || metering || !settled) && !self.calls.mic_refresh.replace(true) {
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
                     .timer(Duration::from_millis(50))
@@ -762,4 +764,134 @@ pub fn advanced<V: 'static>(
         .attr("data-applied-atten", applied)
         .into_any_element();
     vec![header, body]
+}
+
+/// Input sensitivity, as in Discord (#332): "Automatically determine" and,
+/// when it is off, a threshold set by dragging over a live meter of the
+/// microphone (what is under the threshold between words is kept out: keys,
+/// a fan). The meter moves while the mic test runs or in a call.
+pub fn sensitivity<V: 'static>(cx: &mut Context<V>) -> Vec<AnyElement> {
+    use std::rc::Rc;
+    let tuning = morpheus_call::noise_tuning();
+    let (level, threshold, open) = if morpheus_call::applied_noise_suppression().is_some() {
+        morpheus_call::input_sensitivity()
+    } else {
+        (morpheus_call::GATE_MIN_DB, tuning.gate_threshold_db, false)
+    };
+    let (min, max) = (morpheus_call::GATE_MIN_DB, morpheus_call::GATE_MAX_DB);
+    let at = |db: f32| ((db - min) / (max - min)).clamp(0.0, 1.0);
+    let auto = tuning.gate_auto;
+    let shown_threshold = if auto { threshold } else { tuning.gate_threshold_db };
+    let bar: Rc<std::cell::Cell<gpui::Bounds<Pixels>>> = Rc::default();
+    let set_at = {
+        let bar = bar.clone();
+        move |x: Pixels| -> Option<f32> {
+            let bounds = bar.get();
+            let width = f32::from(bounds.size.width);
+            (width > 0.0).then(|| {
+                let fraction = (f32::from(x - bounds.origin.x) / width).clamp(0.0, 1.0);
+                (min + fraction * (max - min)).round()
+            })
+        }
+    };
+    let (down_set, move_set) = (set_at.clone(), set_at);
+    let param = NoiseTuning::PARAMS
+        .into_iter()
+        .find(|p| p.key == "gate_threshold_db")
+        .expect("a known setting");
+    let switch = NoiseTuning::SWITCHES
+        .into_iter()
+        .find(|s| s.key == "gate_auto")
+        .expect("a known switch");
+    let meter = div()
+        .id("input-sensitivity-bar")
+        .relative()
+        .w_full()
+        .h(px(20.0))
+        .flex()
+        .items_center()
+        .when(!auto, |d| d.cursor_pointer())
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |_: &mut V, event: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                if !morpheus_call::noise_tuning().gate_auto
+                    && let Some(db) = down_set(event.position.x)
+                {
+                    tune(|t| t.with_param("gate_threshold_db", db));
+                    cx.notify();
+                }
+            }),
+        )
+        .on_mouse_move(cx.listener(move |_: &mut V, event: &gpui::MouseMoveEvent, _, cx| {
+            if event.pressed_button == Some(MouseButton::Left)
+                && !morpheus_call::noise_tuning().gate_auto
+                && let Some(db) = move_set(event.position.x)
+            {
+                tune(|t| t.with_param("gate_threshold_db", db));
+                cx.notify();
+            }
+        }))
+        .child(
+            gpui::canvas(move |bounds, _, _| bar.set(bounds), |_, _, _, _| {})
+                .absolute()
+                .inset_0(),
+        )
+        .child(
+            div()
+                .relative()
+                .w_full()
+                .h(px(8.0))
+                .rounded(px(4.0))
+                .bg(theme::fill_input())
+                // The level: green while the gate lets the voice through.
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .h_full()
+                        .w(gpui::relative(at(level)))
+                        .rounded(px(4.0))
+                        .bg(if open { rgb(theme::green()) } else { rgb(theme::text_faint()) }),
+                )
+                // The threshold: a mark on the meter, a knob when it is set by hand.
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(-4.0))
+                        .left(gpui::relative(at(shown_threshold)))
+                        .ml(px(-1.0))
+                        .w(px(2.0))
+                        .h(px(16.0))
+                        .bg(rgb(theme::accent_solid())),
+                )
+                .when(!auto, |d| d.child(crate::menu::slider_handle(at(shown_threshold), 2.0))),
+        )
+        .e2e("div", "input-sensitivity")
+        .attr("data-auto", auto.to_string())
+        .attr("data-level", format!("{level:.0}"))
+        .attr("data-threshold", format!("{shown_threshold:.0}"))
+        .attr("data-open", open.to_string());
+    vec![
+        heading("Input Sensitivity"),
+        switch_row(cx, switch),
+        meter.into_any_element(),
+        div()
+            .flex()
+            .justify_between()
+            .text_size(px(0.75 * theme::REM))
+            .text_color(rgb(theme::text_muted()))
+            .child(if auto {
+                "Follows your room: keys and noise between words are kept out.".to_owned()
+            } else {
+                format!("Threshold {} {}: drag it over your level to set it.", shown(shown_threshold), param.unit)
+            })
+            .child(if morpheus_call::applied_noise_suppression().is_some() {
+                ""
+            } else {
+                "Start Mic Test to see your level."
+            })
+            .into_any_element(),
+    ]
 }

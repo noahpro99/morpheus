@@ -87,6 +87,8 @@ mod mic;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "mic_pace.rs"]
 mod mic_pace;
+#[path = "record.rs"]
+mod record;
 #[cfg(target_os = "windows")]
 #[path = "mmcss.rs"]
 mod mmcss;
@@ -2487,13 +2489,26 @@ fn log_connected(room: &Room, source: &Source) {
 async fn measure(track: RemoteAudioTrack, who: String, tx: UnboundedSender<CallEvent>) {
     let mut stream = NativeAudioStream::new(track.rtc_track(), SAMPLE_RATE as i32, 1);
     let mut hearing = false;
+    let mut recorder = record::Recorder::from_env();
+    let mut stats_at = std::time::Instant::now();
     // Quiet only after a run of quiet frames: one lost packet is not silence.
     let mut quiet_frames = 0u32;
     loop {
+        if let Some(rec) = recorder.as_ref()
+            && stats_at.elapsed() >= Duration::from_secs(1)
+        {
+            stats_at = std::time::Instant::now();
+            rec.stats(inbound_audio_stats(&track).await);
+        }
         // The tone itself, not just sound: media that fails to decrypt can
         // still decode into noise, which is not hearing anyone.
         let tone = match tokio::time::timeout(Duration::from_millis(300), stream.next()).await {
-            Ok(Some(frame)) => is_tone(&frame.data),
+            Ok(Some(frame)) => {
+                if let Some(rec) = recorder.as_mut() {
+                    rec.frame(&frame.data);
+                }
+                is_tone(&frame.data)
+            }
             Ok(None) => return,
             // Nothing at all arriving is quiet too.
             Err(_) => false,
@@ -2712,6 +2727,11 @@ async fn watch_voice(
     let mut stream = NativeAudioStream::new(track.rtc_track(), SAMPLE_RATE as i32, 1);
     // 20 ms over the attack level to start.
     let mut gate = Gate::new(2);
+    // The voice detector shared with the transmit gate (#332): a run of
+    // frames over the room's floor with a pitch, held a moment after.
+    let mut vad = crate::gate::Gate::new();
+    let mut vad_frames = 0usize;
+    let mut vad_open = false;
     let mut reported: Option<bool> = None;
     let mut last_frame = std::time::Instant::now();
     // Frames have arrived (and not stopped for a second).
@@ -2725,6 +2745,9 @@ async fn watch_voice(
                 if echo {
                     mic::far_end(&who, &frame.data);
                 }
+                vad_frames += 1;
+                let verdict = vad.push_frame(&frame.data);
+                vad_open = vad_frames > crate::gate::LOOKAHEAD && verdict.open;
                 rms(&frame.data) / 32_768.0
             }
             Ok(None) => break,
@@ -2733,6 +2756,9 @@ async fn watch_voice(
                 if got && last_frame.elapsed() > Duration::from_secs(1) {
                     got = false;
                     gate.reset();
+                    vad.reset();
+                    vad_frames = 0;
+                    vad_open = false;
                     if reported.take().is_some()
                         && speech.send(Speech::Unmeasured(who.clone())).is_err()
                     {
@@ -2745,7 +2771,12 @@ async fn watch_voice(
         if !got {
             continue;
         }
-        let now = gate.feed(level, std::time::Instant::now());
+        let now = if crate::gate::legacy() {
+            gate.feed(level, std::time::Instant::now())
+        } else {
+            vad_open
+        };
+        record::note_speaking(&who, now);
         if reported != Some(now) {
             reported = Some(now);
             let sent = speech.send(Speech::Measured {
@@ -2766,6 +2797,12 @@ async fn watch_voice(
 
 /// Measure this device's microphone while it is not muted.
 async fn watch_mic(mic: LocalAudioTrack, me: String, speech: UnboundedSender<Speech>) {
+    // Our own capture decides when we are heard (the gate); the ring shows that.
+    // Without it (phones), or in the legacy mode, WebRTC's level is measured.
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    let own_gate = !crate::gate::legacy();
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    let own_gate = false;
     use livekit::webrtc::stats::RtcStats;
     let mut gate = Gate::new(1);
     let mut reported: Option<bool> = None;
@@ -2806,7 +2843,11 @@ async fn watch_mic(mic: LocalAudioTrack, me: String, speech: UnboundedSender<Spe
             continue;
         };
         failures = 0;
-        let now = gate.feed(level, std::time::Instant::now());
+        let now = if own_gate && crate::applied_noise_suppression().is_some() {
+            crate::input_sensitivity().2
+        } else {
+            gate.feed(level, std::time::Instant::now())
+        };
         if reported != Some(now) {
             reported = Some(now);
             if speech
@@ -2977,4 +3018,35 @@ impl Drop for Aborting {
     fn drop(&mut self) {
         self.0.abort();
     }
+}
+
+/// What WebRTC says about the voice arriving on `track` (the test recording,
+/// `MORPHEUS_CALL_RECORD`): concealment, jitter buffer and loss.
+async fn inbound_audio_stats(track: &RemoteAudioTrack) -> serde_json::Value {
+    use livekit::webrtc::stats::RtcStats;
+    let Ok(stats) = track.get_stats().await else {
+        return serde_json::Value::Null;
+    };
+    for stat in stats {
+        if let RtcStats::InboundRtp(i) = stat {
+            if i.stream.kind != "audio" {
+                continue;
+            }
+            return serde_json::json!({
+                "total_samples": i.inbound.total_samples_received,
+                "concealed_samples": i.inbound.concealed_samples,
+                "silent_concealed_samples": i.inbound.silent_concealed_samples,
+                "concealment_events": i.inbound.concealment_events,
+                "inserted_for_deceleration": i.inbound.inserted_samples_for_deceleration,
+                "removed_for_acceleration": i.inbound.removed_samples_for_acceleration,
+                "jitter_buffer_delay": i.inbound.jitter_buffer_delay,
+                "jitter_buffer_emitted": i.inbound.jitter_buffer_emitted_count,
+                "packets_received": i.received.packets_received,
+                "packets_lost": i.received.packets_lost,
+                "jitter": i.received.jitter,
+                "fec_packets_received": i.inbound.fec_packets_received,
+            });
+        }
+    }
+    serde_json::Value::Null
 }

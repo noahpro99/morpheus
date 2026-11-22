@@ -23,6 +23,14 @@ mod imp;
 
 pub use imp::*;
 
+#[path = "gate.rs"]
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
+mod gate;
+pub use gate::{AUTO_MARGIN_DB, AUTO_MIN_DB, MAX_DB as GATE_MAX_DB, MIN_DB as GATE_MIN_DB};
+
 #[path = "noise.rs"]
 #[cfg_attr(
     not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
@@ -30,7 +38,7 @@ pub use imp::*;
 )]
 mod noise;
 pub use noise::{
-    NoiseModel, NoiseParam, NoiseSwitch, NoiseTuning, applied_noise_tuning, noise_tuning, set_noise_tuning,
+    NoiseModel, NoiseParam, NoiseSwitch, NoiseTuning, applied_noise_tuning, input_sensitivity, noise_tuning, set_noise_tuning,
     NoiseSuppression, applied_noise_suppression, noise_suppression, set_noise_suppression,
     strong_too_slow,
 };

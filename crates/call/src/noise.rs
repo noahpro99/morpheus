@@ -3,7 +3,7 @@
 //! (a neural suppressor, DeepFilterNet 3, on desktops). Chosen once for all
 //! calls and the mic test; a call going changes over at once.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NoiseSuppression {
@@ -229,6 +229,11 @@ pub struct NoiseTuning {
     pub echo_cancellation: bool,
     pub auto_gain: bool,
     pub high_pass: bool,
+    /// Input sensitivity, as in Discord (#332): the threshold is found
+    /// automatically, or is [`Self::gate_threshold_db`].
+    pub gate_auto: bool,
+    /// The manual threshold, dBFS (-100: the gate is off).
+    pub gate_threshold_db: f32,
 }
 
 impl Default for NoiseTuning {
@@ -246,12 +251,14 @@ impl Default for NoiseTuning {
             echo_cancellation: true,
             auto_gain: true,
             high_pass: true,
+            gate_auto: true,
+            gate_threshold_db: -50.0,
         }
     }
 }
 
 impl NoiseTuning {
-    pub const PARAMS: [NoiseParam; 7] = [
+    pub const PARAMS: [NoiseParam; 8] = [
         NoiseParam {
             key: "atten_limit_db",
             label: "Attenuation limit",
@@ -336,9 +343,21 @@ impl NoiseTuning {
             get: |t| t.max_fall_db,
             set: |t, v| t.max_fall_db = v,
         },
+        NoiseParam {
+            key: "gate_threshold_db",
+            label: "Input sensitivity",
+            about: "What is quieter than this, between words, is kept out (keys, a fan, breathing); the far left lets everything in. Used when Automatically determine is off.",
+            unit: "dB",
+            min: -100.0,
+            max: 0.0,
+            step: 1.0,
+            default: -50.0,
+            get: |t| t.gate_threshold_db,
+            set: |t, v| t.gate_threshold_db = v,
+        },
     ];
 
-    pub const SWITCHES: [NoiseSwitch; 4] = [
+    pub const SWITCHES: [NoiseSwitch; 5] = [
         NoiseSwitch {
             key: "post_filter",
             label: "Post-filter",
@@ -370,6 +389,14 @@ impl NoiseTuning {
             standard: true,
             get: |t| t.high_pass,
             set: |t, v| t.high_pass = v,
+        },
+        NoiseSwitch {
+            key: "gate_auto",
+            label: "Automatically determine input sensitivity",
+            about: "Lets the voice through and keeps out what is not speech between words, such as keys, with a threshold that follows your room.",
+            standard: true,
+            get: |t| t.gate_auto,
+            set: |t, v| t.gate_auto = v,
         },
     ];
 
@@ -411,11 +438,19 @@ impl NoiseTuning {
         } else {
             0
         };
-        match mode {
-            NoiseSuppression::Strong => apm + self.model.delay(),
-            NoiseSuppression::Standard => apm + APM_NS_DELAY,
-            NoiseSuppression::Off => apm,
-        }
+        let suppressor = match mode {
+            NoiseSuppression::Strong => self.model.delay(),
+            NoiseSuppression::Standard => APM_NS_DELAY,
+            NoiseSuppression::Off => 0,
+        };
+        // The gate looks ahead by as much as the suppressor already delays
+        // (whole frames), and by its own look-ahead where that is more.
+        let gate = if crate::gate::Gate::active(self.gate_auto, self.gate_threshold_db) {
+            (crate::gate::LOOKAHEAD * 480).saturating_sub(suppressor / 480 * 480)
+        } else {
+            0
+        };
+        apm + suppressor + gate
     }
 
     /// [`Self::delay_samples`] in milliseconds.
@@ -540,7 +575,13 @@ mod tuning_tests {
 
     #[test]
     fn the_latency_follows_the_mode_and_the_echo_canceller() {
-        let on = NoiseTuning::default();
+        // The input sensitivity gate looks 30 ms ahead: what the suppressor
+        // does not already hold back (Strong's model does) is added.
+        let gated = NoiseTuning::default();
+        assert_eq!(gated.added_latency_ms(NoiseSuppression::Strong, true), 39.0);
+        assert_eq!(gated.added_latency_ms(NoiseSuppression::Standard, true), 45.0);
+        assert_eq!(gated.added_latency_ms(NoiseSuppression::Off, true), 39.0);
+        let on = NoiseTuning { gate_auto: false, gate_threshold_db: -100.0, ..NoiseTuning::default() };
         let off = on.with_switch("echo_cancellation", false);
         assert_eq!(on.added_latency_ms(NoiseSuppression::Strong, true), 39.0);
         assert_eq!(off.added_latency_ms(NoiseSuppression::Strong, true), 30.0);
@@ -566,4 +607,31 @@ mod tests {
         );
         assert_eq!(NoiseSuppression::from_json(""), NoiseSuppression::Strong);
     }
+}
+
+// ------------------------------------------------------ input sensitivity meter
+
+static INPUT_DB: AtomicU32 = AtomicU32::new(0);
+static GATE_DB: AtomicU32 = AtomicU32::new(0);
+static GATE_OPEN: AtomicU8 = AtomicU8::new(0);
+
+/// The capture tells what it measures: the input's level and the threshold
+/// (dBFS), and whether the gate lets the voice through (`None`: not yet).
+pub(crate) fn note_gate(level: f32, threshold: f32, open: Option<bool>) {
+    INPUT_DB.store(level.to_bits(), Ordering::Relaxed);
+    GATE_DB.store(threshold.to_bits(), Ordering::Relaxed);
+    if let Some(open) = open {
+        GATE_OPEN.store(if open { 2 } else { 1 }, Ordering::Relaxed);
+    }
+}
+
+/// What the capture measures for input sensitivity: the level of the voice
+/// going in (dBFS, -100 when nothing is captured), the threshold in use, and
+/// whether the gate is open.
+pub fn input_sensitivity() -> (f32, f32, bool) {
+    (
+        f32::from_bits(INPUT_DB.load(Ordering::Relaxed)).max(-100.0),
+        f32::from_bits(GATE_DB.load(Ordering::Relaxed)),
+        GATE_OPEN.load(Ordering::Relaxed) == 2,
+    )
 }

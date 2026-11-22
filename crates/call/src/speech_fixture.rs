@@ -240,3 +240,51 @@ pub fn frame_energy(x: &[f32], f: usize, delay: usize) -> f64 {
     let a = f * HOP + delay;
     x.get(a..a + HOP).map_or(0.0, energy)
 }
+
+/// Keyboard typing: a click at irregular gaps (80-260 ms), each a key going
+/// down (a 3 ms broadband burst over a short 300 Hz thump) and, 90 ms
+/// later, the key coming up (a quieter, shorter one). `peak` is the loudest
+/// sample of a key-down.
+pub struct Typing {
+    pub clicks: Vec<f32>,
+    /// Per 10 ms frame: a click (or its tail) is sounding.
+    pub sounding: Vec<bool>,
+}
+
+pub fn typing(secs: usize, peak: f32, seed: u32) -> Typing {
+    let n = secs * SR;
+    let mut state = seed | 1;
+    fn random(state: &mut u32) -> f32 {
+        *state ^= *state << 13;
+        *state ^= *state >> 17;
+        *state ^= *state << 5;
+        (*state as f32 / u32::MAX as f32) * 2.0 - 1.0
+    }
+    let mut clicks = vec![0f32; n];
+    let burst = |state: &mut u32, out: &mut [f32], at: usize, amp: f32, tau_ms: f32| {
+        let tau = tau_ms * SR as f32 / 1000.0;
+        let (mut lp, mut prev) = (0f32, 0f32);
+        for k in 0..(tau * 6.0) as usize {
+            let Some(slot) = out.get_mut(at + k) else { break };
+            let env = (-(k as f32) / tau).exp();
+            let white = random(state);
+            // High-passed noise (keys are bright) over a low thump.
+            let hp = white - prev;
+            prev = white;
+            lp += 0.03 * (white - lp);
+            let thump = (std::f32::consts::TAU * 300.0 * k as f32 / SR as f32).sin() * (-(k as f32) / (tau * 2.0)).exp();
+            *slot += amp * (0.7 * hp * env + 0.5 * thump + 2.0 * lp * env * 0.2);
+        }
+    };
+    let mut at = SR / 5;
+    while at < n {
+        let amp = peak * (0.6 + 0.4 * random(&mut state).abs());
+        burst(&mut state, &mut clicks, at, amp, 1.0);
+        burst(&mut state, &mut clicks, at + SR * 9 / 100, amp * 0.4, 0.7);
+        at += SR * 80 / 1000 + ((random(&mut state).abs()) * SR as f32 * 0.18) as usize;
+    }
+    let sounding = (0..n / HOP)
+        .map(|f| clicks[f * HOP..(f + 1) * HOP].iter().any(|v| v.abs() > peak * 0.02))
+        .collect();
+    Typing { clicks, sounding }
+}

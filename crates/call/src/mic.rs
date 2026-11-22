@@ -57,6 +57,11 @@ pub struct Processor {
     denoiser: Option<Denoiser>,
     tuning: NoiseTuning,
     scratch: Vec<f32>,
+    /// Input sensitivity (#332) and the frames it holds back so that it can look ahead.
+    gate: crate::gate::Gate,
+    gate_delay: std::collections::VecDeque<i16>,
+    /// The microphone frame before, for the gate's pitch.
+    prev_raw: Vec<i16>,
 }
 
 impl Processor {
@@ -68,6 +73,9 @@ impl Processor {
             denoiser: None,
             tuning: NoiseTuning::default(),
             scratch: vec![0.0; FRAME],
+            gate: crate::gate::Gate::new(),
+            gate_delay: std::collections::VecDeque::new(),
+            prev_raw: Vec::new(),
         }
     }
 
@@ -106,6 +114,10 @@ impl Processor {
             denoiser.tune(&tuning);
         }
         self.tuning = tuning;
+        self.gate.set(tuning.gate_auto, tuning.gate_threshold_db);
+        if !crate::gate::Gate::active(tuning.gate_auto, tuning.gate_threshold_db) {
+            self.gate.reset();
+        }
         // Another model: loaded now (about 0.2 s), the old one running till then.
         if model_changed && self.denoiser.is_some() && self.mode == NoiseSuppression::Strong {
             self.load_model();
@@ -191,7 +203,53 @@ impl Processor {
         if frame.len() != FRAME {
             return false;
         }
+        // What the gate measures: the microphone as it comes, as Discord's meter
+        // does (not after the gain control, which pumps after a key and would
+        // move the floor).
+        let level = crate::gate::level_db(frame);
+        let sharp = crate::gate::impulsive(frame);
+        let voiced = level > self.gate.threshold_db() && crate::gate::voiced(&self.prev_raw, frame);
+        self.prev_raw.extend_from_slice(frame);
+        let extra = self.prev_raw.len().saturating_sub(2 * FRAME);
+        self.prev_raw.drain(..extra);
         let _ = self.apm.process_stream(frame, SAMPLE_RATE as i32, 1);
+        let ran = self.suppress(frame, neural);
+        self.gate_frame(frame, level, sharp, voiced);
+        ran
+    }
+
+    /// Input sensitivity (#332): the frame lowered between words, after the
+    /// suppressor, which already holds the voice back by its own delay.
+    fn gate_frame(&mut self, frame: &mut [i16], level: f32, sharp: bool, voiced: bool) {
+        let t = self.tuning;
+        crate::noise::note_gate(level, self.gate.threshold_db(), None);
+        if !crate::gate::Gate::active(t.gate_auto, t.gate_threshold_db) {
+            self.gate_delay.clear();
+            return;
+        }
+        let held = match self.applied() {
+            NoiseSuppression::Strong => self.denoiser.as_ref().map_or(0, |d| d.delay() / FRAME),
+            _ => 0,
+        };
+        let want = crate::gate::LOOKAHEAD.saturating_sub(held) * FRAME;
+        while self.gate_delay.len() < want {
+            self.gate_delay.push_back(0);
+        }
+        while self.gate_delay.len() > want {
+            self.gate_delay.pop_front();
+        }
+        if want > 0 {
+            self.gate_delay.extend(frame.iter().copied());
+            for s in frame.iter_mut() {
+                *s = self.gate_delay.pop_front().unwrap_or(0);
+            }
+        }
+        let verdict = self.gate.push_features(level, sharp, voiced);
+        self.gate.apply(frame, verdict);
+        crate::noise::note_gate(level, self.gate.threshold_db(), Some(verdict.open));
+    }
+
+    fn suppress(&mut self, frame: &mut [i16], neural: bool) -> bool {
         if self.mode != NoiseSuppression::Strong {
             return false;
         }
@@ -613,7 +671,9 @@ fn far_frame(shared: &Shared) -> [i16; FRAME] {
 /// The capture thread: 10 ms at a time until stopped.
 fn capture(shared: &Shared, mode: AudioMode) {
     let counters = shared.counters.clone();
-    let live = mode == AudioMode::Platform;
+    // A clip is processed as a real microphone is (echo, gain, high-pass).
+    let clip = mode == AudioMode::Tone && std::env::var_os("MORPHEUS_CALL_CLIP").is_some();
+    let live = mode == AudioMode::Platform || clip;
     let mut processor = Processor::new(noise_suppression(), live);
     processor.set_tuning(noise_tuning());
     // The model first (~0.2 s, on this thread: it cannot move between
@@ -835,6 +895,13 @@ impl Report {
     }
 }
 
+/// The recording `MORPHEUS_CALL_CLIP` names, if any (a test run, #332).
+fn clip_from_env() -> Option<Vec<i16>> {
+    let bytes = std::fs::read(std::env::var_os("MORPHEUS_CALL_CLIP")?).ok()?;
+    let clip: Vec<i16> = bytes.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+    (!clip.is_empty()).then_some(clip)
+}
+
 /// The test tone (440 Hz, 8000 of 32768), the "voice" of test runs.
 fn add_tone(frame: &mut [i16], phase: &mut f32) {
     let step = 440.0 * std::f32::consts::TAU / SAMPLE_RATE as f32;
@@ -847,7 +914,9 @@ fn add_tone(frame: &mut [i16], phase: &mut f32) {
 /// Where the microphone's frames come from.
 enum Input {
     /// Test runs: a faint noise floor, in real time.
-    Room { next: Instant, seed: u32 },
+    /// With `MORPHEUS_CALL_CLIP` (raw 48 kHz mono s16le), that recording on a loop
+    /// instead, through the same processing as a real microphone (#332).
+    Room { next: Instant, seed: u32, clip: Option<(Vec<i16>, usize)> },
     /// The chosen microphone (or the system's).
     Device(Device),
     /// No microphone: nothing, a frame's time at a time.
@@ -860,6 +929,7 @@ impl Input {
             return Self::Room {
                 next: Instant::now(),
                 seed: 0x9e37_79b9,
+                clip: clip_from_env().map(|clip| (clip, 0)),
             };
         }
         match Device::open(counters.clone()) {
@@ -875,7 +945,7 @@ impl Input {
     /// not come yet (try again).
     fn next(&mut self) -> Option<(Vec<i16>, Instant)> {
         match self {
-            Self::Room { next, seed } => {
+            Self::Room { next, seed, clip } => {
                 let now = Instant::now();
                 if *next > now {
                     thread::sleep(*next - now);
@@ -887,6 +957,11 @@ impl Input {
                 } else {
                     *next
                 } + Duration::from_millis(10);
+                if let Some((clip, at)) = clip {
+                    let frame = (0..FRAME).map(|k| clip[(*at + k) % clip.len()]).collect();
+                    *at = (*at + FRAME) % clip.len();
+                    return Some((frame, Instant::now()));
+                }
                 Some((
                     (0..FRAME)
                         .map(|_| {
@@ -1547,7 +1622,13 @@ mod tests {
 
     /// The whole of what the microphone goes through, Off then Strong.
     fn run(mode: NoiseSuppression, input: &[f32]) -> Vec<f32> {
+        // The suppressors alone: the gate (input sensitivity) has its own tests.
+        run_tuned(mode, input, NoiseTuning { gate_auto: false, gate_threshold_db: -100.0, ..NoiseTuning::default() })
+    }
+
+    fn run_tuned(mode: NoiseSuppression, input: &[f32], tuning: NoiseTuning) -> Vec<f32> {
         let mut processor = Processor::new(mode, true);
+        processor.set_tuning(tuning);
         if processor.needs_model() {
             processor.load_model();
         }
@@ -1621,7 +1702,7 @@ mod tests {
             NoiseSuppression::Standard,
             NoiseSuppression::Strong,
         ] {
-            let out = run(mode, &input);
+            let out = run_tuned(mode, &input, NoiseTuning::default());
             let max_lag = 100 * 48;
             let span = 48_000..input.len() - max_lag;
             let lag = (0..max_lag)
@@ -1707,6 +1788,87 @@ mod tests {
             }
         }
         assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    /// What each mode lets through of keyboard clicks between words, against
+    /// the voice (#332): the clicks' mean frame energy in the pauses, in dB
+    /// under the voice's, and the voice kept, against Off. Printed for every
+    /// mode (`--nocapture`).
+    #[test]
+    fn keyboard_clicks_between_words_are_mostly_taken_out() {
+        use crate::imp::speech_fixture::{frame_energy, typing};
+        for (name, peak) in [("loud keys", 0.15f32), ("soft keys", 0.03)] {
+            let speech = noisy_speech(10, 0.05, 0.004);
+            let keys = typing(10, peak, 7);
+            let mix: Vec<f32> = speech
+                .mix()
+                .iter()
+                .zip(&keys.clicks)
+                .map(|(m, k)| m + k)
+                .collect();
+            let off = run(NoiseSuppression::Off, &mix);
+            let loose = NoiseTuning { floor_margin_db: -12.0, max_fall_db: 10.0, atten_limit_db: 60.0, ..NoiseTuning::default() };
+            for (label, mode, tuning) in [("", NoiseSuppression::Off, NoiseTuning::default()), ("", NoiseSuppression::Standard, NoiseTuning::default()), ("", NoiseSuppression::Strong, NoiseTuning::default()), (" (no keep-floor, 60 dB, fast fall)", NoiseSuppression::Strong, loose)] {
+                let out = run_tuned(mode, &mix, tuning);
+                let mut probe = Processor::new(mode, true);
+                if probe.needs_model() {
+                    probe.load_model();
+                }
+                let delay = probe.delay();
+                let frames = out.len() / HOP;
+                let mean = |sel: &dyn Fn(usize) -> bool, x: &[f32], d: usize| {
+                    let fs: Vec<usize> = (100..frames - 10).filter(|f| sel(*f)).collect();
+                    fs.iter().map(|f| frame_energy(x, *f, d)).sum::<f64>() / fs.len().max(1) as f64
+                };
+                let key_only = |f: usize| speech.pause[f] && keys.sounding[f];
+                let vowel = |f: usize| speech.speech[f];
+                let voice_out = mean(&vowel, &out, delay);
+                let keys_out = mean(&key_only, &out, delay);
+                let keys_in = mean(&key_only, &mix, 0);
+                let voice_off = mean(&vowel, &off, 0);
+                let keys_vs_voice = 10.0 * (keys_out / voice_out).log10();
+                let voice_vs_off = 10.0 * (voice_out / voice_off).log10();
+                // Chopping: vowel frames that lose over 10 dB against Off.
+                let chopped = (100..frames - 10)
+                    .filter(|f| speech.speech[*f])
+                    .filter(|f| frame_energy(&out, *f, delay) < frame_energy(&off, *f, 0) * 0.1)
+                    .count();
+                eprintln!(
+                    "CLICKS {name} {mode:?}{label}: clicks {keys_vs_voice:.1} dB under the voice (input {:.1}), clicks cut {:.1} dB, voice {voice_vs_off:.1} dB vs off, {chopped} vowel frames lost >10 dB",
+                    10.0 * (keys_in / mean(&vowel, &mix, 0)).log10(),
+                    10.0 * (keys_out / keys_in).log10(),
+                );
+            }
+        }
+    }
+
+    /// Writes the two-client voice e2e's clips (`MORPHEUS_CLIP_OUT=<dir>`):
+    /// `speech_keys.pcm` (voice, a quiet room and loud typing, 10 s, 48 kHz
+    /// mono s16le), `voice.pcm` (the voice alone) and `frames.mask` (a byte
+    /// per 10 ms frame: 1 middle of a vowel, 2 pause, 4 a key sounding).
+    #[test]
+    #[ignore = "writes the e2e fixtures"]
+    fn write_the_e2e_clips() {
+        use crate::imp::speech_fixture::typing;
+        let dir = std::path::PathBuf::from(std::env::var_os("MORPHEUS_CLIP_OUT").expect("MORPHEUS_CLIP_OUT"));
+        let speech = noisy_speech(10, 0.05, 0.004);
+        // Two seconds of typing, five times over: the clip repeats every 2 s in its
+        // frame classes, so a recording can be lined up without ambiguity.
+        let once = typing(2, 0.15, 7);
+        let keys = crate::imp::speech_fixture::Typing {
+            clicks: once.clicks.repeat(5),
+            sounding: once.sounding.repeat(5),
+        };
+        let pcm = |x: &[f32]| -> Vec<u8> {
+            x.iter().flat_map(|v| ((v * 32767.0) as i16).to_le_bytes()).collect()
+        };
+        let mix: Vec<f32> = speech.mix().iter().zip(&keys.clicks).map(|(m, k)| m + k).collect();
+        std::fs::write(dir.join("speech_keys.pcm"), pcm(&mix)).expect("write");
+        std::fs::write(dir.join("voice.pcm"), pcm(&speech.voice)).expect("write");
+        let mask: Vec<u8> = (0..speech.speech.len())
+            .map(|f| u8::from(speech.speech[f]) | (u8::from(speech.pause[f]) << 1) | (u8::from(keys.sounding[f]) << 2))
+            .collect();
+        std::fs::write(dir.join("frames.mask"), mask).expect("write");
     }
 
     #[test]
@@ -2337,6 +2499,7 @@ mod tuning_tests {
         std::fs::copy(&file, dir.join(crate::noise_model::LOW_DELAY_FILE)).expect("copy");
         crate::noise_model::set_model_dir(dir.clone());
         let mut processor = strong();
+        processor.set_tuning(NoiseTuning { gate_auto: false, gate_threshold_db: -100.0, ..processor.tuning() });
         let before = processor.delay();
         let tuning = NoiseTuning {
             model: crate::noise::NoiseModel::DeepFilterNet3LowDelay,

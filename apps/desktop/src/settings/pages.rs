@@ -619,6 +619,7 @@ impl SettingsView {
         noise.push(crate::noise_model::picker(cx, |_: &mut Self, model, cx| {
             cx.emit(super::NoiseModelChosen(model))
         }));
+        noise.extend(crate::noise::sensitivity(cx));
         noise.extend(crate::noise::advanced(
             cx,
             self.noise_advanced,
