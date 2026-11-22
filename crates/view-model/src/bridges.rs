@@ -329,6 +329,17 @@ pub fn local_qr(reply: &Reply) -> Option<Vec<u8>> {
     reply.image.then(|| qr_png(&qr_payload_of(&reply.text)?)).flatten()
 }
 
+/// Whether the message `id` stands after my last message in the conversation's order (`order`:
+/// for each message, whether it is mine, and its id): a bot's answer. What the timeline loads
+/// from before (older pages arrive after the first batch, inserted above my message) is history,
+/// not an answer, and must not move a login on.
+pub fn after_my_last(order: &[(bool, &str)], id: &str) -> bool {
+    let Some(at) = order.iter().position(|(_, other)| *other == id) else {
+        return false;
+    };
+    order.iter().rposition(|(mine, _)| *mine).map_or(true, |last| at > last)
+}
+
 /// What a bot message is now, to tell an edit (the same message with new content, as a
 /// QR code that is replaced every twenty seconds) from a change that is no news.
 pub fn fingerprint(kind: &morpheus_core::MessageKind) -> String {
@@ -713,6 +724,18 @@ fn first_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_what_stands_after_my_last_message_is_an_answer() {
+        // Old pages are inserted above my command as they load: not answers.
+        let order = [(false, "old-reply"), (true, "old-command"), (false, "old-ok"), (true, "login"), (false, "flows")];
+        assert!(after_my_last(&order, "flows"));
+        assert!(!after_my_last(&order, "old-ok"));
+        assert!(!after_my_last(&order, "old-reply"));
+        assert!(!after_my_last(&order, "gone"), "a message that is not in the list is not an answer");
+        // A bot that speaks first in a room where I have said nothing: it counts.
+        assert!(after_my_last(&[(false, "hello")], "hello"));
+    }
+
 
     fn text(t: &str) -> Reply {
         Reply { text: t.into(), image: false }
