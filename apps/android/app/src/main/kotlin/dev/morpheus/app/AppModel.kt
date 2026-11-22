@@ -405,6 +405,8 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         if (_room.value != null) closeRoom()
         _tab.value = tab
     }
+    /** The list of the last run, read once: the first frame draws it (no skeleton for data that is kept; #317). */
+    private val startBar: Sidebar? = if (kept?.getString("account", null)?.split("\n")?.size == 3) morpheus.cachedSidebar() else null
 
     /** The channel list while signed in; the Rust side stops pushing when nobody collects. */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -413,11 +415,11 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             when (it) {
                 is Screen.SignedIn -> morpheus.sidebars()
                 // The list of the last run, until the session is back.
-                is Screen.Restoring -> kotlinx.coroutines.flow.flow { morpheus.cachedSidebar()?.let { bar -> emit(bar) } }
+                is Screen.Restoring -> kotlinx.coroutines.flow.flow { startBar?.let { bar -> emit(bar) } }
                 else -> emptyFlow()
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), startBar)
 
     init {
         _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) AppState.sessionBack(); signedInChanged(it) }.launchIn(viewModelScope)
@@ -430,7 +432,8 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }.launchIn(viewModelScope)
         // A session and a list from the last run: draw them now, restore the session behind them.
         kept?.getString("account", null)?.split("\n")?.takeIf { it.size == 3 }?.let { (user, server, device) ->
-            val bar = morpheus.cachedSidebar() ?: return@let
+            val bar = startBar ?: return@let
+            AppState.mark("cached list read")
             _screen.value = Screen.Restoring(Account(userId = user, homeserver = server, deviceId = device))
             // The room that was open is drawn from its kept rows too (#313); it goes live once the session is back.
             kept?.getString("room", null)?.let { id ->
@@ -546,13 +549,19 @@ object AppState {
     }
 
     fun sessionBack() {
-        if (sessionMs == 0L) sessionMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+        if (sessionMs == 0L) { sessionMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime(); mark("session restored") }
     }
 
     fun listDrawn() {
-        if (firstListMs == 0L) firstListMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
+        if (firstListMs == 0L) { firstListMs = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime(); mark("first list drawn") }
     }
 
+    /** Named points of the start, in ms from the process start (the debug bridge reports them; #317). */
+    val marks = java.util.concurrent.ConcurrentLinkedQueue<Pair<String, Long>>()
+
+    fun mark(name: String) {
+        if (marks.none { it.first == name }) marks.add(name to android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime())
+    }
 }
 
 /** The three places of the bottom bar. */

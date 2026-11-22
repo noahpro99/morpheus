@@ -24,7 +24,9 @@ import dev.morpheus.app.Screen
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun Root(model: AppModel) {
+    dev.morpheus.app.AppState.mark("root: composing")
     val screen by model.screen.collectAsState()
+    androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.mark("root composed: ${screen.name()}") }
     Box(
         Modifier
             .fillMaxSize()
