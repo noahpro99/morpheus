@@ -60,6 +60,23 @@ impl Session {
         })
     }
 
+    /// What a matrix.to link to a room names, when anyone may join it: its address
+    /// (`#alias:server`), else its id with a server to find it by. None for a room
+    /// that is not public: a private room's id is never given out (#330).
+    pub fn public_room_link(&self, room_id: OwnedRoomId) -> CoreFuture<Option<String>> {
+        let room = self.room(&room_id);
+        self.core.run(async move {
+            let room = room?;
+            if !matches!(room.join_rule(), Some(JoinRule::Public)) {
+                return Ok(None);
+            }
+            Ok(Some(match room.canonical_alias() {
+                Some(alias) => alias.to_string(),
+                None => format!("{room_id}?via={}", room_id.server_name().map(|s| s.to_string()).unwrap_or_default()),
+            }))
+        })
+    }
+
     /// Whether a room is end-to-end encrypted, asking the server when this
     /// device has not synced its state yet.
     pub fn is_encrypted(&self, room_id: OwnedRoomId) -> CoreFuture<bool> {

@@ -75,6 +75,8 @@ mod screen_quality;
 mod search;
 mod settings;
 mod shell;
+mod rich_presence;
+mod status_feed;
 mod sounds;
 mod streamer;
 mod switcher;
@@ -670,6 +672,8 @@ pub(crate) fn quit(cx: &mut App) {
     if QUITTING.swap(true, Ordering::SeqCst) {
         return;
     }
+    rich_presence::shutdown();
+    status_feed::shutdown();
     if let Some(root) = cx.try_global::<MainRoot>().map(|root| root.0.clone()) {
         root.update(cx, |root, cx| {
             root.with_shell(cx, |shell, _| shell.leave_before_quit())
@@ -862,6 +866,10 @@ fn init_logging() {
 }
 
 fn main() {
+    if status_feed::native_messaging_requested() {
+        status_feed::run_native_host();
+        return;
+    }
     // Sounds at the volume the app plays them: WirePlumber otherwise saves a
     // volume per app name and puts it back on every stream (across restarts),
     // and one saved at 0 silenced every chime and ring for good. PulseAudio's

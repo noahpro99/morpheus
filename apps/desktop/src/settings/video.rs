@@ -300,7 +300,7 @@ impl SettingsView {
 
 /// A setting with a switch beside its name and what it does (`div.{class}`
 /// holding `button.{switch}[data-on]`).
-fn switch_row(
+pub(super) fn switch_row(
     class: &'static str,
     switch: &'static str,
     label: &'static str,

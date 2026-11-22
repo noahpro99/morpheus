@@ -289,6 +289,7 @@ impl Shell {
         shell.start_patch_notes(&session, cx);
         shell.start_calls(&session, cx);
         shell.start_profile_sync(&session, cx);
+        shell.start_activity_status(&session, cx);
         shell.make_search_box(cx);
         shell.start_lock_clock(cx);
         let subscribed = session.room_list();

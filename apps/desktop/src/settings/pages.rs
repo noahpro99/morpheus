@@ -1647,7 +1647,8 @@ impl SettingsView {
         } else {
             [name_section, picture_section]
         };
-        sections.into_iter().chain(note).collect()
+        let activity = self.activity_sections(cx);
+        sections.into_iter().chain(note).chain(activity).collect()
     }
 }
 

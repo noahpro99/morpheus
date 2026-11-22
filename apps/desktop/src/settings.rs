@@ -25,6 +25,7 @@ pub(crate) mod pages;
 mod bridges;
 pub(crate) mod colour_field;
 mod video;
+mod activity;
 
 use crate::tab::Tabbable as _;
 use crate::{
