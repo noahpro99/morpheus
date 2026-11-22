@@ -91,6 +91,7 @@ impl Core {
                         root,
                         session_store::resolve(root, kind).as_ref(),
                     )?;
+                    blocking.merge_duplicates();
                     let dir = blocking.active_account_dir();
                     let stored = session_store::resolve(&dir, kind).load()?;
                     Ok((dir, stored))
@@ -383,7 +384,10 @@ async fn persist_and_start(
     crate::rt::spawn_blocking(move || -> Result<()> {
         session_store::resolve(&account_dir, kind).save(&stored)?;
         // The account just signed in is the one to restore next time.
-        crate::accounts::write_active(blocking.data_dir(), &blocking.account_key(&account_dir))
+        crate::accounts::write_active(blocking.data_dir(), &blocking.account_key(&account_dir))?;
+        // Signing in to an account already listed replaces it (#337).
+        blocking.drop_duplicates_of(&account_dir);
+        Ok(())
     })
     .await??;
     Session::start(core, client, dir).await
