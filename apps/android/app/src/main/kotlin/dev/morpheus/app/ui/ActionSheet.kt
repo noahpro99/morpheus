@@ -110,12 +110,8 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
         val half = with(LocalDensity.current) { (maxHeight * 0.5f).toPx() }
         val hidden = with(LocalDensity.current) { maxHeight.toPx() }
         val top = remember { Animatable(hidden) }
-        val dismiss: () -> Unit = {
-            scope.launch {
-                top.animateTo(hidden, tween(160))
-                model.closeSheet()
-            }
-        }
+        // Gone at once: a sheet sliding out would keep taking the touches of the next gesture (#327).
+        val dismiss: () -> Unit = { model.closeSheet() }
         LaunchedEffect(Unit) { top.animateTo(if (request.startFull) full else half, tween(200)) }
         // Where a let-go sheet comes to rest: the nearest of full, half and gone, leaning the way it was thrown.
         fun settle(velocity: Float) {
