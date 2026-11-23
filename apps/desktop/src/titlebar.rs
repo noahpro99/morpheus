@@ -318,6 +318,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             .e2e("span", "title-text")
                             .text(title.clone()),
                     )
+                    .child(alpha_pill())
                     .e2e("div", "titlebar-title")
                     .attr("data-font-size", TITLE_SIZE.to_string())
                     .attr("data-cap-height", format!("{CAP_HEIGHT:.3}"))
@@ -396,4 +397,23 @@ mod badge_tests {
         assert_eq!(*tx, badge.x + badge.w / 2.0);
         assert_eq!(*ty, badge.y + badge.h / 2.0);
     }
+}
+
+/// The small "Alpha" pill after the title: the release is early.
+fn alpha_pill() -> impl IntoElement {
+    let fill = theme::palette().accent_solid;
+    div()
+        .id("alpha-badge")
+        .px(px(6.0))
+        .py(px(1.0))
+        .rounded_full()
+        .bg(rgb(fill))
+        .text_color(rgb(theme::on(fill)))
+        .text_size(px(0.65 * theme::REM))
+        .line_height(px(0.9 * theme::REM))
+        .font_weight(FontWeight::BOLD)
+        .child("Alpha")
+        .tip("Morpheus is in alpha: expect rough edges")
+        .e2e("span", "alpha-badge")
+        .text("Alpha")
 }
