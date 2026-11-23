@@ -17,6 +17,7 @@ use super::{Kind, SettingsView, ThemeChosen, button, muted, note, section, secti
 use crate::{
     e2e::E2eExt as _,
     icons::icon,
+    tooltip::TipExt as _,
     theme,
     view_model::settings::{
         self as vm, Autostart, DESKTOP_NOTIFICATION_NOTE, NOTIFY_DEFAULT_CHOICES,
@@ -430,12 +431,14 @@ impl SettingsView {
                     },
                 )
                 .attr("data-theme", theme_choice.key())
-        });
+        }).collect::<Vec<_>>();
+        let custom_tile = self.custom_tile(cx);
         let row = div()
             .flex()
             .flex_wrap()
             .gap(px(12.0))
             .children(options)
+            .child(custom_tile)
             .e2e("div", "theme-options");
         let vim_on = crate::vim::enabled();
         let vim = choice(
@@ -543,7 +546,6 @@ impl SettingsView {
             self.language_section(cx).into_any_element(),
             self.glass_section(cx).into_any_element(),
             self.share_section(cx).into_any_element(),
-            self.history_section(cx).into_any_element(),
             keyboard.into_any_element(),
             previews_section.into_any_element(),
         ];
@@ -1801,8 +1803,8 @@ impl SettingsView {
             .into_any_element()
     }
 
-    /// Appearance's history: the looks used lately, to restore or pin.
-    fn history_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The colour menu's recent colours: the looks used lately, to restore or pin.
+    fn history_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let items = self.history.iter().map(|entry| {
             let look = entry.look;
             let (side, chat) = match look.colour {
@@ -1884,19 +1886,14 @@ impl SettingsView {
                 .e2e("div", "history-items")
                 .into_any_element()
         };
-        section(
-            "Recently used",
-            "theme-history",
-            vec![
-                muted(
-                    "The last ten themes and colours you have used, so a tweak does not lose one you liked. Click one to bring it back; pin the ones to keep.",
-                    "muted",
-                )
-                .into_any_element(),
-                body,
-            ],
-            false,
-        )
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(muted("Recent colours: click one to bring it back; pin the ones to keep.", "muted"))
+            .child(body)
+            .e2e("div", "theme-history")
+            .into_any_element()
     }
 
     /// Appearance's language: the system's (the default) or one of ours, kept on this
@@ -2330,84 +2327,138 @@ impl SettingsView {
         section("Share a theme", "theme-share", children, self.hl("theme-share"))
     }
 
-    /// The shared colour field around the custom colour: the hex box, the palette button and the
-    /// popover with the sliders and the grid.
-    fn colour_field(&self, grid: impl IntoElement, cx: &mut Context<Self>) -> AnyElement {
+    /// The Custom tile (#354): same size as the theme tiles, with a large palette icon. It opens
+    /// the colour menu under it and is selected while a custom colour is in use.
+    fn custom_tile(&self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::view_model::theme::on_colour;
+        let selected = self.custom.is_some();
+        let fill = self.custom.map(crate::view_model::theme::derive).map(|p| p.bg_sidebar);
+        let ink = fill.map(on_colour).unwrap_or_else(theme::text_muted);
+        let swatch = div()
+            .flex()
+            .items_center()
+            .justify_center()
+            .w(px(120.0))
+            .h(px(72.0))
+            .rounded(px(theme::RADIUS))
+            .bg(match fill {
+                Some(c) => rgb(c).into(),
+                None => theme::fill_elevated(),
+            })
+            .border_1()
+            .border_color(rgba(theme::edge()))
+            .child(
+                div()
+                    .id("theme-custom-icon")
+                    .child(icon("palette", 40.0).text_color(rgb(ink)))
+                    .tip(super::colour_field::TIP)
+                    .e2e("div", "custom-palette-icon")
+                    .attr("data-tip", super::colour_field::TIP),
+            );
+        let tile = div()
+            .id("theme-custom")
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .p(px(8.0))
+            .rounded(px(theme::RADIUS_LG))
+            .border_2()
+            .border_color(if selected { rgb(theme::accent()) } else { theme::fill_elevated() })
+            .bg(theme::fill_elevated())
+            .cursor_pointer()
+            .child(swatch)
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(t("Custom"))
+                    .e2e("span", "theme-name")
+                    .text(t("Custom")),
+            )
+            .on_click(cx.listener(|this, _, _, cx| {
+                let recent = this
+                    .colour_closed_at
+                    .is_some_and(|at| at.elapsed() < Duration::from_millis(250));
+                let open = !this.colour_open && !recent;
+                this.set_colour_open(open, cx);
+            }))
+            .e2e(
+                "button",
+                if selected {
+                    "theme-option custom colour-field-button selected"
+                } else {
+                    "theme-option custom colour-field-button"
+                },
+            )
+            .attr("data-theme", "custom");
         let popover = self.colour_open.then(|| {
-            div()
+            let grid = self.colour_grid_view(cx);
+            let content = div()
                 .flex()
                 .flex_col()
                 .gap(px(10.0))
+                .child(div().w(px(180.0)).child(self.colour_input.clone()))
                 .child(self.hsv_sliders(cx))
                 .child(grid)
-                .into_any_element()
+                .child(self.history_row(cx))
+                .into_any_element();
+            let this = cx.entity().downgrade();
+            let closer = this.clone();
+            super::colour_field::popover(
+                content,
+                &self.colour_focus,
+                move |_, cx| {
+                    this.update(cx, |this, cx| this.set_colour_open(false, cx)).ok();
+                },
+                move |_, cx| {
+                    closer
+                        .update(cx, |this, cx| {
+                            this.colour_closed_at = Some(std::time::Instant::now());
+                            this.set_colour_open(false, cx);
+                        })
+                        .ok();
+                },
+            )
         });
-        let this = cx.entity().downgrade();
-        let closer = this.clone();
-        let escaper = this.clone();
-        super::colour_field::colour_field(
-            "custom-colour-pick",
-            div().w(px(180.0)).child(self.colour_input.clone()),
-            popover,
-            &self.colour_focus,
-            move |_, _, cx| {
-                this.update(cx, |this, cx| {
-                    let recent = this
-                        .colour_closed_at
-                        .is_some_and(|at| at.elapsed() < Duration::from_millis(250));
-                    let open = !this.colour_open && !recent;
-                    this.set_colour_open(open, cx);
-                })
-                .ok();
-            },
-            move |_, cx| {
-                escaper.update(cx, |this, cx| this.set_colour_open(false, cx)).ok();
-            },
-            move |_, cx| {
-                closer
-                    .update(cx, |this, cx| {
-                        this.colour_closed_at = Some(std::time::Instant::now());
-                        this.set_colour_open(false, cx);
-                    })
-                    .ok();
-            },
-        )
+        div().relative().child(tile).children(popover).into_any_element()
+    }
+
+    /// The picker's grid of colours.
+    fn colour_grid_view(&self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .children(colour_grid().into_iter().map(|row| {
+                div().flex().gap(px(4.0)).children(row.into_iter().map(|colour| {
+                    div()
+                        .id(ElementId::from(SharedString::from(format!("colour-{colour:06x}"))))
+                        .size(px(24.0))
+                        .rounded(px(theme::RADIUS_SM))
+                        .bg(rgb(colour))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| this.pick_colour(colour, cx)))
+                        .e2e("button", "colour-swatch")
+                        .attr("data-colour", format!("{colour:06x}"))
+                }))
+            }))
+            .into_any_element()
     }
 
     /// Appearance's custom colour: a hex box, a grid to pick from and the preview.
-    fn custom_colour_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn custom_colour_section(&self, _cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self
             .custom
             .map(crate::view_model::theme::derive)
             .unwrap_or_else(theme::palette);
-        let grid = div().flex().flex_col().gap(px(4.0)).children(colour_grid().into_iter().map(|row| {
-            div().flex().gap(px(4.0)).children(row.into_iter().map(|colour| {
-                div()
-                    .id(ElementId::from(SharedString::from(format!("colour-{colour:06x}"))))
-                    .size(px(24.0))
-                    .rounded(px(theme::RADIUS_SM))
-                    .bg(rgb(colour))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| this.pick_colour(colour, cx)))
-                    .e2e("button", "colour-swatch")
-                    .attr("data-colour", format!("{colour:06x}"))
-            }))
-        }));
-        let picker = div()
-            .flex()
-            .flex_col()
-            .gap(px(10.0))
-            .child(muted(
-                "One colour themes the whole app: type a hex colour or pick one. Text turns black on a light colour.",
-                "muted",
-            ))
-            .child(self.colour_field(grid, cx))
-            .e2e("div", "custom-colour");
         section(
-            "Custom colour",
-            "custom-colour",
+            "Preview",
+            "theme-preview",
             vec![
-                picker.into_any_element(),
+                muted(
+                    "Custom in the theme row sets one colour for the whole app: type a hex colour or pick one. Text turns black on a light colour.",
+                    "muted",
+                )
+                .into_any_element(),
                 preview(palette).into_any_element(),
             ],
             false,
