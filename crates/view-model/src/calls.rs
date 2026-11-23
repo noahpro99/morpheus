@@ -309,22 +309,41 @@ pub struct Mark {
     pub glyph: Option<&'static str>,
 }
 
+/// The one microphone state a person shows, by precedence: deafened over
+/// muted over on. A card draws at most one icon for it (#345).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MicState {
+    Deafened,
+    Muted,
+    On,
+}
+
+pub fn mic_state(media: CallMedia) -> MicState {
+    if media.deafened {
+        MicState::Deafened
+    } else if media.muted {
+        MicState::Muted
+    } else {
+        MicState::On
+    }
+}
+
 /// Marks for someone in a call: deafened or muted, and with `video`, their
 /// camera and LIVE for a shared screen.
 pub fn marks(media: CallMedia, video: bool) -> Vec<Mark> {
     let mut marks = Vec::new();
-    if media.deafened {
-        marks.push(Mark {
+    match mic_state(media) {
+        MicState::Deafened => marks.push(Mark {
             class: "voice-state deafened",
             title: "Deafened",
             glyph: Some("headphone-off"),
-        });
-    } else if media.muted {
-        marks.push(Mark {
+        }),
+        MicState::Muted => marks.push(Mark {
             class: "voice-state muted",
             title: "Muted",
             glyph: Some("mic-off"),
-        });
+        }),
+        MicState::On => {}
     }
     if video && media.camera {
         marks.push(Mark {
@@ -1334,6 +1353,23 @@ mod tests {
         }
         .media(&c);
         assert!(media.muted && media.deafened && media.camera && !media.screen);
+    }
+
+    #[test]
+    fn one_mic_state_by_precedence_and_never_two_mic_marks() {
+        for (muted, deafened) in [(false, false), (true, false), (false, true), (true, true)] {
+            let media = CallMedia { muted, deafened, camera: true, screen: true };
+            let mic = marks(media, true)
+                .iter()
+                .filter(|m| m.class.starts_with("voice-state"))
+                .count();
+            assert_eq!(mic, usize::from(muted || deafened));
+            // LIVE has no icon, so nothing else can draw as a mic.
+            assert!(marks(media, true).iter().all(|m| m.glyph != Some("mic-off") || m.class == "voice-state muted"));
+        }
+        assert_eq!(mic_state(CallMedia { muted: true, deafened: true, ..Default::default() }), MicState::Deafened);
+        assert_eq!(mic_state(CallMedia { muted: true, ..Default::default() }), MicState::Muted);
+        assert_eq!(mic_state(CallMedia::default()), MicState::On);
     }
 
     #[test]

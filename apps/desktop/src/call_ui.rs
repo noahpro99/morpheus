@@ -929,6 +929,23 @@ fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyEl
         return None;
     }
     let discs = items.into_iter().map(|mark| {
+        // LIVE is a word, never the mic-off icon (a muted sharer showed two).
+        let Some(glyph) = mark.glyph else {
+            return div()
+                .h(px(26.0))
+                .px(px(8.0))
+                .flex()
+                .items_center()
+                .rounded_full()
+                .bg(rgb(theme::danger()))
+                .text_color(rgb(theme::on_danger()))
+                .text_size(px(0.65 * theme::REM))
+                .font_weight(FontWeight::EXTRA_BOLD)
+                .child(t("LIVE"))
+                .e2e("span", mark.class)
+                .attr("title", mark.title)
+                .text(t("LIVE"));
+        };
         div()
             .size(px(26.0))
             .flex()
@@ -936,7 +953,7 @@ fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyEl
             .justify_center()
             .rounded_full()
             .bg(black(0.6))
-            .child(icon(mark.glyph.unwrap_or("mic-off"), 14.0).text_color(rgb(if mark.class.starts_with("voice-state") {
+            .child(icon(glyph, 14.0).text_color(rgb(if mark.class.starts_with("voice-state") {
                 theme::danger()
             } else {
                 theme::text()
