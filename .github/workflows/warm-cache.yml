@@ -1,0 +1,143 @@
+# Keeps every platform's build cache warm (#358). A release build runs only at
+# a tag, and caches are saved only from main, so without this the cache is
+# stale or evicted by the next release (GitHub drops entries not used for 7
+# days, and holds 10 GB a repository). On a push to main that touches code (and
+# daily) each platform builds its release target exactly as the Linux, Windows
+# and Apple workflows do (same shared-key, flags and compiler, so the cache is
+# the same entry) and saves the result. Keep the setup steps in line with
+# those workflows.
+name: Warm cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "vendor/**"
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - ".cargo/**"
+      - scripts/ci-linux-deps.sh
+      - scripts/trim-caches.sh
+      - .github/workflows/warm-cache.yml
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+# A newer push replaces an older run: the old cache is deleted only after a
+# build succeeds (see "Replace the cache"), so a cancelled run loses nothing.
+concurrency:
+  group: warm-cache
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: Libraries
+        run: scripts/ci-linux-deps.sh
+      - name: Rust
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-x86_64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-workspace-crates: true
+      - name: Build
+        run: cargo build --release -p morpheus-desktop --locked
+      - name: Replace the cache
+        if: github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/trim-caches.sh --replace linux-x86_64
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-x86_64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-workspace-crates: true
+      - name: NASM
+        run: |
+          choco install nasm -y --no-progress || true
+          echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
+      - name: Build
+        run: cargo build --release -p morpheus-desktop -p morpheus-launcher --locked --target x86_64-pc-windows-msvc
+      - name: Replace the cache
+        if: github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/trim-caches.sh --replace windows-x86_64
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - name: Metal compiler
+        run: |
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain || true
+          fi
+          if xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            echo "FEATURES=" >> "$GITHUB_ENV"
+          else
+            echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
+          fi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-workspace-crates: true
+      - name: NASM
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: brew install nasm || true
+      - name: Build
+        run: cargo build --release -p morpheus-desktop --locked --target ${{ matrix.target }} $FEATURES
+      - name: Replace the cache
+        if: github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/trim-caches.sh --replace macos-${{ matrix.target }}
+
+  # Every platform's newest entry stays, older ones go, and a warning says when
+  # they no longer fit in 10 GB.
+  trim:
+    needs: [linux, windows, macos]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Trim older caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/trim-caches.sh

@@ -1,0 +1,73 @@
+# The phone app for iPhone: an unsigned .ipa (Apple only installs apps signed
+# for the device; AltStore or SideStore sign it with the installer's own Apple
+# ID). Phones are not released, so this is a compile check of the shared code
+# for iOS that lives apart from the Apple workflow (#358): a release waits for
+# no run of it. It runs on pushes to main that touch the code, and by hand.
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "apps/mobile/**"
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/ios.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-apple-ios
+          # dx strips with rustup's rust-objcopy, which looks for libLLVM
+          # beside itself; the toolchain has it one level up.
+          sysroot=$(rustc --print sysroot)
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          rustup component add llvm-tools
+          mkdir -p "$sysroot/lib/rustlib/$host/lib"
+          for lib in "$sysroot"/lib/libLLVM*.dylib; do ln -sf "$lib" "$sysroot/lib/rustlib/$host/lib/libLLVM.dylib"; done
+          ls -la "$sysroot/lib/rustlib/$host/lib/" | grep -i llvm || true
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Dioxus CLI
+        run: cargo binstall -y dioxus-cli@0.7.10
+
+      - name: Build
+        run: dx build --release --package morpheus-mobile --platform ios --target aarch64-apple-ios
+
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          app=$(find target/dx/morpheus-mobile/release/ios -maxdepth 2 -name '*.app' | head -1)
+          echo "app: $app"; ls -la "$app"
+          mkdir -p dist/Payload
+          cp -R "$app" dist/Payload/Morpheus.app
+          plist=dist/Payload/Morpheus.app/Info.plist
+          set_key() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$plist"; }
+          set_key NSMicrophoneUsageDescription "Morpheus uses the microphone in calls."
+          set_key NSCameraUsageDescription "Morpheus uses the camera in video calls."
+          set_key CFBundleDisplayName Morpheus
+          ipa="dist/morpheus-$version-ios-arm64-unsigned.ipa"
+          (cd dist && zip -qr "../$ipa" Payload)
+          ls -la "$ipa"
+          echo "IPA=$ipa" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: ${{ env.IPA }}
