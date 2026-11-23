@@ -816,18 +816,37 @@ impl TimelineView {
             let y = f32::from(rect.top() - self.list.viewport_bounds().top());
             (y > 0.5).then_some(y)
         });
-        // Scrolled all the way up (the placeholder row at the very top of the list) while
-        // the room's start comes in (the placeholder goes away): the view stays at the top,
-        // where the oldest messages are, not on the row it was on far down the page.
-        let at_top = top.item_ix == 0 && top.offset_in_item <= px(0.0);
-        let start_came_in = matches!(self.rows.first(), Some(Row::Skeleton { older: true }))
-            && !matches!(rows.first(), Some(Row::Skeleton { older: true }));
-        let hold_top = at_top && start_came_in;
         if !edits.is_empty() {
-            for &(start, removed, added) in edits.iter().rev() {
-                self.list.splice(start..start + removed, added);
+            // Rows that were already there and only moved (or were rebuilt unchanged) keep
+            // their measured height: the list's total leaves out what it has not laid out,
+            // so a page of rebuilt rows would otherwise shrink the way down while they are
+            // off screen.
+            let mut known: HashMap<String, (usize, Pixels)> = HashMap::new();
+            for &(start, removed, _) in &edits {
+                for ix in start..start + removed {
+                    if let (Some(key), Some(height)) = (self.rows[ix].key(), self.list.item_height(ix)) {
+                        known.insert(key, (ix, height));
+                    }
+                }
             }
-            if let Some((was, now)) = anchor.filter(|_| !hold_top) {
+            let mut plan = Vec::new();
+            let mut shift = 0isize;
+            for &(start, removed, added) in &edits {
+                let new_start = (start as isize + shift) as usize;
+                let heights: Vec<Option<Pixels>> = (new_start..new_start + added)
+                    .map(|ix| {
+                        let key = rows[ix].key()?;
+                        let &(old_ix, height) = known.get(&key)?;
+                        (self.rows[old_ix] == rows[ix]).then_some(height)
+                    })
+                    .collect();
+                plan.push((start, removed, heights));
+                shift += added as isize - removed as isize;
+            }
+            for (start, removed, heights) in plan.into_iter().rev() {
+                self.list.splice_sized(start..start + removed, heights);
+            }
+            if let Some((was, now)) = anchor {
                 // The row stays as far below the top as it was: a negative offset, which
                 // the list lays out (the new rows above it too) in the very next frame.
                 let offset_in_item = if was == top.item_ix {

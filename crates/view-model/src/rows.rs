@@ -306,7 +306,7 @@ pub fn changed_ranges(old: &[Row], new: &[Row]) -> Vec<(usize, usize, usize)> {
 
 impl Row {
     /// What identifies this row across rebuilds (`None` for a placeholder).
-    fn key(&self) -> Option<String> {
+    pub fn key(&self) -> Option<String> {
         match self {
             Self::Message { row, .. } => Some(format!("m{}", row.message.unique_id)),
             Self::Date(_, at) => Some(format!("d{at}")),
@@ -331,14 +331,46 @@ pub fn anchor_row(old: &[Row], from: usize, new: &[Row]) -> Option<(usize, usize
     // A message is what the reader looks at: a date divider that stays while older
     // messages arrive below it is not a place to stay on.
     let find = |messages_only: bool| {
-        old.iter().enumerate().skip(from).find_map(|(ix, row)| {
-            if messages_only && !matches!(row, Row::Message { .. }) {
-                return None;
-            }
-            Some((ix, *keys.get(&row.key()?)?))
-        })
+        let pairs: Vec<(usize, usize)> = old
+            .iter()
+            .enumerate()
+            .skip(from)
+            .filter(|(_, row)| !messages_only || matches!(row, Row::Message { .. }))
+            .filter_map(|(ix, row)| Some((ix, *keys.get(&row.key()?)?)))
+            .collect();
+        // A rebuild can move a few rows far down (the room's first events shown at the
+        // top, then placed after the older page): those are not a place to stay on,
+        // because everything that was below them ends up above them. The rows that keep
+        // their order (the longest run, by their place in `new`) are.
+        let keep = longest_increasing(&pairs);
+        keep.first().copied().map(|p| pairs[p])
     };
     find(true).or_else(|| find(false))
+}
+
+/// Positions in `pairs` of a longest run whose second numbers increase (the earliest
+/// such run in case of a tie).
+fn longest_increasing(pairs: &[(usize, usize)]) -> Vec<usize> {
+    // tails[k]: the position in `pairs` ending the best run of length k + 1.
+    let mut tails: Vec<usize> = Vec::new();
+    let mut before: Vec<Option<usize>> = vec![None; pairs.len()];
+    for (p, &(_, at)) in pairs.iter().enumerate() {
+        let k = tails.partition_point(|&t| pairs[t].1 < at);
+        before[p] = k.checked_sub(1).map(|k| tails[k]);
+        if k == tails.len() {
+            tails.push(p);
+        } else {
+            tails[k] = p;
+        }
+    }
+    let mut run = Vec::new();
+    let mut at = tails.last().copied();
+    while let Some(p) = at {
+        run.push(p);
+        at = before[p];
+    }
+    run.reverse();
+    run
 }
 
 #[cfg(test)]
@@ -596,6 +628,24 @@ mod tests {
         assert!(to > from, "pushed down by the older messages");
     }
 
+
+    #[test]
+    fn the_view_does_not_anchor_on_a_message_the_rebuild_moved_down() {
+        let build = |ids: &[&str]| -> Vec<Row> {
+            let mut entries: Vector<TimelineEntry> = Vector::new();
+            for id in ids {
+                entries.push_back(message_by(id, "@bob:localhost", 1_700_000_000_000, text(id)));
+            }
+            group_rows(&entries, None, &HashMap::new())
+        };
+        // The room's first events were shown first; the rebuild puts the older page
+        // above them: the messages that stay in order (d, e, f, g) are the place to hold.
+        let old = build(&["a", "b", "d", "e", "f", "g"]);
+        let new = build(&["d", "e", "f", "a", "b", "g"]);
+        let (from, to) = anchor_row(&old, 0, &new).expect("an anchor");
+        assert_eq!(old[from].key(), Some("md".to_owned()), "not on a row that moved");
+        assert_eq!(new[to].key(), Some("md".to_owned()));
+    }
 
     #[test]
     fn older_rows_above_and_a_change_below_leave_the_rows_between_alone() {

@@ -275,6 +275,58 @@ impl ListState {
         }
     }
 
+    /// The measured height of item `ix` (`None` while it has not been laid out).
+    pub fn item_height(&self, ix: usize) -> Option<Pixels> {
+        let state = self.0.borrow();
+        let mut cursor = state.items.cursor::<Count>(());
+        cursor.seek(&Count(ix), Bias::Right);
+        cursor.item().and_then(|item| item.size()).map(|s| s.height)
+    }
+
+    /// Like [`Self::splice`], with a height known for some of the new items (rows that moved
+    /// or were rebuilt: their height was measured before), so that the list's total, which
+    /// leaves out what has not been laid out, does not shrink while they are off screen.
+    /// A new item is laid out again when it comes into view.
+    pub fn splice_sized(&self, old_range: Range<usize>, heights: impl IntoIterator<Item = Option<Pixels>>) {
+        let state = &mut *self.0.borrow_mut();
+        let width = state.last_layout_bounds.map_or(px(0.), |b| b.size.width);
+
+        let mut old_items = state.items.cursor::<Count>(());
+        let mut new_items = old_items.slice(&Count(old_range.start), Bias::Right);
+        old_items.seek_forward(&Count(old_range.end), Bias::Right);
+
+        let mut spliced_count = 0;
+        new_items.extend(
+            heights.into_iter().map(|height| {
+                spliced_count += 1;
+                match height {
+                    Some(height) => ListItem::Measured {
+                        size: size(width, height),
+                        focus_handle: None,
+                    },
+                    None => ListItem::Unmeasured { focus_handle: None },
+                }
+            }),
+            (),
+        );
+        new_items.append(old_items.suffix(), ());
+        drop(old_items);
+        state.items = new_items;
+
+        if let Some(ListOffset {
+            item_ix,
+            offset_in_item,
+        }) = state.logical_scroll_top.as_mut()
+        {
+            if old_range.contains(item_ix) {
+                *item_ix = old_range.start;
+                *offset_in_item = px(0.);
+            } else if old_range.end <= *item_ix {
+                *item_ix = *item_ix - (old_range.end - old_range.start) + spliced_count;
+            }
+        }
+    }
+
     /// Set a handler that will be called when the list is scrolled.
     pub fn set_scroll_handler(
         &self,
