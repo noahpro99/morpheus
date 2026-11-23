@@ -65,7 +65,7 @@ jobs:
           scripts/ci-cache.sh undo-key
           scripts/ci-cache.sh restore-mtimes
       - name: Build
-        run: cargo build --release -p morpheus-desktop --locked
+        run: CARGO_LOG=cargo::core::compiler::fingerprint=info cargo build --release -p morpheus-desktop --locked 2>&1 | grep -E "dirty|stale|Compiling|Finished|error" | cut -c1-300 | tail -300; test "${PIPESTATUS[0]}" -eq 0
       - name: Record the commit
         run: scripts/ci-cache.sh record
 
