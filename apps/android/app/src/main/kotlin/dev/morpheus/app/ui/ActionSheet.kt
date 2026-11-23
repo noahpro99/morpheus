@@ -1,7 +1,8 @@
 package dev.morpheus.app.ui
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -51,6 +52,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -89,35 +91,53 @@ private fun rowIcon(name: String?): Int {
 @Composable
 fun ActionSheetHost(model: AppModel) {
     val request by model.sheet.collectAsState()
-    val current = request ?: return
+    // The sheet that was open stays drawn while it leaves (a spring out), but as a picture only: it takes no touch
+    // and has no place in the semantics tree, so the next touch goes to what is under it at once (#327).
+    var last by remember { mutableStateOf<dev.morpheus.app.SheetRequest?>(null) }
+    val current = request
+    if (current != null && last?.id != current.id) last = current
     val haptic = LocalHapticFeedback.current
-    LaunchedEffect(current.id) {
-        if (current.longPress) {
+    LaunchedEffect(current?.id) {
+        if (current != null && current.longPress) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             AppState.haptics++
         }
     }
-    androidx.activity.compose.BackHandler { model.closeSheet() }
-    androidx.compose.runtime.key(current.id) { ActionSheet(model, current) }
+    if (current != null) androidx.activity.compose.BackHandler { model.closeSheet() }
+    val shown = last ?: return
+    androidx.compose.runtime.key(shown.id) {
+        ActionSheet(model, shown, live = current?.id == shown.id) { if (last?.id == shown.id) last = null }
+    }
 }
+
+/** A light spring: it settles with a small overshoot. */
+private fun <T> sheetSpring() = spring<T>(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest) {
+private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest, live: Boolean, onGone: () -> Unit) {
     val scope = rememberCoroutineScope()
-    BoxWithConstraints(Modifier.fillMaxSize().testTag("sheet-layer")) {
+    // Gone from the semantics tree and out of the touches the moment it is not live.
+    val inert = if (live) Modifier else Modifier.clearAndSetSemantics { }
+    BoxWithConstraints(Modifier.fillMaxSize().then(inert).testTag("sheet-layer")) {
         val full = with(LocalDensity.current) { (maxHeight * 0.06f).toPx() }
         val half = with(LocalDensity.current) { (maxHeight * 0.5f).toPx() }
         val hidden = with(LocalDensity.current) { maxHeight.toPx() }
         val top = remember { Animatable(hidden) }
-        // Gone at once: a sheet sliding out would keep taking the touches of the next gesture (#327).
         val dismiss: () -> Unit = { model.closeSheet() }
-        LaunchedEffect(Unit) { top.animateTo(if (request.startFull) full else half, tween(200)) }
+        LaunchedEffect(Unit) { top.animateTo(if (request.startFull) full else half, sheetSpring()) }
+        // Closed: it springs down out of view (as a picture), then it is forgotten.
+        LaunchedEffect(live) {
+            if (!live) {
+                top.animateTo(hidden, sheetSpring())
+                onGone()
+            }
+        }
         // Where a let-go sheet comes to rest: the nearest of full, half and gone, leaning the way it was thrown.
         fun settle(velocity: Float) {
             val aimed = top.value + velocity * 0.15f
             val goal = listOf(full, half, hidden).minByOrNull { kotlin.math.abs(it - aimed) } ?: half
-            if (goal == hidden) dismiss() else scope.launch { top.animateTo(goal, tween(180)) }
+            if (goal == hidden) dismiss() else scope.launch { top.animateTo(goal, sheetSpring()) }
         }
         val drag = rememberDraggableState { delta -> scope.launch { top.snapTo((top.value + delta).coerceIn(full, hidden)) } }
         // The list gives its scroll to the sheet while the sheet is not all the way up, and when it is at its top.
@@ -146,7 +166,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
         }
         val shade = ((hidden - top.value) / (hidden - half)).coerceIn(0f, 1f)
         Box(
-            Modifier.fillMaxSize().background(Color(0x99000000).copy(alpha = 0.6f * shade)).pointerInput(Unit) { detectTapGestures { dismiss() } }.testTag("sheet-scrim"),
+            Modifier.fillMaxSize().background(Color(0x99000000).copy(alpha = 0.6f * shade)).then(if (live) Modifier.pointerInput(Unit) { detectTapGestures { dismiss() } } else Modifier).testTag("sheet-scrim"),
         )
         Column(
             Modifier
@@ -155,7 +175,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet))
                 .background(Palette.Raised)
-                .pointerInput(Unit) { detectTapGestures { } }
+                .then(if (live) Modifier.pointerInput(Unit) { detectTapGestures { } } else Modifier)
                 .semantics { contentDescription = request.title }
                 .testTag("sheet"),
         ) {
@@ -166,7 +186,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .draggable(drag, Orientation.Vertical, onDragStopped = { settle(it) })
+                    .then(if (live) Modifier.draggable(drag, Orientation.Vertical, onDragStopped = { settle(it) }) else Modifier)
                     .testTag("sheet-handle"),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -181,7 +201,10 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
                     Text(trail.lastOrNull()?.label ?: request.title, Modifier.weight(1f).testTag("sheet-title"), style = Type.heading, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            LazyColumn(Modifier.fillMaxWidth().weight(1f).nestedScroll(connection).testTag("sheet-list")) {
+            if (!live) {
+                // Leaving: the rows as a picture, nothing that could take a touch.
+                Column(Modifier.fillMaxWidth().weight(1f)) { for (row in shown.take(10)) SheetRow(row, interactive = false) { } }
+            } else LazyColumn(Modifier.fillMaxWidth().weight(1f).nestedScroll(connection).testTag("sheet-list")) {
                 if (trail.isEmpty() && request.quickReactions.isNotEmpty()) {
                     item(key = "quick") {
                         Row(Modifier.padding(horizontal = Space.lg, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -204,7 +227,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
                                 Box(
                                     Modifier.size(48.dp).background(Palette.Surface, CircleShape)
                                         .pointerInput(cell.path) { detectTapGestures { model.chooseSheetItem(cell.path) } }
-                                        .testTag("sheet-item-${cell.label}"),
+                                        .testTag("sheet-item-${cell.id}"),
                                     contentAlignment = Alignment.Center,
                                 ) { Text(cell.label, style = Type.heading) }
                             }
@@ -227,19 +250,18 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest)
 }
 
 @Composable
-private fun SheetRow(row: MenuRow, onClick: () -> Unit) {
+private fun SheetRow(row: MenuRow, interactive: Boolean = true, onClick: () -> Unit) {
     var sure by remember { mutableStateOf(false) }
     val danger = row.danger
     val icon = rowIcon(row.icon)
-    val tag = legacyTag(row.label) ?: "sheet-item-${row.label}"
+    val tag = legacyTag(row.id) ?: "sheet-item-${row.id}"
     // A delete takes a second tap, as it always has on the phone.
-    val needsSure = danger && row.label.startsWith("Delete")
+    val needsSure = danger && row.id.startsWith("Delete")
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = Size.row)
-            .clickable { if (needsSure && !sure) sure = true else onClick() }
-            .semantics { role = Role.Button }
+            .then(if (interactive) Modifier.clickable { if (needsSure && !sure) sure = true else onClick() }.semantics { role = Role.Button } else Modifier)
             .padding(horizontal = Space.lg)
             .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
@@ -252,7 +274,7 @@ private fun SheetRow(row: MenuRow, onClick: () -> Unit) {
             if (sure) t("Tap again to delete") else row.label,
             Modifier.weight(1f), style = Type.body, color = if (danger) Palette.Danger else Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-        if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = Palette.Accent, modifier = Modifier.testTag("sheet-check-${row.label}"))
+        if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = Palette.Accent, modifier = Modifier.testTag("sheet-check-${row.id}"))
         if (row.children.isNotEmpty()) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
     }
 }

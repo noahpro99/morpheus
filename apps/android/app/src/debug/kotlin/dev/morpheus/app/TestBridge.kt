@@ -131,6 +131,39 @@ class TestBridge(private val app: Application) {
             )
             true
         }
+        "quick_tap" -> {
+            // A finger down and up at once (30 ms), as a person taps a row.
+            tapAt(request.getDouble("x").toFloat(), request.getDouble("y").toFloat())
+            true
+        }
+        "double_tap" -> {
+            val (x, y) = request.getDouble("x").toFloat() to request.getDouble("y").toFloat()
+            tapAt(x, y)
+            Thread.sleep(request.optLong("gap", 70))
+            tapAt(x, y)
+            true
+        }
+        "sample" -> {
+            // A quick tap (when `x` and `y` are given), then every 10 ms for `ms` where these tags are: [x, width] or null.
+            if (request.has("x")) tapAt(request.getDouble("x").toFloat(), request.getDouble("y").toFloat())
+            val tags = request.getJSONArray("tags")
+            val until = SystemClock.uptimeMillis() + request.optLong("ms", 900)
+            val out = JSONArray()
+            while (SystemClock.uptimeMillis() < until) {
+                out.put(onMain {
+                    val all = nodes()
+                    val row = JSONArray()
+                    for (i in 0 until tags.length()) {
+                        val node = all.firstOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == tags.getString(i) }
+                        row.put(if (node == null) JSONObject.NULL else JSONObject().put("x", node.boundsInWindow.left).put("w", node.boundsInWindow.width))
+                    }
+                    row
+                })
+                Thread.sleep(10)
+            }
+            out
+        }
+        "frames_reset" -> onMain { FrameWatch.reset(); true }
         "click" -> onMain { click(find(request)) }
         "type" -> onMain {
             val node = find(request)
@@ -186,6 +219,9 @@ class TestBridge(private val app: Application) {
                 .put("first_room_ms", AppState.firstRoomMs)
                 .put("session_ms", AppState.sessionMs)
                 .put("marks", JSONArray(AppState.marks.map { JSONArray().put(it.first).put(it.second) }))
+                .put("image_fetches", AppState.imageFetches)
+                .put("avatars_drawn", AppState.avatarsDrawn)
+                .put("max_frame_gap_ms", FrameWatch.max)
                 .put("version", BuildConfig.VERSION_NAME)
         }
         else -> error("unknown op $op")
@@ -279,6 +315,13 @@ class TestBridge(private val app: Application) {
         val steps = 12
         touch(MotionEvent.ACTION_DOWN, down, x1, y1)
         // Held still after the touch-down first: a long press, then the drag.
+    private fun tapAt(x: Float, y: Float) {
+        val down = SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN, down, x, y)
+        Thread.sleep(30)
+        touch(MotionEvent.ACTION_UP, down, x, y)
+    }
+
         if (hold > 0) Thread.sleep(hold)
         for (i in 1..steps) {
             Thread.sleep(ms / steps)
@@ -294,5 +337,34 @@ class TestBridge(private val app: Application) {
     companion object {
         const val PORT = 47100
         private const val TAG = "MorpheusBridge"
+    }
+}
+
+/** The longest time between two frames since the last reset: a stall of the main thread shows here (the e2e reads it). */
+object FrameWatch {
+    @Volatile
+    var max: Long = 0
+
+    private var last = 0L
+    private var running = false
+
+    fun reset() {
+        max = 0
+        last = 0
+        start()
+    }
+
+    private fun start() {
+        if (running) return
+        running = true
+        val choreographer = android.view.Choreographer.getInstance()
+        choreographer.postFrameCallback(object : android.view.Choreographer.FrameCallback {
+            override fun doFrame(frameTimeNanos: Long) {
+                val now = frameTimeNanos / 1_000_000
+                if (last != 0L && now - last > max) max = now - last
+                last = now
+                choreographer.postFrameCallback(this)
+            }
+        })
     }
 }
