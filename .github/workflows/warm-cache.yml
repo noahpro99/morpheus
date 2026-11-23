@@ -25,6 +25,7 @@ on:
       - ".cargo/**"
       - scripts/ci-linux-deps.sh
       - scripts/trim-caches.sh
+      - scripts/ci-cache.sh
       - .github/workflows/warm-cache.yml
   schedule:
     - cron: "17 3 * * *"

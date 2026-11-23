@@ -58,8 +58,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-${{ matrix.target }}
-          # Only main saves: tags and hand runs read it, so the 10 GB limit holds one
-          # cache per platform.
+          # Only the Warm cache workflow saves (every push to main that touches code, and
+          # daily): a build here restores it, so a release starts warm.
+          save-if: false
           cache-workspace-crates: true
           cache-directories: .warm
 
@@ -69,7 +70,6 @@ jobs:
         run: |
           scripts/ci-cache.sh restore-vendor
           scripts/ci-cache.sh restore-mtimes
-          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # OpenH264 (videos): x86 assembly for the Intel build when nasm is
       # there (plain C otherwise); the Arm build uses its NEON code as is.
