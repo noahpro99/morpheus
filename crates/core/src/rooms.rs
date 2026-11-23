@@ -476,6 +476,7 @@ impl Session {
                 // nothing from the server to say so, so calls are looked
                 // at again now and then and the room's entry redone.
                 let mut shown: imbl::Vector<Room> = imbl::Vector::new();
+                let mut listened: std::collections::HashSet<OwnedRoomId> = Default::default();
                 let mut in_calls: HashMap<OwnedRoomId, Vec<OwnedUserId>> = HashMap::new();
                 let mut next_check = crate::rt::Instant::now() + CALL_EXPIRY_CHECK;
 
@@ -509,6 +510,17 @@ impl Session {
                     };
                     for diff in &diffs {
                         diff.clone().map(|item| item.into_inner()).apply(&mut shown);
+                    }
+                    // The SDK works out a latest event only for the rooms it is told to listen to
+                    // (the newest few by default): every room listed is, so `latest_ms` is known
+                    // for all of them once their events are there (#342).
+                    if client.event_cache().has_subscribed() {
+                        let latest = client.latest_events().await;
+                        for room in shown.iter() {
+                            if listened.insert(room.room_id().to_owned()) {
+                                let _ = latest.listen_to_room(room.room_id()).await;
+                            }
+                        }
                     }
                     for diff in &diffs {
                         len = match diff {

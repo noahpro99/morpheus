@@ -2704,3 +2704,93 @@ async fn private_account_data_is_encrypted_without_losing_anything() {
     let plain = raw_account_data(&env.homeserver, &user, "dev.morpheus.pinned").unwrap_or_default();
     assert!(!plain.to_string().contains("old-client"), "plaintext emptied again: {plain}");
 }
+
+/// Runs `curl` and returns its JSON output.
+fn curl_json(args: &[&str]) -> serde_json::Value {
+    let out = std::process::Command::new("curl")
+        .arg("-sf")
+        .args(args)
+        .output()
+        .expect("curl");
+    serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null)
+}
+
+/// After a fresh sign-in every room that has a message knows when it came, not only the
+/// ~22 newest (the SDK computed a latest event for those alone, #342).
+#[tokio::test]
+async fn a_fresh_sign_in_knows_when_every_rooms_last_message_came() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    // Forty rooms with a message each, made before the sign-in.
+    let login = curl_json(&[
+        "-X",
+        "POST",
+        &format!("{}/_matrix/client/v3/login", env.homeserver),
+        "-d",
+        &format!(
+            r#"{{"type":"m.login.password","identifier":{{"type":"m.id.user","user":"{}"}},"password":"{}"}}"#,
+            env.user, env.password
+        ),
+    ]);
+    let token = login["access_token"].as_str().expect("token").to_owned();
+    let tag = std::process::id();
+    let auth = format!("Authorization: Bearer {token}");
+    for n in 0..40 {
+        let made = curl_json(&[
+            "-X",
+            "POST",
+            "-H",
+            &auth,
+            &format!("{}/_matrix/client/v3/createRoom", env.homeserver),
+            "-d",
+            &format!(r#"{{"name":"recency-live {tag} {n}","preset":"private_chat"}}"#),
+        ]);
+        let room = made["room_id"].as_str().expect("room id").replace('!', "%21").replace(':', "%3A");
+        curl_json(&[
+            "-X",
+            "PUT",
+            "-H",
+            &auth,
+            &format!("{}/_matrix/client/v3/rooms/{room}/send/m.room.message/recency{tag}x{n}", env.homeserver),
+            "-d",
+            r#"{"msgtype":"m.text","body":"older than the sign-in"}"#,
+        ]);
+    }
+
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver.clone(),
+            username: env.user.clone(),
+            password: env.password.clone(),
+        })
+        .await
+        .expect("login");
+    let mut room_updates = session.room_list().await.expect("room list");
+    let mut rooms = Vector::new();
+    let mine = |r: &morpheus_core::RoomSummary| r.name.starts_with(&format!("recency-live {tag} "));
+    drive(&mut rooms, async || room_updates.next().await, |rooms| {
+        rooms.iter().filter(|r| mine(r)).count() >= 40
+    })
+    .await;
+    // Give the latest events time to be worked out.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let known = rooms.iter().filter(|r| mine(r) && r.latest_ms > 0).count();
+        if known >= 40 || std::time::Instant::now() > deadline {
+            assert!(known >= 40, "only {known} of 40 rooms know when their last message came");
+            break;
+        }
+        if let Ok(Some(diffs)) = timeout(Duration::from_millis(500), room_updates.next()).await {
+            for diff in diffs {
+                diff.apply(&mut rooms);
+            }
+        }
+    }
+    // Clean up: leave and forget the rooms made here.
+    for room in rooms.iter().filter(|r| mine(r)) {
+        let _ = session.leave_room(room.id.clone()).await;
+    }
+}
