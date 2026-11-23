@@ -114,6 +114,8 @@ pub struct RoomDialog {
     emoji_note: Option<Note>,
     /// A picture chosen and being cropped (#267), and what it is for.
     cropping: Option<(crate::crop_view::Picked, CropFor)>,
+    /// Invite: the link was just copied.
+    link_copied: bool,
 }
 
 /// What a cropped picture becomes.
@@ -254,6 +256,7 @@ impl RoomDialog {
             renaming: None,
             emoji_note: None,
             cropping: None,
+            link_copied: false,
         };
         this.load(cx);
         this.load_powers(cx);
@@ -750,6 +753,63 @@ impl RoomDialog {
         })
         .detach();
         cx.notify();
+    }
+
+    /// Invite: the one row at the very bottom to copy the link to the room or
+    /// server (#368), under the friends list, which scrolls by itself.
+    fn invite_link_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let RoomDialogKind::Invite(room) = self.kind.clone() else {
+            return div().into_any_element();
+        };
+        let link = crate::call_invite::channel_link(&room, None);
+        let copied = self.link_copied;
+        let label = if copied { "Copied" } else { "Copy link" };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .flex_none()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(0.85 * theme::REM))
+                    .text_color(rgb(theme::text_muted()))
+                    .child(link.clone())
+                    .e2e("div", "invite-link")
+                    .text(link.clone()),
+            )
+            .child(
+                div()
+                    .id("copy-invite-link")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(6.0))
+                    .px(px(12.0))
+                    .py(px(6.0))
+                    .rounded(px(theme::RADIUS_SM))
+                    .cursor_pointer()
+                    .bg(rgba(theme::bg_hover()))
+                    .hover(|s| s.bg(rgba(theme::bg_selected())))
+                    .text_color(rgb(theme::text()))
+                    .child(
+                        icon(if copied { "check" } else { "link" }, 16.0)
+                            .text_color(rgb(theme::text())),
+                    )
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
+                        this.link_copied = true;
+                        cx.notify();
+                    }))
+                    .e2e("button", "secondary copy-invite-link")
+                    .attr("type", "button")
+                    .text(label),
+            )
+            .e2e("div", "invite-link-row")
+            .into_any_element()
     }
 
     /// Invite `user` to the room or server of an Invite dialog (from the
@@ -1739,6 +1799,7 @@ impl RoomDialog {
                     ])
                     .into_any_element(),
                 );
+                parts.push(self.invite_link_row(cx));
                 ("invite-dialog", parts)
             }
             RoomDialogKind::Edit(_) => {
