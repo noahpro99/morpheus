@@ -72,10 +72,10 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
         words,
     };
     let mut list = vec![
-        entry(PaletteAction::CreateServer, "Create a server", "plus", &["Ctrl", "Shift", "N"], "new community space add"),
-        entry(PaletteAction::Discover, "Discover servers", "compass", &[], "browse explore public directory find"),
-        entry(PaletteAction::StartDm, "Start a DM", "message-circle", &[], "dm direct message chat friend person"),
-        entry(PaletteAction::Join, "Join by address", "log-in", &[], "join room server alias link matrix.to id knock"),
+        entry(PaletteAction::CreateServer, "Create a server", "plus", &["Ctrl", "Shift", "N"], "new community space add make guild"),
+        entry(PaletteAction::Discover, "Discover servers", "compass", &[], "browse explore public directory find search"),
+        entry(PaletteAction::StartDm, "Start a DM", "message-circle", &[], "dm direct message chat friend person talk"),
+        entry(PaletteAction::Join, "Join by address", "log-in", &[], "join room server alias link matrix.to id knock invite enter"),
         entry(PaletteAction::Settings, "Settings", "settings", &["Ctrl", ","], "preferences options"),
     ];
     list.extend(SettingsPage::listed(!state.no_window).into_iter().map(|page| PaletteEntry {
@@ -90,36 +90,36 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
         if state.light { "Switch to the dark theme" } else { "Switch to the light theme" },
         "palette",
         &[],
-        "toggle theme dark light appearance night day mode",
+        "toggle theme dark light appearance night day mode colour color",
     ));
     list.push(entry(
         PaletteAction::ToggleStreamer,
         if state.streamer { "Turn off streamer mode" } else { "Turn on streamer mode" },
         "eye-off",
         &[],
-        "toggle streamer mode hide privacy stream",
+        "toggle streamer mode hide privacy stream obs twitch recording",
     ));
     list.push(entry(
         PaletteAction::ToggleMute,
         if state.muted || state.deafened { "Unmute" } else { "Mute" },
         if state.muted || state.deafened { "mic-off" } else { "mic" },
         &["Ctrl", "Shift", "M"],
-        "microphone mic toggle voice",
+        "microphone mic toggle voice unmute silence",
     ));
     list.push(entry(
         PaletteAction::ToggleDeafen,
         if state.deafened { "Undeafen" } else { "Deafen" },
         "headphones",
         &["Ctrl", "Shift", "D"],
-        "headphones sound toggle voice",
+        "headphones sound toggle voice undeafen listen",
     ));
     if state.in_call {
-        list.push(entry(PaletteAction::LeaveCall, "Leave call", "phone-off", &[], "hang up disconnect end call"));
+        list.push(entry(PaletteAction::LeaveCall, "Leave call", "phone-off", &[], "hang up hangup disconnect end call leave"));
     }
     list.extend([
         entry(PaletteAction::Inbox, "Inbox", "inbox", &["Ctrl", "I"], "mentions notifications invites"),
-        entry(PaletteAction::Shortcuts, "Keyboard shortcuts", "circle-help", &["Ctrl", "/"], "hotkeys keys help"),
-        entry(PaletteAction::CheckForUpdates, "Check for updates", "refresh-cw", &[], "update upgrade version"),
+        entry(PaletteAction::Shortcuts, "Keyboard shortcuts", "circle-help", &["Ctrl", "/"], "hotkeys keys help keybindings keybinds hotkey"),
+        entry(PaletteAction::CheckForUpdates, "Check for updates", "refresh-cw", &[], "update upgrade version updates new release"),
         entry(PaletteAction::Acknowledgements, "Acknowledgements", "heart", &[], "about credits licenses thanks"),
         entry(PaletteAction::WhatsNew, "What's new", "info", &[], "patch notes changelog release notes version updates"),
     ]);
@@ -129,11 +129,11 @@ pub fn actions(state: PaletteState) -> Vec<PaletteEntry> {
             "Close to background",
             "minus",
             &[],
-            "hide tray minimise window keep running",
+            "hide tray minimise minimize window keep running background",
         ));
     }
-    list.push(entry(PaletteAction::Quit, "Quit Morpheus", "log-out", &["Ctrl", "Q"], "exit close end stop"));
-    list.push(entry(PaletteAction::Restart, "Restart Morpheus", "refresh-cw", &[], "relaunch reload reopen"));
+    list.push(entry(PaletteAction::Quit, "Quit Morpheus", "log-out", &["Ctrl", "Q"], "exit close end stop shutdown leave"));
+    list.push(entry(PaletteAction::Restart, "Restart Morpheus", "refresh-cw", &[], "reboot relaunch reload reopen refresh"));
     list
 }
 
@@ -585,5 +585,44 @@ mod join_voice_tests {
         assert_eq!(labels, ["Join voice: Stage", "Join voice: Lounge"]);
         let labels: Vec<String> = join_voice(&channels(), None, Some(&open)).into_iter().map(|e| e.label).collect();
         assert_eq!(labels, ["Join voice: Lounge"]);
+    }
+}
+
+#[cfg(test)]
+mod synonyms {
+    use super::*;
+
+    fn first(needle: &str) -> Option<PaletteAction> {
+        search(actions(PaletteState { in_call: true, background: true, ..Default::default() }), needle)
+            .first()
+            .map(|e| e.action)
+    }
+
+    #[test]
+    fn a_synonym_finds_the_action() {
+        for (word, action) in [
+            ("reboot", PaletteAction::Restart),
+            ("relaunch", PaletteAction::Restart),
+            ("exit", PaletteAction::Quit),
+            ("preferences", PaletteAction::Settings),
+            ("options", PaletteAction::Settings),
+            ("unmute", PaletteAction::ToggleMute),
+            ("hangup", PaletteAction::LeaveCall),
+            ("shutdown", PaletteAction::Quit),
+            ("upgrade", PaletteAction::CheckForUpdates),
+            ("changelog", PaletteAction::WhatsNew),
+            ("tray", PaletteAction::CloseToBackground),
+            ("invite", PaletteAction::Join),
+            ("night", PaletteAction::ToggleTheme),
+        ] {
+            assert_eq!(first(word), Some(action), "{word:?}");
+        }
+    }
+
+    #[test]
+    fn a_match_on_the_label_ranks_above_one_on_a_keyword() {
+        // "Settings" is a keyword of nothing that outranks the label of Settings itself.
+        assert_eq!(first("restart"), Some(PaletteAction::Restart));
+        assert_eq!(first("quit"), Some(PaletteAction::Quit));
     }
 }
