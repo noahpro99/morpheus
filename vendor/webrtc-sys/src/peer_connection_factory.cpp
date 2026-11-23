@@ -22,6 +22,11 @@
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "absl/strings/match.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/environment/environment.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/create_modular_peer_connection_factory.h"
 #include "api/environment/environment_factory.h"
@@ -49,6 +54,128 @@
 
 namespace livekit_ffi {
 namespace {
+
+// Morpheus patch (#341): the Opus encoder expects at least this much packet
+// loss, so its in-band FEC (LBRR) is on from the first packet and stays on.
+// libwebrtc sets the expected loss from the RTCP receiver reports of the
+// publisher's own uplink, which the SFU makes 0 on a good link, while the
+// loss that hurts a listener is on the SFU-to-listener leg, which no report
+// reaches the encoder. With end-to-end encryption RED (the other cover) is
+// off, so a listener's 2% loss was 2% concealed audio. the floor costs a few kbps of redundancy.
+constexpr float kExpectedLossFloor = 0.20f;
+
+#if __has_include("api/audio/audio_view.h")
+#define LK_AUDIO_SPAN std::span<const int16_t>
+#define LK_CONTAINED_SPAN std::span<std::unique_ptr<webrtc::AudioEncoder>>
+#define LK_ANA_ARGS absl::string_view config
+#define LK_ANA_CALL config
+#else
+#define LK_AUDIO_SPAN webrtc::ArrayView<const int16_t>
+#define LK_CONTAINED_SPAN webrtc::ArrayView<std::unique_ptr<webrtc::AudioEncoder>>
+#define LK_ANA_ARGS const std::string& config, webrtc::RtcEventLog* event_log
+#define LK_ANA_CALL config, event_log
+#endif
+
+// An Opus encoder (or any) that passes everything to `inner`, with the
+// expected packet loss never under kExpectedLossFloor.
+class LossFlooredEncoder final : public webrtc::AudioEncoder {
+ public:
+  explicit LossFlooredEncoder(std::unique_ptr<webrtc::AudioEncoder> inner)
+      : inner_(std::move(inner)) {
+    inner_->OnReceivedUplinkPacketLossFraction(kExpectedLossFloor);
+  }
+  int SampleRateHz() const override { return inner_->SampleRateHz(); }
+  size_t NumChannels() const override { return inner_->NumChannels(); }
+  int RtpTimestampRateHz() const override { return inner_->RtpTimestampRateHz(); }
+  size_t Num10MsFramesInNextPacket() const override {
+    return inner_->Num10MsFramesInNextPacket();
+  }
+  size_t Max10MsFramesInAPacket() const override {
+    return inner_->Max10MsFramesInAPacket();
+  }
+  int GetTargetBitrate() const override { return inner_->GetTargetBitrate(); }
+  void Reset() override { inner_->Reset(); }
+  bool SetFec(bool enable) override { return inner_->SetFec(enable); }
+  bool SetDtx(bool enable) override { return inner_->SetDtx(enable); }
+  bool GetDtx() const override { return inner_->GetDtx(); }
+  bool SetApplication(Application application) override {
+    return inner_->SetApplication(application);
+  }
+  void SetMaxPlaybackRate(int frequency_hz) override {
+    inner_->SetMaxPlaybackRate(frequency_hz);
+  }
+  bool EnableAudioNetworkAdaptor(LK_ANA_ARGS) override {
+    return inner_->EnableAudioNetworkAdaptor(LK_ANA_CALL);
+  }
+  void DisableAudioNetworkAdaptor() override { inner_->DisableAudioNetworkAdaptor(); }
+  void OnReceivedUplinkPacketLossFraction(float fraction) override {
+    inner_->OnReceivedUplinkPacketLossFraction(
+        fraction > kExpectedLossFloor ? fraction : kExpectedLossFloor);
+  }
+  void OnReceivedTargetAudioBitrate(int target_bps) override {
+    inner_->OnReceivedTargetAudioBitrate(target_bps);
+  }
+  void OnReceivedUplinkBandwidth(int target_audio_bitrate_bps,
+                                 std::optional<int64_t> bwe_period_ms) override {
+    inner_->OnReceivedUplinkBandwidth(target_audio_bitrate_bps, bwe_period_ms);
+  }
+  void OnReceivedUplinkAllocation(webrtc::BitrateAllocationUpdate update) override {
+    inner_->OnReceivedUplinkAllocation(update);
+  }
+  void OnReceivedRtt(int rtt_ms) override { inner_->OnReceivedRtt(rtt_ms); }
+  void OnReceivedOverhead(size_t overhead_bytes_per_packet) override {
+    inner_->OnReceivedOverhead(overhead_bytes_per_packet);
+  }
+  void SetReceiverFrameLengthRange(int min_frame_length_ms,
+                                   int max_frame_length_ms) override {
+    inner_->SetReceiverFrameLengthRange(min_frame_length_ms, max_frame_length_ms);
+  }
+  webrtc::ANAStats GetANAStats() const override { return inner_->GetANAStats(); }
+  std::optional<std::pair<webrtc::TimeDelta, webrtc::TimeDelta>>
+  GetFrameLengthRange() const override {
+    return inner_->GetFrameLengthRange();
+  }
+  std::optional<std::pair<webrtc::DataRate, webrtc::DataRate>> GetBitrateRange()
+      const override {
+    return inner_->GetBitrateRange();
+  }
+
+ protected:
+  EncodedInfo EncodeImpl(uint32_t rtp_timestamp, LK_AUDIO_SPAN audio,
+                         webrtc::Buffer* encoded) override {
+    return inner_->Encode(rtp_timestamp, audio, encoded);
+  }
+
+ private:
+  std::unique_ptr<webrtc::AudioEncoder> inner_;
+};
+
+// The built-in encoders, with Opus's wrapped.
+class LossFlooredEncoderFactory : public webrtc::AudioEncoderFactory {
+ public:
+  explicit LossFlooredEncoderFactory(
+      webrtc::scoped_refptr<webrtc::AudioEncoderFactory> inner)
+      : inner_(std::move(inner)) {}
+  std::vector<webrtc::AudioCodecSpec> GetSupportedEncoders() override {
+    return inner_->GetSupportedEncoders();
+  }
+  std::optional<webrtc::AudioCodecInfo> QueryAudioEncoder(
+      const webrtc::SdpAudioFormat& format) override {
+    return inner_->QueryAudioEncoder(format);
+  }
+  std::unique_ptr<webrtc::AudioEncoder> Create(
+      const webrtc::Environment& env, const webrtc::SdpAudioFormat& format,
+      Options options) override {
+    auto encoder = inner_->Create(env, format, options);
+    if (encoder && absl::EqualsIgnoreCase(format.name, "opus")) {
+      return std::make_unique<LossFlooredEncoder>(std::move(encoder));
+    }
+    return encoder;
+  }
+
+ private:
+  webrtc::scoped_refptr<webrtc::AudioEncoderFactory> inner_;
+};
 
 constexpr char kForcePlayoutDelayFieldTrial[] =
     "WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:0/";
@@ -190,7 +317,8 @@ PeerConnectionFactory::PeerConnectionFactory(
       std::move(std::make_unique<livekit_ffi::VideoEncoderFactory>());
   dependencies.video_decoder_factory =
       std::move(std::make_unique<livekit_ffi::VideoDecoderFactory>());
-  dependencies.audio_encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
+  dependencies.audio_encoder_factory = webrtc::make_ref_counted<LossFlooredEncoderFactory>(
+      webrtc::CreateBuiltinAudioEncoderFactory());
   dependencies.audio_decoder_factory = webrtc::CreateBuiltinAudioDecoderFactory();
   dependencies.audio_processing_builder = std::make_unique<webrtc::BuiltinAudioProcessingBuilder>();
 
