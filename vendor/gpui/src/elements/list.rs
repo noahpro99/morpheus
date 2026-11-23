@@ -418,7 +418,10 @@ impl ListState {
             .scrollbar_drag_start_height
             .unwrap_or_else(|| state.items.summary().height);
 
-        Size::new(Pixels::ZERO, Pixels::ZERO.max(height - bounds.size.height))
+        Size::new(
+            Pixels::ZERO,
+            state.scroll_max(height, bounds.size.height),
+        )
     }
 
     /// Returns the current scroll offset adjusted for the scrollbar
@@ -468,9 +471,7 @@ impl StateInner {
             return;
         }
 
-        let padding = self.last_padding.unwrap_or_default();
-        let scroll_max =
-            (self.items.summary().height + padding.top + padding.bottom - height).max(px(0.));
+        let scroll_max = self.scroll_max(self.items.summary().height, height);
         let new_scroll_top = (self.scroll_top(scroll_top) - delta.y)
             .max(px(0.))
             .min(scroll_max);
@@ -516,6 +517,14 @@ impl StateInner {
                     offset_in_item: px(0.),
                 },
             })
+    }
+
+    /// The furthest scroll offset for `content_height` of items in a viewport
+    /// `height` tall, with the list's padding: the one end every way of
+    /// scrolling (wheel, scrollbar thumb, track, keys) reaches and reports (#355).
+    fn scroll_max(&self, content_height: Pixels, height: Pixels) -> Pixels {
+        let padding = self.last_padding.unwrap_or_default();
+        (content_height + padding.top + padding.bottom - height).max(px(0.))
     }
 
     fn scroll_top(&self, logical_scroll_top: &ListOffset) -> Pixels {
@@ -824,9 +833,8 @@ impl StateInner {
         };
         let height = bounds.size.height;
 
-        let padding = self.last_padding.unwrap_or_default();
         let content_height = self.items.summary().height;
-        let scroll_max = (content_height + padding.top + padding.bottom - height).max(px(0.));
+        let scroll_max = self.scroll_max(content_height, height);
         let drag_offset =
             // if dragging the scrollbar, we want to offset the point if the height changed
             content_height - self.scrollbar_drag_start_height.unwrap_or(content_height);
