@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
@@ -222,9 +223,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.row + Space.sm).toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    PullDown(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background)) {
+    PullDown(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail")) {
     LazyColumn(
-        Modifier.fillMaxSize().testTag("rail"),
+        Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -333,8 +334,8 @@ private fun ChannelList(
             val listState = rememberLazyListState()
             // A new invitation goes above the rooms: the list stays on the room it was showing, so go and look.
             LaunchedEffect(invites.size) { if (invites.isNotEmpty()) listState.animateScrollToItem(0) }
-            PullDown(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize().testTag("rooms-list"), state = listState, contentPadding = PaddingValues(bottom = Space.lg)) {
+            PullDown(Modifier.fillMaxSize().testTag("rooms-list")) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Space.lg)) {
                 if (invites.isNotEmpty()) {
                     item(key = "invites-heading") { SectionHeader(t("Invites")) }
                     items(invites, key = { "invite-${it.id}" }) { invite -> InviteCard(invite, model) }
@@ -523,7 +524,7 @@ private fun PullDown(modifier: Modifier = Modifier, content: @Composable () -> U
             }
         }
     }
-    Box(modifier.onSizeChanged { most = it.height / 2f }.nestedScroll(connection)) {
+    Box(modifier.clipToBounds().onSizeChanged { most = it.height / 2f }.nestedScroll(connection)) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = pull }) { content() }
     }
 }

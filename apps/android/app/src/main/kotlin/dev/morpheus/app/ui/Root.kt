@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.testTag
@@ -96,7 +98,7 @@ fun Root(model: AppModel) {
                                 label = "room-and-lists",
                             ) { roomOpen ->
                                 val shownRoom = lastRoom
-                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(if (roomOpen) 1 else 0, it.positionInWindow().x) }) {
                                     if (roomOpen && shownRoom != null) RoomScreen(model, shownRoom)
                                     else if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
                                     else if (reorderOpen) ReorderScreen(model)

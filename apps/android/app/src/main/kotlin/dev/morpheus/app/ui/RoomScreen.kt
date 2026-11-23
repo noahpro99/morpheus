@@ -155,7 +155,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
 
     // What is read is what is in front of the person: the newest message.
     val newest = (rows.lastOrNull { it is TimelineRow.Message } as? TimelineRow.Message)?.message?.key
-    LaunchedEffect(newest) { if (newest != null && threadRoot == null) model.markRead() }
+    // Only while this room is the one open: one that is sliding out (it stays drawn a moment) reads nothing more.
+    val openNow by app.openRoom.collectAsState()
+    LaunchedEffect(newest, openNow?.id == room.id) { if (newest != null && threadRoot == null && openNow?.id == room.id) model.markRead() }
 
     Box(Modifier.fillMaxSize()) {
         if (searching) SearchPanel(model) { id ->
