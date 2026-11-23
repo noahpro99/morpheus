@@ -130,7 +130,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     if in_space {
         name = name.child(icon("chevron-down", 14.0).text_color(rgb(name_colour)));
     }
-    let mut header = div()
+    let header = div()
         .w_full()
         .h(px(48.0))
         .flex_none()
@@ -151,33 +151,6 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .text(title)
                 .into_any_element()
         });
-    let plus_colour = crate::chat::bar_colour(shell, "create-room", theme::text_muted());
-    if *scope != Scope::Dms {
-        header = header.child(
-            div()
-                .id("create-room")
-                .size(px(28.0))
-                .flex_none()
-                .mr(px(10.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(theme::RADIUS_SM))
-                .text_color(rgb(plus_colour))
-                .on_hover(crate::chat::bar_hover(cx, "create-room"))
-                .cursor_pointer()
-                .child(icon("plus", 18.0).text_color(rgb(plus_colour)))
-                .on_click(
-                    cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)),
-                )
-                .tip(t("Create room"))
-                .e2e("button", "ghost create-room-button")
-                .attr("data-color", format!("{plus_colour:06x}"))
-                .attr("data-bg", "")
-                .attr("title", "Create room"),
-        );
-    }
-
     let mut list = div()
         .id("room-list")
         .flex_1()
@@ -232,10 +205,12 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             list = list.child(row(shell, cx, room, None, None));
         }
     }
+    // The Rooms heading carries the create-room plus (#369), so it shows in every
+    // scope but the DMs, with no rooms yet and above categories too.
+    if *scope != Scope::Dms {
+        list = list.child(rooms_heading(shell, cx));
+    }
     if !found.channels.is_empty() {
-        if grouped {
-            list = list.child(section("Rooms", ""));
-        }
         for (i, room) in found.channels.iter().enumerate() {
             let next = found.channels.get(i + 1).map(|r| &r.id);
             list = list.child(row(shell, cx, room, reorder.as_ref(), next));
@@ -413,6 +388,50 @@ fn section(text: &str, class: &str) -> impl IntoElement {
         .child(text.to_uppercase())
         .e2e("h4", &format!("section {class}"))
         .text(text)
+}
+
+/// The "Rooms" heading with the small create-room plus to its right (#369).
+fn rooms_heading(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
+    let plus_colour = crate::chat::bar_colour(shell, "create-room", theme::text_muted());
+    div()
+        .mx(px(8.0))
+        .mt(px(12.0))
+        .mb(px(4.0))
+        .flex()
+        .items_center()
+        .justify_between()
+        .child(
+            div()
+                .text_size(px(0.7 * theme::REM))
+                .font_weight(FontWeight::BOLD)
+                .text_color(rgb(theme::text_faint()))
+                .child("ROOMS")
+                .e2e("h4", "section")
+                .text("Rooms"),
+        )
+        .child(
+            div()
+                .id("create-room")
+                .size(px(18.0))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(theme::RADIUS_SM))
+                .text_color(rgb(plus_colour))
+                .on_hover(crate::chat::bar_hover(cx, "create-room"))
+                .cursor_pointer()
+                .child(icon("plus", 12.0).text_color(rgb(plus_colour)))
+                .on_click(
+                    cx.listener(|this, _, _, cx| this.open_room_dialog(RoomDialogKind::Create, cx)),
+                )
+                .tip(t("Create room"))
+                .e2e("button", "ghost create-room-button")
+                .attr("data-color", format!("{plus_colour:06x}"))
+                .attr("data-bg", "")
+                .attr("title", "Create room"),
+        )
+        .e2e("div", "section-row")
 }
 
 fn row(
