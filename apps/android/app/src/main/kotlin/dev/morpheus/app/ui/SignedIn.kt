@@ -152,7 +152,10 @@ fun BottomBar(model: AppModel, tab: Tab) {
             TabItem(Tab.Dms, tab, t("DMs"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
                 GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) Palette.Accent else Palette.Muted)
             }
-            TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) }) { on ->
+            TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) },
+                onLong = { model.openSheet(t("You")) { model.morpheus.accountMenuRows() } },
+                onSecondTap = { model.nextAccount() },
+            ) { on ->
                 // Your own picture, ringed when this is the tab in use.
                 val me = when (val s = model.screen.collectAsState().value) {
                     is dev.morpheus.app.Screen.SignedIn -> s.account.userId
@@ -160,11 +163,13 @@ fun BottomBar(model: AppModel, tab: Tab) {
                     else -> ""
                 }
                 val names by People.names.collectAsState()
-                val name = People.nameOf(me, names)
+                val own by model.ownProfile.collectAsState()
+                val ownKey by model.ownAvatarKey.collectAsState()
+                val name = own?.name ?: People.nameOf(me, names)
                 Box(
                     Modifier.size(30.dp).then(if (on) Modifier.border(2.dp, Palette.Accent, CircleShape).testTag("tab-profile-ring") else Modifier),
                     contentAlignment = Alignment.Center,
-                ) { Avatar(null, name, 24.dp, Modifier.testTag("tab-profile-avatar")) }
+                ) { Avatar(own?.avatar, name, 24.dp, Modifier.testTag("tab-profile-avatar"), key = ownKey) }
             }
         }
     }
@@ -173,14 +178,25 @@ fun BottomBar(model: AppModel, tab: Tab) {
 @Composable
 private fun RowScope.TabItem(
     me: Tab, current: Tab, label: String, tag: String,
-    mentions: ULong = 0UL, dot: Boolean = false, onClick: () -> Unit, icon: @Composable (Boolean) -> Unit,
+    mentions: ULong = 0UL, dot: Boolean = false, onClick: () -> Unit, onLong: (() -> Unit)? = null, onSecondTap: (() -> Unit)? = null,
+    icon: @Composable (Boolean) -> Unit,
 ) {
     val on = me == current
+    var lastTap by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     Column(
         Modifier
             .weight(1f).fillMaxHeight()
             // Taps by pointerInput, not clickable: that would merge the icon and avatar into one node (the tests look inside).
-            .pointerInput(onClick) { detectTapGestures { onClick() } }
+            .pointerInput(onClick, onLong, onSecondTap) {
+                // A tap acts at once (no wait to see whether a second comes); a second one close behind it is the double tap.
+                detectTapGestures(
+                    onLongPress = onLong?.let { long -> { long() } },
+                    onTap = {
+                        val now = android.os.SystemClock.uptimeMillis()
+                        if (onSecondTap != null && now - lastTap < 350) { lastTap = 0; onSecondTap() } else { lastTap = now; onClick() }
+                    },
+                )
+            }
             .semantics { role = Role.Tab; onClick { onClick(); true } }
             .semantics { selected = on }
             .testTag(tag),
@@ -397,12 +413,14 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
 private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
     val names by People.names.collectAsState()
     LaunchedEffect(state.account.userId) { People.want(state.account.userId) }
-    val name = People.nameOf(state.account.userId, names)
+    val own by model.ownProfile.collectAsState()
+    val ownKey by model.ownAvatarKey.collectAsState()
+    val name = own?.name ?: People.nameOf(state.account.userId, names)
     val sync by remember { model.morpheus.syncStates() }.collectAsState(initial = "")
     val online = sync == "running" || sync.isEmpty()
     Column(Modifier.fillMaxSize().background(Palette.Surface).verticalScroll(rememberScrollState()).testTag("profile-pane")) {
         Column(Modifier.fillMaxWidth().background(Palette.Background).padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
-            Avatar(null, name, Size.avatarXl)
+            Avatar(own?.avatar, name, Size.avatarXl, key = ownKey)
             Text(name, Modifier.padding(top = Space.md).testTag("profile-name"), style = Type.title)
             Text(
                 state.account.userId,

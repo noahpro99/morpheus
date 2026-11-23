@@ -21,6 +21,7 @@
 
 #[cfg(target_os = "android")]
 mod android;
+mod accounts;
 mod bridges;
 mod calls;
 mod composer;
@@ -146,7 +147,7 @@ fn store_kind() -> morpheus_core::SessionStoreKind {
 /// The app's one entry point.
 #[derive(uniffi::Object)]
 pub struct Morpheus {
-    core: Core,
+    pub(crate) core: Core,
     pub(crate) dir: std::path::PathBuf,
     session: Mutex<Option<Session>>,
     /// Mutes changed here, which the room list only learns of with the room's next change.
@@ -168,7 +169,7 @@ impl Morpheus {
             .ok_or(FfiError::SignedOut)
     }
 
-    fn keep(&self, session: Session) -> Account {
+    pub(crate) fn keep(&self, session: Session) -> Account {
         let account = Account::of(&session);
         if let Ok(mut slot) = self.session.lock() {
             *slot = Some(session);

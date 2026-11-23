@@ -49,6 +49,12 @@ pub enum MenuOutcome {
     Mention { name: String },
     /// A page of the phone for this item: `kind` is `invite`, `create`, `edit`, `privacy`, `overview` or `rename-folder`; `room_id` the
     /// room, server or folder it is about (the server to make a room in, for `create`, empty for none), `extra` its name where that matters.
+    /// Another account is the signed-in one now.
+    Switched,
+    /// Sign in another account without signing out of this one.
+    AddAccount,
+    /// Sign out (the screen asks first).
+    SignOut,
     Page { kind: String, room_id: String, extra: String },
     /// The reactions of the message the sheet was opened on.
     ViewReactions,
@@ -145,6 +151,10 @@ impl Morpheus {
     fn store(&self, items: &[MenuItem], room: Option<OwnedRoomId>, event_id: Option<String>) -> Vec<MenuRow> {
         let rows = rows_of(items, "");
         if let Ok(mut slot) = self.menu.lock() {
+    pub(crate) fn store_menu(&self, items: &[MenuItem]) -> Vec<MenuRow> {
+        self.store(items, None, None)
+    }
+
             *slot = Some(Stored { items: items.to_vec(), room, event_id });
         }
         rows
@@ -340,6 +350,26 @@ impl Morpheus {
             MenuAction::CreateChannel(space) => MenuOutcome::Page { kind: "create".into(), room_id: space.to_string(), extra: String::new() },
             MenuAction::Ungroup(folder) => {
                 self.ungroup_folder(folder).await?;
+            MenuAction::ToggleHideMuted => {
+                self.change_rail(|prefs| {
+                    let on = prefs.get("hide_muted").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if let Some(object) = prefs.as_object_mut() {
+                        object.insert("hide_muted".into(), (!on).into());
+                    }
+                })
+                .await?;
+                MenuOutcome::Done
+            }
+            MenuAction::LockNow(room) => {
+                self.lock_room(room.to_string());
+                MenuOutcome::Done
+            }
+            MenuAction::SwitchAccount(key) => {
+                self.switch_account(key).await?;
+                MenuOutcome::Switched
+            }
+            MenuAction::AddAccount => MenuOutcome::AddAccount,
+            MenuAction::SignOut => MenuOutcome::SignOut,
                 MenuOutcome::Done
             }
             MenuAction::RoomDialog(kind) => {

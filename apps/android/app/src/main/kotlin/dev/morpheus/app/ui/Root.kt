@@ -83,3 +83,9 @@ fun Root(model: AppModel) {
         }
     }
 }
+            // Adding an account: the sign-in screen over the signed-in one; back goes back.
+            val adding by model.addingAccount.collectAsState()
+            if (adding && screen is Screen.SignedIn) {
+                androidx.activity.compose.BackHandler { model.cancelAddAccount() }
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { SignInScreen(model) }
+            }

@@ -208,6 +208,9 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             }
         }
     }
+                    is uniffi.morpheus_ffi.MenuOutcome.Switched -> accountChanged()
+                    is uniffi.morpheus_ffi.MenuOutcome.AddAccount -> beginAddAccount()
+                    is uniffi.morpheus_ffi.MenuOutcome.SignOut -> signOut()
 
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
@@ -507,7 +510,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), startBar)
 
     init {
-        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) AppState.sessionBack(); signedInChanged(it) }.launchIn(viewModelScope)
+        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile() }; signedInChanged(it) }.launchIn(viewModelScope)
         kotlinx.coroutines.flow.combine(pendingRoom, sidebar) { id, bar -> id to bar }.onEach { (id, bar) ->
             val room = bar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == id }
             if (room != null) {
@@ -569,6 +572,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _room.value = null
         AppState.room = ""
         _screen.value = Screen.SignedOut
+                _adding.value = false
         listOf("account", "room", "last-room", "scope", "tab").forEach { keep(it, null) }
         viewModelScope.launch {
             try {
@@ -579,6 +583,66 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 }
+
+    private val _adding = MutableStateFlow(false)
+
+    /** The sign-in screen is up to add another account, over the signed-in one (back cancels it). */
+    val addingAccount: StateFlow<Boolean> = _adding.asStateFlow()
+
+    fun beginAddAccount() { _adding.value = true }
+
+    fun cancelAddAccount() { _adding.value = false }
+
+    private val _own = MutableStateFlow<uniffi.morpheus_ffi.OwnProfile?>(null)
+
+    /** Who is signed in, as they show (name and picture). */
+    val ownProfile: StateFlow<uniffi.morpheus_ffi.OwnProfile?> = _own.asStateFlow()
+
+    private val _ownKey = MutableStateFlow(kept?.getString("own-avatar-key", null))
+
+    /** The key of my picture, kept: it is drawn from the disk at once at the next launch. */
+    val ownAvatarKey: StateFlow<String?> = _ownKey.asStateFlow()
+
+    private fun loadOwnProfile() {
+        viewModelScope.launch {
+            try {
+                val profile = morpheus.ownProfile()
+                _own.value = profile
+                _ownKey.value = profile.avatarKey
+                keep("own-avatar-key", profile.avatarKey)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Another account is the signed-in one now (the ffi switched): start from its lists. */
+    fun accountChanged() {
+        val account = morpheus.account() ?: return
+        _room.value = null
+        _newOpen.value = false
+        AppState.room = ""
+        _own.value = null
+        _ownKey.value = null
+        listOf("room", "last-room", "scope", "own-avatar-key").forEach { keep(it, null) }
+        keep("account", listOf(account.userId, account.homeserver, account.deviceId).joinToString("\n"))
+        _screen.value = Screen.SignedIn(account)
+        viewModelScope.launch { morpheusApp?.registerPushNow() }
+    }
+
+    /** The next stored account, after this one (a double tap on You); nothing when there is only this one. */
+    fun nextAccount() {
+        viewModelScope.launch {
+            try {
+                val accounts = morpheus.savedAccounts()
+                if (accounts.size < 2) return@launch
+                val at = accounts.indexOfFirst { it.active }
+                morpheus.switchAccount(accounts[(at + 1) % accounts.size].key)
+                accountChanged()
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
 
 /** What the account says about people, for every screen: who is ignored. */
 object People {
