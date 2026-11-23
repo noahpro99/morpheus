@@ -129,7 +129,8 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
         // Closed: it springs down out of view (as a picture), then it is forgotten.
         LaunchedEffect(live) {
             if (!live) {
-                top.animateTo(hidden, sheetSpring())
+                // Out fast and without a bounce: about 100 ms, so the sheet is gone (and the colour with it) at once.
+                top.animateTo(hidden, spring(dampingRatio = 1f, stiffness = 1500f))
                 onGone()
             }
         }
