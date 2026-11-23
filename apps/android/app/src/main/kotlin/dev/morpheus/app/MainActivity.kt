@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
             dev.morpheus.app.push.Push.start(this)
             false
         }
+        if (savedInstanceState == null) ShareInbox.receive(this, intent)
         openRoomOf(intent)
     }
 
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        ShareInbox.receive(this, intent)
         openRoomOf(intent)
     }
 

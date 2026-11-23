@@ -71,6 +71,7 @@ pub mod transcript;
 pub mod rich;
 pub mod rows;
 pub mod search;
+pub mod share;
 pub mod text_buffer;
 pub mod theme;
 pub mod theme_history;
