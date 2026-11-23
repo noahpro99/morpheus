@@ -7,13 +7,6 @@
 #   scripts/trim-caches.sh             keep each platform's newest entry, delete
 #                                      the rest; warn when what is left is over
 #                                      the limit
-#   scripts/trim-caches.sh --replace <shared-key>
-#                                      delete every entry of that platform: run
-#                                      after a successful build and before
-#                                      rust-cache saves, so the exact-key hit
-#                                      that would skip the save cannot hold
-#                                      the stale entry (a failed or cancelled
-#                                      build never gets here and keeps it)
 # Needs GH_TOKEN with actions: write.
 set -euo pipefail
 limit_gib=${LIMIT_GIB:-9.5}
@@ -21,14 +14,6 @@ limit_gib=${LIMIT_GIB:-9.5}
 list() { gh cache list --limit 100 --sort created_at --order desc \
   --json id,key,sizeInBytes,lastAccessedAt --jq '.[] | select(.key | startswith("v0-rust-")) | [.id, .key, .sizeInBytes, .lastAccessedAt] | @tsv'; }
 group() { sed -E 's/-[0-9a-f]{8,}-[0-9a-f]{8,}$//' <<<"$1"; }
-
-if [ "${1:-}" = "--replace" ]; then
-  prefix="v0-rust-$2-"
-  list | while IFS=$'\t' read -r id key _; do
-    case "$key" in "$prefix"*) echo "replacing cache $key"; gh cache delete "$id" || true ;; esac
-  done
-  exit 0
-fi
 
 declare -A seen
 keep=()

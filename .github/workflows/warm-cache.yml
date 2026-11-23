@@ -5,7 +5,11 @@
 # daily) each platform builds its release target exactly as the Linux, Windows
 # and Apple workflows do (same shared-key, flags and compiler, so the cache is
 # the same entry) and saves the result. Keep the setup steps in line with
-# those workflows.
+# those workflows. Each run saves a new entry (scripts/ci-cache.sh unique-key:
+# rust-cache would not save again while Cargo.lock is unchanged) and the last
+# job deletes the older ones; the run also records its commit in the cache
+# (.warm/sha) so builds that restore it can leave unchanged files looking
+# unchanged to Cargo (scripts/ci-cache.sh restore-mtimes).
 name: Warm cache
 
 on:
@@ -29,8 +33,7 @@ on:
 # One run at a time; a newer push replaces the run waiting behind it (older
 # waiting runs are cancelled) but never one that is building: with pushes
 # every few minutes and builds of 20 minutes, cancelling the running one would
-# mean no build ever finishes and saves. The old cache is deleted only after a
-# build succeeds (see "Replace the cache").
+# mean no build ever finishes and saves.
 concurrency:
   group: warm-cache
   cancel-in-progress: false
@@ -49,18 +52,22 @@ jobs:
         run: scripts/ci-linux-deps.sh
       - name: Rust
         run: rustup show active-toolchain || rustup toolchain install
+      - name: New cache key
+        run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux-x86_64
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-workspace-crates: true
+          cache-directories: .warm
+      - name: Cache file times
+        run: |
+          scripts/ci-cache.sh undo-key
+          scripts/ci-cache.sh restore-mtimes
       - name: Build
         run: cargo build --release -p morpheus-desktop --locked
-      - name: Replace the cache
-        if: github.event_name != 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/trim-caches.sh --replace linux-x86_64
+      - name: Record the commit
+        run: scripts/ci-cache.sh record
 
   windows:
     runs-on: windows-latest
@@ -76,22 +83,26 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add x86_64-pc-windows-msvc
+      - name: New cache key
+        run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-x86_64
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-workspace-crates: true
+          cache-directories: .warm
+      - name: Cache file times
+        run: |
+          scripts/ci-cache.sh undo-key
+          scripts/ci-cache.sh restore-mtimes
       - name: NASM
         run: |
           choco install nasm -y --no-progress || true
           echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
       - name: Build
         run: cargo build --release -p morpheus-desktop -p morpheus-launcher --locked --target x86_64-pc-windows-msvc
-      - name: Replace the cache
-        if: github.event_name != 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/trim-caches.sh --replace windows-x86_64
+      - name: Record the commit
+        run: scripts/ci-cache.sh record
 
   macos:
     runs-on: macos-latest
@@ -116,21 +127,25 @@ jobs:
           else
             echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
           fi
+      - name: New cache key
+        run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-workspace-crates: true
+          cache-directories: .warm
+      - name: Cache file times
+        run: |
+          scripts/ci-cache.sh undo-key
+          scripts/ci-cache.sh restore-mtimes
       - name: NASM
         if: matrix.target == 'x86_64-apple-darwin'
         run: brew install nasm || true
       - name: Build
         run: cargo build --release -p morpheus-desktop --locked --target ${{ matrix.target }} $FEATURES
-      - name: Replace the cache
-        if: github.event_name != 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/trim-caches.sh --replace macos-${{ matrix.target }}
+      - name: Record the commit
+        run: scripts/ci-cache.sh record
 
   # Every platform's newest entry stays, older ones go, and a warning says when
   # they no longer fit in 10 GB.

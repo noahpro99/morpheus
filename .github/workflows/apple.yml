@@ -61,6 +61,12 @@ jobs:
           # Only main saves: tags and hand runs read it, so the 10 GB limit holds one
           # cache per platform.
           cache-workspace-crates: true
+          cache-directories: .warm
+
+      # What the cache was built at: files unchanged since then keep an old time, so Cargo
+      # does not rebuild the vendored and workspace crates (#358).
+      - name: Cache file times
+        run: scripts/ci-cache.sh restore-mtimes
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # OpenH264 (videos): x86 assembly for the Intel build when nasm is
