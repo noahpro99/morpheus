@@ -816,11 +816,18 @@ impl TimelineView {
             let y = f32::from(rect.top() - self.list.viewport_bounds().top());
             (y > 0.5).then_some(y)
         });
+        // Scrolled all the way up (the placeholder row at the very top of the list) while
+        // the room's start comes in (the placeholder goes away): the view stays at the top,
+        // where the oldest messages are, not on the row it was on far down the page.
+        let at_top = top.item_ix == 0 && top.offset_in_item <= px(0.0);
+        let start_came_in = matches!(self.rows.first(), Some(Row::Skeleton { older: true }))
+            && !matches!(rows.first(), Some(Row::Skeleton { older: true }));
+        let hold_top = at_top && start_came_in;
         if !edits.is_empty() {
             for &(start, removed, added) in edits.iter().rev() {
                 self.list.splice(start..start + removed, added);
             }
-            if let Some((was, now)) = anchor {
+            if let Some((was, now)) = anchor.filter(|_| !hold_top) {
                 // The row stays as far below the top as it was: a negative offset, which
                 // the list lays out (the new rows above it too) in the very next frame.
                 let offset_in_item = if was == top.item_ix {
