@@ -52,6 +52,8 @@ jobs:
         run: scripts/ci-linux-deps.sh
       - name: Rust
         run: rustup show active-toolchain || rustup toolchain install
+      - name: Vendored crates as members
+        run: scripts/ci-cache.sh vendor-members
       - name: New cache key
         run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
@@ -83,6 +85,8 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add x86_64-pc-windows-msvc
+      - name: Vendored crates as members
+        run: scripts/ci-cache.sh vendor-members
       - name: New cache key
         run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
@@ -127,6 +131,8 @@ jobs:
           else
             echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
           fi
+      - name: Vendored crates as members
+        run: scripts/ci-cache.sh vendor-members
       - name: New cache key
         run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2

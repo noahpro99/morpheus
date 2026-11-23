@@ -9,6 +9,7 @@
 #                    built at: files unchanged since that commit get an old
 #                    time, so only what changed rebuilds. Without a cache or
 #                    the commit, nothing is touched (a full rebuild).
+#   vendor-members   makes the patched crates in vendor/ workspace members (below).
 #   record           writes the current commit to .warm/sha, for the cache save.
 #   unique-key       makes the rust-cache key new for this run (it would
 #                    otherwise be the same until Cargo.lock changes, and an
@@ -31,6 +32,16 @@ case "${1:-}" in
     mkdir -p .warm
     git rev-parse HEAD > .warm/sha
     ;;
+  vendor-members)
+    # The patched path crates in vendor/ are not workspace members, and
+    # rust-cache (even with cache-workspace-crates) deletes the build outputs of
+    # every package that is neither a member nor outside the checkout, so they
+    # (webrtc-sys, libwebrtc, livekit, gpui, ...) and everything built on them
+    # were rebuilt on every run. As members they are kept. Run before the
+    # restore, the build and the save alike, so all build them the same way.
+    sed -i.bak -E 's|^members = \[|members = ["vendor/gpui", "vendor/libwebrtc", "vendor/livekit", "vendor/matrix-sdk-ui", "vendor/webrtc-sys", "vendor/xattr", |' Cargo.toml
+    rm -f Cargo.toml.bak
+    ;;
   unique-key)
     cp Cargo.lock "${RUNNER_TEMP:-/tmp}/Cargo.lock.orig"
     printf '\n[[package]]\nname = "warm-cache-run"\nversion = "0.0.%s"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "%s"\n' \
@@ -39,5 +50,5 @@ case "${1:-}" in
   undo-key)
     cp "${RUNNER_TEMP:-/tmp}/Cargo.lock.orig" Cargo.lock
     ;;
-  *) echo "usage: $0 restore-mtimes|record|unique-key|undo-key" >&2; exit 2 ;;
+  *) echo "usage: $0 vendor-members|restore-mtimes|record|unique-key|undo-key" >&2; exit 2 ;;
 esac

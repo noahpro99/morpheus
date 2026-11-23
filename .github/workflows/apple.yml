@@ -55,6 +55,8 @@ jobs:
             echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
           fi
 
+      - name: Vendored crates as members
+        run: scripts/ci-cache.sh vendor-members
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-${{ matrix.target }}
