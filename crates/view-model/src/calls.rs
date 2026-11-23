@@ -1682,6 +1682,13 @@ pub fn call_card_items(
 ) -> Vec<crate::menu::MenuItem> {
     use crate::menu::{MenuAction, MenuItem, MenuSlider};
     let mut items = Vec::new();
+    // Stopping is the likeliest thing to want from a share being watched: first.
+    if stream && watching && !own {
+        items.push(
+            MenuItem::new("Stop watching", MenuAction::CallStopWatching(user.clone()))
+                .icon("eye-off"),
+        );
+    }
     if !own && stream {
         items.push(MenuItem::slider("Stream volume", MenuSlider::StreamVolume(user.clone(), volume)));
         items.push(
@@ -1699,12 +1706,6 @@ pub fn call_card_items(
                 MenuAction::CallMute(user.clone(), !muted),
             )
             .icon(if muted { "volume-2" } else { "volume-x" }),
-        );
-    }
-    if stream && watching && !own {
-        items.push(
-            MenuItem::new("Stop watching", MenuAction::CallStopWatching(user.clone()))
-                .icon("eye-off"),
         );
     }
     // Someone else's camera: shown or hidden (a check mark says which). Clicking
@@ -1928,5 +1929,22 @@ mod call_menu_tests {
         assert_eq!(call_menu(false)[0].action, Some(MenuAction::CallShareScreen(true)));
         assert_eq!(call_menu(true)[0].label, "Stop sharing");
         assert_eq!(call_menu(true)[0].action, Some(MenuAction::CallShareScreen(false)));
+    }
+}
+
+#[cfg(test)]
+mod card_menu_order_tests {
+    use super::*;
+
+    #[test]
+    fn stop_watching_is_the_first_item_of_a_watched_screen_share() {
+        let user: morpheus_core::OwnedUserId = "@bob:example.org".try_into().expect("id");
+        let items = call_card_items(&user, false, true, 1.0, false, false, true);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels.first(), Some(&"Stop watching"), "{labels:?}");
+        assert!(labels.contains(&"Stream volume") && labels.contains(&"Mute stream"), "{labels:?}");
+        // Not watched: no such item.
+        let items = call_card_items(&user, false, true, 1.0, false, false, false);
+        assert!(items.iter().all(|i| i.label != "Stop watching"));
     }
 }
