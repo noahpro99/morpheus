@@ -2038,6 +2038,10 @@ pub fn voice_channel(
             || crate::view_model::voice_panel::default_width(page),
             |w| crate::view_model::voice_panel::clamp_width(w, page),
         );
+        // The box's row is the panel less the card's edges and the box's own margins.
+        if let Some((_, composer)) = &shell.composer {
+            composer.update(cx, |composer, _| composer.set_row_width(Some(width - 26.0)));
+        }
         let shown = width;
         let view = cx.entity();
         let handle = div()

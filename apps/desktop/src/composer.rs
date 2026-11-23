@@ -79,6 +79,9 @@ pub struct Composer {
     placeholder: Option<String>,
     /// The channel lets this person send (#175); else the box is replaced by why not.
     may_send: bool,
+    /// The width the box has for its row, when the host knows it (the voice chat panel),
+    /// else the row's own layout decides (#363).
+    row_width: Option<f32>,
 }
 
 /// The power levels of the room whose composer read them last (the room
@@ -155,6 +158,7 @@ impl Composer {
             open_focus: false,
             placeholder: None,
             may_send: true,
+            row_width: None,
         };
         this.watch_powers(cx);
         this.refresh_placeholder(cx);
@@ -219,6 +223,25 @@ impl Composer {
         };
         self.input
             .update(cx, |input, cx| input.set_placeholder(&text, cx));
+    }
+
+    /// The room for the box's row, as the host (the voice chat panel) lays it out: a narrow
+    /// row's box is then as wide as what the buttons leave, never wider (#363).
+    pub fn set_row_width(&mut self, width: Option<f32>) {
+        self.row_width = width;
+    }
+
+    /// The text box in the row: with a known row width, exactly what the buttons leave it.
+    fn input_box(&self) -> AnyElement {
+        match self.row_width {
+            Some(row) => div()
+                .flex_shrink()
+                .min_w_0()
+                .w(px((row - 94.0).max(40.0)))
+                .child(self.input.clone())
+                .into_any_element(),
+            None => self.input.clone().into_any_element(),
+        }
     }
 
     /// Whether the box has something open that Escape closes first: an edit
@@ -1125,7 +1148,7 @@ impl Render for Composer {
             .text_size(rem(1.0))
             .line_height(relative(theme::LINE_HEIGHT))
             .child(slot(attach))
-            .child(self.input.clone())
+            .child(self.input_box())
             .children(self.input.read(cx).vim_label().map(|label| {
                 slot(div()
                     .flex_none()

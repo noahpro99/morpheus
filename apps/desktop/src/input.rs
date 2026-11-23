@@ -1214,16 +1214,16 @@ impl Render for TextInput {
         }
         let marks = self.marks(cx);
         let (shown, is_placeholder) = self.shown();
-        let mut text = StyledText::new(shown.clone());
-        if is_placeholder && !shown.is_empty() {
-            text = text.with_highlights([(
-                0..shown.len(),
-                HighlightStyle {
-                    color: Some(rgb(theme::text_faint()).into()),
-                    ..HighlightStyle::default()
-                },
-            )]);
-        } else if !marks.is_empty() {
+        // The placeholder is not part of the measured text: drawn beside it, cut off with an
+        // ellipsis, it cannot hold the box wider than its row (#363: a narrow panel's box was
+        // as wide as the placeholder, the buttons beside it pushed out).
+        let placeholder = (is_placeholder && !shown.is_empty()).then(|| shown.clone());
+        let mut text = StyledText::new(if placeholder.is_some() {
+            SharedString::default()
+        } else {
+            shown.clone()
+        });
+        if placeholder.is_none() && !marks.is_empty() {
             let wavy = HighlightStyle {
                 underline: Some(gpui::UnderlineStyle {
                     thickness: px(1.0),
@@ -1274,6 +1274,7 @@ impl Render for TextInput {
         let mut body = div()
             .id(ElementId::Name(format!("{}-text", self.name).into()))
             .flex()
+            .relative()
             .flex_1()
             .min_w_0();
         body = if multiline {
@@ -1283,7 +1284,18 @@ impl Render for TextInput {
         } else {
             body.overflow_hidden().whitespace_nowrap()
         };
-        let body = body.child(editor);
+        let body = body.child(editor).children(placeholder.map(|text| {
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .right_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_color(rgb(theme::text_faint()))
+                .child(text)
+        }));
         let mut outer = div()
             .id(self.name)
             .track_focus(
