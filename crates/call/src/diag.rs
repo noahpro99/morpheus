@@ -151,6 +151,134 @@ pub(crate) fn note_camera(info: Option<String>) {
     }
 }
 
+/// Camera health (#351): how many threads read a camera now, what the last
+/// session's frames were like, and which processes hold a device open.
+static READERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Widest picture the next camera may open at; lowered when a session's
+/// frames mostly came cut short or flagged as errors (a link that cannot
+/// carry the mode), so a camera turned off and on does not return to the
+/// mode that failed.
+static MAX_WIDTH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+static LAST_FRAMES: Mutex<(u64, u64)> = Mutex::new((0, 0));
+/// The device node the camera open now reads.
+static DEVICE: Mutex<Option<String>> = Mutex::new(None);
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn note_camera_device(path: Option<String>) {
+    if let Ok(mut device) = DEVICE.lock() {
+        *device = path;
+    }
+}
+
+/// A thread reading a camera, counted while it lives.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) struct ReaderGuard;
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+impl ReaderGuard {
+    pub(crate) fn new() -> Self {
+        READERS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for ReaderGuard {
+    fn drop(&mut self) {
+        READERS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn camera_readers() -> usize {
+    READERS.load(Ordering::SeqCst)
+}
+
+/// Wait (up to `limit`) for earlier readers to finish: a camera turned off
+/// and on again must not open while the old thread is in its last read.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn wait_for_readers(limit: std::time::Duration) -> usize {
+    let end = std::time::Instant::now() + limit;
+    while camera_readers() > 0 && std::time::Instant::now() < end {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    camera_readers()
+}
+
+/// The widest picture the next camera session may use.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn max_camera_width() -> u32 {
+    MAX_WIDTH.load(Ordering::SeqCst)
+}
+
+/// A session ended after `total` frames of which `bad` were cut short or
+/// flagged as errors. Mostly bad: the next session is capped below `width`.
+/// Returns the new cap when one was set.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn note_session(bad: u64, total: u64, width: u32) -> Option<u32> {
+    if let Ok(mut last) = LAST_FRAMES.lock() {
+        *last = (bad, total);
+    }
+    if total >= 30 && bad * 2 >= total && width > 640 {
+        let cap = width - 1;
+        MAX_WIDTH.store(cap, Ordering::SeqCst);
+        return Some(cap);
+    }
+    None
+}
+
+#[cfg_attr(not(any(test, target_os = "linux")), allow(dead_code))]
+pub(crate) fn reset_camera_cap() {
+    MAX_WIDTH.store(u32::MAX, Ordering::SeqCst);
+}
+
+/// Processes (pid, name) with `device` open, found through
+/// `proc_root`/<pid>/fd (`/proc`).
+pub(crate) fn holders_of(proc_root: &std::path::Path, device: &str) -> Vec<(u32, String)> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(proc_root) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+            continue;
+        };
+        let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
+            continue;
+        };
+        let holds = fds
+            .flatten()
+            .filter_map(|fd| std::fs::read_link(fd.path()).ok())
+            .any(|target| target == std::path::Path::new(device));
+        if holds {
+            let name = std::fs::read_to_string(entry.path().join("comm"))
+                .map(|c| c.trim().to_owned())
+                .unwrap_or_default();
+            found.push((pid, name));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// One line for Diagnostics: readers in this app, the last session's bad
+/// frames, the width cap, and who holds `device` (when known).
+pub fn camera_health() -> String {
+    let device = DEVICE.lock().ok().and_then(|d| d.clone());
+    let device = device.as_deref();
+    let (bad, total) = LAST_FRAMES.lock().map(|l| *l).unwrap_or((0, 0));
+    let mut line = format!("{} reader(s), {bad} of {total} frames bad", camera_readers());
+    let cap = MAX_WIDTH.load(Ordering::SeqCst);
+    if cap != u32::MAX {
+        line.push_str(&format!(", width capped at {cap}"));
+    }
+    if let Some(device) = device {
+        let holders = holders_of(std::path::Path::new("/proc"), device);
+        let list: Vec<String> = holders.iter().map(|(p, n)| format!("{n} {p}")).collect();
+        let who = if list.is_empty() { "nobody".to_owned() } else { list.join(", ") };
+        line.push_str(&format!("; {device} held by {who}"));
+    }
+    line
+}
+
 /// The camera open now, if any: "name, 1280x720 at 30 fps, MJPG decoded to
 /// NV12 (Media Foundation)".
 pub fn camera_info() -> Option<String> {
@@ -159,6 +287,31 @@ pub fn camera_info() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_session_of_mostly_bad_frames_lowers_the_next_width() {
+        reset_camera_cap();
+        assert_eq!(note_session(1, 100, 1280), None, "a few bad frames are not it");
+        assert_eq!(note_session(60, 100, 1280), Some(1279));
+        assert_eq!(max_camera_width(), 1279);
+        assert_eq!(note_session(60, 100, 640), None, "nothing smaller than 640 to fall to");
+        reset_camera_cap();
+    }
+
+    #[test]
+    fn processes_holding_a_device_are_found_in_proc() {
+        let root = std::env::temp_dir().join(format!("morpheus-proc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (pid, target) in [(11u32, "/dev/video0"), (12, "/dev/video2")] {
+            let dir = root.join(pid.to_string());
+            std::fs::create_dir_all(dir.join("fd")).expect("dir");
+            std::os::unix::fs::symlink(target, dir.join("fd").join("5")).expect("link");
+            std::fs::write(dir.join("comm"), "morpheus\n").expect("comm");
+        }
+        assert_eq!(holders_of(&root, "/dev/video0"), vec![(11, "morpheus".to_owned())]);
+        assert!(holders_of(&root, "/dev/video9").is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn the_token_never_stays_in_the_url() {

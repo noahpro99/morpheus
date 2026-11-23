@@ -350,6 +350,7 @@ fn call_sections(report: &mut Report, hidden: bool) {
     // The device as opened: name, size, speed, format and backend (#74).
     if let Some(camera) = morpheus_call::camera_info() {
         section.line("Camera", camera);
+        section.line("Camera health", morpheus_call::camera_health());
     }
     let audio = morpheus_call::audio_stats();
     let devices = morpheus_call::chosen_audio_devices();

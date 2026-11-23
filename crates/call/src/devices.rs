@@ -169,6 +169,7 @@ pub fn cameras(mode: AudioMode) -> Vec<CameraDevice> {
 
 /// Use this camera from the next time one is turned on.
 pub fn choose_camera(id: Option<String>) {
+    crate::diag::reset_camera_cap();
     if let Ok(mut chosen) = CAMERA.lock() {
         *chosen = id;
     }

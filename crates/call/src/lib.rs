@@ -89,7 +89,7 @@ mod watch;
 #[path = "diag.rs"]
 mod diag;
 pub use watch::Thumb;
-pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, camera_info, processing, sent_bytes};
+pub use diag::{CallDiag, OtherSfu, TrackDiag, call_diag, camera_health, camera_info, processing, sent_bytes};
 
 #[path = "noise_model.rs"]
 #[cfg_attr(

@@ -72,6 +72,12 @@ impl Camera {
     /// The camera chosen ([`crate::imp::choose_camera`]), else the first that can
     /// give YUYV.
     pub(crate) fn open() -> io::Result<Self> {
+        // A camera turned off and on again: the old reader may be in its last
+        // read; two readers on one device interleave frames (#351).
+        let left = crate::diag::wait_for_readers(std::time::Duration::from_secs(1));
+        if left > 0 {
+            warn!(readers = left, "a camera reader is still running as the camera opens again");
+        }
         let chosen = crate::imp::chosen_camera()
             .and_then(|path| linuxvideo::Device::open(path).ok())
             .map(Ok);
@@ -92,7 +98,13 @@ impl Camera {
                 .path()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let modes = modes_of(&device);
+            let mut modes = modes_of(&device);
+            // Mostly bad frames last time: not that wide again.
+            let cap = crate::diag::max_camera_width();
+            let capped: Vec<Mode> = modes.iter().copied().filter(|m| m.0 <= cap).collect();
+            if !capped.is_empty() {
+                modes = capped;
+            }
             let (want_w, want_h) = pick_mode(&modes).unwrap_or((640, 480));
             let capture =
                 device.video_capture(PixFormat::new(want_w, want_h, PixelFormat::YUYV))?;
@@ -104,7 +116,18 @@ impl Camera {
             if format.pixel_format() != PixelFormat::YUYV || width < 2 || height < 2 {
                 continue;
             }
-            info!(name, width, height, "camera open");
+            info!(
+                name,
+                id,
+                width,
+                height,
+                stride,
+                cap,
+                holders = ?crate::diag::holders_of(std::path::Path::new("/proc"), &id),
+                readers = crate::diag::camera_readers(),
+                "camera open (YUYV)"
+            );
+            crate::diag::note_camera_device(Some(id.clone()));
             let fps = modes
                 .iter()
                 .find(|m| (m.0, m.1) == (width, height))
@@ -163,6 +186,8 @@ impl Camera {
         stop: Arc<AtomicBool>,
         key: &'static str,
     ) {
+        let _reader = crate::diag::ReaderGuard::new();
+        let (mut bad, mut total) = (0u64, 0u64);
         let every = video::show_every();
         let mut shown: Option<Instant> = None;
         // Frames that came short (#117): some webcams lose a few rows of
@@ -183,6 +208,15 @@ impl Camera {
                         "camera frames arrive cut short (the USB connection loses data); missing rows repeat the last one"
                     );
                 }
+                total += 1;
+                // A frame cut short or flagged as an error is damaged: not sent
+                // when the device says so, even if all its rows came.
+                if rows < height || buf.is_error() {
+                    bad += 1;
+                }
+                if buf.is_error() {
+                    return Ok(None);
+                }
                 Ok((rows * 2 >= height).then(|| yuyv_to_i420(&buf, width, height, stride)))
             });
             let buffer = match frame {
@@ -200,8 +234,13 @@ impl Camera {
                 video::keep(key, &frame.buffer);
             }
         }
+        info!(bad, total, width = self.width, "camera reader ends");
+        if let Some(cap) = crate::diag::note_session(bad, total, self.width) {
+            warn!(cap, bad, total, "most frames were damaged; the next camera session opens narrower");
+        }
         video::forget(key);
         crate::diag::note_camera(None);
+        crate::diag::note_camera_device(None);
     }
 }
 
