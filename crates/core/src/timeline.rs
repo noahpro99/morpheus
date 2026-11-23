@@ -1012,12 +1012,16 @@ impl Session {
             let room = client
                 .get_room(&room_id)
                 .ok_or_else(|| Error::UnknownRoom(room_id.clone()))?;
-            // The subscription goes out beside the build, not before it (#312).
+            // The subscription goes out beside the build, not before it (#312). It names the
+            // rooms opened lately together: a room opened in the background (a neighbour
+            // kept warm) must not replace the one in view, which would stop its pins and
+            // other subscribed state (#364).
             let _subscribing = {
                 let sync = sync.clone();
-                let room_id = room_id.clone();
+                let rooms = subscribed_with(&sync, &room_id);
                 core.spawn(async move {
-                    sync.room_list_service().set_room_subscriptions(&[&room_id]).await;
+                    let rooms: Vec<&matrix_sdk::ruma::RoomId> = rooms.iter().map(|r| &**r).collect();
+                    sync.room_list_service().set_room_subscriptions(&rooms).await;
                 })
             };
 
@@ -1248,4 +1252,29 @@ mod reply_fetch_tests {
         assert!(fetches.want(&id, true), "a placeholder is requested");
         assert!(!fetches.want(&id, true), "but only once");
     }
+}
+
+/// How many rooms stay subscribed in sliding sync (the one in view and those opened just before).
+const SUBSCRIBED_ROOMS: usize = 16;
+
+/// The rooms to subscribe now that `room` is opened: it first, then the ones opened before it.
+fn subscribed_with(sync: &Arc<matrix_sdk_ui::sync_service::SyncService>, room: &OwnedRoomId) -> Vec<OwnedRoomId> {
+    static OPENED: std::sync::Mutex<Vec<(usize, OwnedRoomId)>> = std::sync::Mutex::new(Vec::new());
+    let account = Arc::as_ptr(sync) as usize;
+    let mut opened = OPENED.lock().unwrap_or_else(|e| e.into_inner());
+    opened.retain(|(who, id)| !(*who == account && id == room));
+    opened.push((account, room.clone()));
+    let mut mine: Vec<usize> = opened
+        .iter()
+        .enumerate()
+        .filter(|(_, (who, _))| *who == account)
+        .map(|(i, _)| i)
+        .collect();
+    while mine.len() > SUBSCRIBED_ROOMS {
+        opened.remove(mine.remove(0));
+        for i in &mut mine {
+            *i -= 1;
+        }
+    }
+    opened.iter().rev().filter(|(who, _)| *who == account).map(|(_, id)| id.clone()).collect()
 }
