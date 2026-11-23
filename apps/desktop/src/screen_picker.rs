@@ -1,9 +1,10 @@
-//! Go Live's second question where the desktop has no picker of its own
-//! (Windows; Linux has the portal's, macOS ScreenCaptureKit's): which screen
-//! or window to share. A dialog with the screens and the windows on tabs of
+//! Share screen where the desktop has no picker of its own (Windows; Linux
+//! has the portal's, macOS ScreenCaptureKit's): which screen or window to
+//! share, opened at once by the button, with no settings window before. A dialog with the screens and the windows on tabs of
 //! their own, each a card with a picture of it now (taken again about once a
-//! second) and its name, the "Share your computer's sound" switch, and Share
-//! and Cancel. Cancel shares nothing.
+//! second) and its name, the share settings at the bottom (resolution, frame rate, the
+//! computer's sound, at their remembered values) and Cancel. One click on a
+//! card shares it; Cancel shares nothing.
 //!
 //! The sources come from a `morpheus_call::ScreenSourceProvider`: Windows'
 //! own, or in e2e builds a test's (MORPHEUS_E2E_SCREEN_SOURCES, see
@@ -16,7 +17,7 @@ use gpui::{
     AnyElement, Context, EventEmitter, FocusHandle, IntoElement, ObjectFit, Render, RenderImage,
     Task, Window, div, prelude::*, px, rgb, rgba,
 };
-use morpheus_call::{ScreenSource, ScreenSourceKind, ScreenSourceProvider};
+use morpheus_call::{SCREEN_FPS, ScreenQuality, ScreenResolution, ScreenSource, ScreenSourceKind, ScreenSourceProvider};
 
 use crate::{
     dialogs::{dialog_box, heading, muted, overlay},
@@ -50,8 +51,8 @@ pub fn provider() -> Option<Arc<dyn ScreenSourceProvider>> {
 
 /// What the picker ends with.
 pub enum Picked {
-    /// Share this, with the computer's sound or not.
-    Share(ScreenSource, bool),
+    /// Share this, at these settings (resolution, frame rate, sound).
+    Share(ScreenSource, ScreenQuality),
     Cancel,
 }
 
@@ -69,8 +70,7 @@ pub struct ScreenPicker {
     /// Whether the first list has come.
     listed: bool,
     thumbs: HashMap<String, Thumb>,
-    selected: Option<ScreenSource>,
-    audio: bool,
+    quality: ScreenQuality,
     focus: FocusHandle,
     take_focus: bool,
     _refresh: Task<()>,
@@ -81,7 +81,7 @@ impl EventEmitter<Picked> for ScreenPicker {}
 impl ScreenPicker {
     pub fn new(
         provider: Arc<dyn ScreenSourceProvider>,
-        audio: bool,
+        quality: ScreenQuality,
         cx: &mut Context<Self>,
     ) -> Self {
         Self {
@@ -90,8 +90,7 @@ impl ScreenPicker {
             sources: Vec::new(),
             listed: false,
             thumbs: HashMap::new(),
-            selected: None,
-            audio,
+            quality,
             focus: cx.focus_handle(),
             take_focus: true,
             _refresh: Self::refresh(cx),
@@ -135,12 +134,6 @@ impl ScreenPicker {
         ),
         cx: &mut Context<Self>,
     ) {
-        // A window closed meanwhile is not picked any more.
-        if let Some(picked) = &self.selected
-            && !sources.iter().any(|s| s.key() == picked.key())
-        {
-            self.selected = None;
-        }
         self.thumbs
             .retain(|key, _| sources.iter().any(|s| &s.key() == key));
         for (key, thumb) in thumbs {
@@ -169,15 +162,9 @@ impl ScreenPicker {
         }
     }
 
-    fn pick(&mut self, source: ScreenSource, cx: &mut Context<Self>) {
-        self.selected = Some(source);
-        cx.notify();
-    }
-
-    fn share(&mut self, cx: &mut Context<Self>) {
-        if let Some(source) = self.selected.clone() {
-            cx.emit(Picked::Share(source, self.audio));
-        }
+    /// One click on a source shares it, at the settings below.
+    fn share(&mut self, source: ScreenSource, cx: &mut Context<Self>) {
+        cx.emit(Picked::Share(source, self.quality));
     }
 
     fn tab_el(&self, tab: ScreenSourceKind, label: &str, cx: &mut Context<Self>) -> AnyElement {
@@ -220,7 +207,6 @@ impl ScreenPicker {
 
     fn card(&self, source: &ScreenSource, cx: &mut Context<Self>) -> AnyElement {
         let key = source.key();
-        let selected = self.selected.as_ref().is_some_and(|s| s.key() == key);
         let thumb = self.thumbs.get(&key);
         let painting = thumb.and_then(|t| t.pictures.to_paint());
         let shown = painting.is_some();
@@ -255,7 +241,6 @@ impl ScreenPicker {
             .attr("data-shown", shown.to_string())
             .attr("data-seq", thumb.map_or(0, |t| t.seq).to_string());
         let pick = source.clone();
-        let double = source.clone();
         div()
             .id(gpui::SharedString::from(format!("screen-source-{key}")))
             .flex()
@@ -265,13 +250,9 @@ impl ScreenPicker {
             .p(px(4.0))
             .rounded(px(theme::RADIUS))
             .border_2()
-            .border_color(if selected {
-                rgb(theme::accent())
-            } else {
-                rgba(0x00000000)
-            })
+            .border_color(rgba(0x00000000))
             .cursor_pointer()
-            .when(!selected, |d| d.hover(|s| s.bg(rgba(theme::bg_selected()))))
+            .hover(|s| s.bg(rgba(theme::bg_selected())).border_color(rgb(theme::accent())))
             .child(picture)
             .child(
                 div()
@@ -281,22 +262,8 @@ impl ScreenPicker {
                     .e2e("span", "screen-source-name")
                     .text(source.name.clone()),
             )
-            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                this.pick(pick.clone(), cx);
-                // A double click shares it at once.
-                if event.click_count() >= 2 {
-                    this.pick(double.clone(), cx);
-                    this.share(cx);
-                }
-            }))
-            .e2e(
-                "div",
-                if selected {
-                    "screen-source selected"
-                } else {
-                    "screen-source"
-                },
-            )
+            .on_click(cx.listener(move |this, _, _, cx| this.share(pick.clone(), cx)))
+            .e2e("div", "screen-source")
             .attr("data-source", key)
             .text(source.name.clone())
             .into_any_element()
@@ -323,37 +290,43 @@ impl Render for ScreenPicker {
             ScreenSourceKind::Screen => "No screens to share",
             ScreenSourceKind::Window => "No windows to share",
         };
-        let audio = self.audio;
+        let quality = self.quality;
         let sound = crate::screen_quality::sound_switch(
-            audio,
+            quality.audio,
             |this: &mut Self, cx| {
-                this.audio = !this.audio;
+                this.quality.audio = !this.quality.audio;
                 cx.notify();
             },
             cx,
         );
-        let can_share = self.selected.is_some();
-        let share = div()
-            .id("screen-picker-share")
-            .px(px(16.0))
-            .py(px(8.0))
-            .rounded(px(theme::RADIUS_SM))
-            .bg(rgb(theme::green()))
-            .text_color(rgb(theme::on_green()))
-            .font_weight(gpui::FontWeight::SEMIBOLD)
-            .when(can_share, |d| d.cursor_pointer().hover(|s| s.opacity(0.9)))
-            .when(!can_share, |d| d.opacity(0.5))
-            .child(t("Share"))
-            .on_click(cx.listener(|this, _, _, cx| this.share(cx)))
-            .e2e(
-                "button",
-                if can_share {
-                    "screen-picker-share"
-                } else {
-                    "screen-picker-share disabled"
-                },
-            )
-            .text(t("Share"));
+        let resolutions = ScreenResolution::ALL
+            .into_iter()
+            .map(|r| (r, r.key().to_owned(), r.label().to_owned(), r == quality.resolution))
+            .collect();
+        let rates = SCREEN_FPS
+            .into_iter()
+            .map(|fps| (fps, fps.to_string(), fps.to_string(), fps == quality.fps))
+            .collect();
+        let resolution_row = crate::screen_quality::row(
+            cx,
+            "Resolution",
+            "screen-res",
+            resolutions,
+            |this: &mut Self, resolution, cx| {
+                this.quality.resolution = resolution;
+                cx.notify();
+            },
+        );
+        let fps_row = crate::screen_quality::row(
+            cx,
+            "Frame rate",
+            "screen-fps",
+            rates,
+            |this: &mut Self, fps, cx| {
+                this.quality.fps = fps;
+                cx.notify();
+            },
+        );
         let cancel = div()
             .id("screen-picker-cancel")
             .px(px(12.0))
@@ -368,10 +341,9 @@ impl Render for ScreenPicker {
         let boxed = dialog_box()
             .id("screen-picker")
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
                 match event.keystroke.key.as_str() {
                     "escape" => cx.emit(Picked::Cancel),
-                    "enter" => this.share(cx),
                     _ => {}
                 }
             }))
@@ -407,14 +379,31 @@ impl Render for ScreenPicker {
                 crate::view_model::calls::screen_picker_hint(cfg!(target_os = "windows"))
                     .map(|hint| crate::dialogs::muted(hint, "muted screen-picker-hint")),
             )
+            // The share settings, at their remembered values: a click on a
+            // source above shares with them.
             .child(
                 div()
+                    .id("screen-picker-settings")
                     .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(12.0))
-                    .child(div().flex_1().child(sound))
-                    .child(div().flex().gap(px(8.0)).child(cancel).child(share)),
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(12.0))
+                            .child(div().flex_1().child(resolution_row))
+                            .child(div().flex_1().child(fps_row)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(12.0))
+                            .child(div().flex_1().child(sound))
+                            .child(cancel),
+                    )
+                    .e2e("div", "screen-picker-settings"),
             )
             .e2e("div", "message-dialog screen-picker")
             .focusable(&self.focus);
@@ -432,20 +421,13 @@ impl Shell {
         let Some(provider) = provider() else {
             return false;
         };
-        let audio = self.calls.screen_quality.audio;
-        let picker = cx.new(|cx| ScreenPicker::new(provider, audio, cx));
+        let quality = self.calls.screen_quality;
+        let picker = cx.new(|cx| ScreenPicker::new(provider, quality, cx));
         cx.subscribe(&picker, |this, _, picked: &Picked, cx| {
             this.dialog_close(cx);
-            if let Picked::Share(source, audio) = picked {
-                let quality = this.calls.screen_quality;
-                if quality.audio != *audio {
-                    this.choose_screen_quality(
-                        morpheus_call::ScreenQuality {
-                            audio: *audio,
-                            ..quality
-                        },
-                        cx,
-                    );
+            if let Picked::Share(source, quality) = picked {
+                if this.calls.screen_quality != *quality {
+                    this.choose_screen_quality(*quality, cx);
                 }
                 this.share_screen_from(Some(source.clone()), cx);
             }

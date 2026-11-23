@@ -56,12 +56,12 @@ impl Shell {
 }
 
 /// A row of choices: a label, then a button each.
-fn row<T: Copy + 'static>(
-    cx: &mut Context<Shell>,
+pub(crate) fn row<V: 'static, T: Copy + 'static>(
+    cx: &mut Context<V>,
     label: &str,
     class: &'static str,
     choices: Vec<(T, String, String, bool)>,
-    pick: impl Fn(&mut Shell, T, &mut Context<Shell>) + Clone + 'static,
+    pick: impl Fn(&mut V, T, &mut Context<V>) + Clone + 'static,
 ) -> AnyElement {
     let buttons = choices.into_iter().map(|(value, value_key, text, active)| {
         let pick = pick.clone();

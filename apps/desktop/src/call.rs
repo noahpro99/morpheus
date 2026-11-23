@@ -627,7 +627,11 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         if on {
-            self.ask_screen_quality(at, cx);
+            // Where the app picks what to share (Windows), the picker opens at
+            // once with the settings at its bottom: no small window first.
+            if !self.ask_screen_source(cx) {
+                self.ask_screen_quality(at, cx);
+            }
         } else {
             self.set_screen_share(false, cx);
         }
