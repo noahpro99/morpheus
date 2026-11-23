@@ -8,10 +8,14 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -19,6 +23,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.testTag
 import dev.morpheus.app.AppModel
 import dev.morpheus.app.Screen
+import dev.morpheus.app.ShareInbox
 
 /** The screen the app is on. */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -37,7 +42,11 @@ fun Root(model: AppModel) {
     ) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         val rings by model.ringModel.rings.collectAsState()
-            when (val current = screen) {
+            val sharing by ShareInbox.pending.collectAsState()
+            if (sharing != null && screen is Screen.SignedIn) ShareScreen(model, sharing!!)
+            // A share waits for the session (restoring) and for signing in; it is not lost.
+            else if (sharing != null && screen !is Screen.SignedOut) CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("share-waiting"))
+            else when (val current = screen) {
                 Screen.Loading -> {
                     androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.loadingSeen = true }
                     CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("loading"))
@@ -65,16 +74,42 @@ fun Root(model: AppModel) {
                     else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
                         if (going != null) CallBar(model.calls, going)
                         Box(Modifier.weight(1f)) {
-                            if (open != null) RoomScreen(model, open)
-                            else if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
-                            else if (reorderOpen) ReorderScreen(model)
-                            else if (newOpen) NewScreen(model)
-                            else if (securityOpen && shown != null) SecurityScreen(model, shown)
-                            else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
+                            // The room and the lists are two panes side by side: opening a room slides the lists out to the left and
+                            // the room in from the right, closing a room the other way (a light spring, no dead time).
+                            var lastRoom by remember { mutableStateOf(open) }
+                            if (open != null) lastRoom = open
+                            androidx.compose.animation.AnimatedContent(
+                                targetState = open != null,
+                                transitionSpec = {
+                                    val spec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)
+                                    if (targetState) {
+                                        androidx.compose.animation.slideInHorizontally(spec) { it } togetherWith androidx.compose.animation.slideOutHorizontally(spec) { -it }
+                                    } else {
+                                        androidx.compose.animation.slideInHorizontally(spec) { -it } togetherWith androidx.compose.animation.slideOutHorizontally(spec) { it }
+                                    }.using(androidx.compose.animation.SizeTransform(clip = false))
+                                },
+                                label = "room-and-lists",
+                            ) { roomOpen ->
+                                val shownRoom = lastRoom
+                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                                    if (roomOpen && shownRoom != null) RoomScreen(model, shownRoom)
+                                    else if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
+                                    else if (reorderOpen) ReorderScreen(model)
+                                    else if (newOpen) NewScreen(model)
+                                    else if (securityOpen && shown != null) SecurityScreen(model, shown)
+                                    else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
+                                }
+                            }
                             RoomPageHost(model)
                         }
                     }
                 }
+            }
+            // Adding an account: the sign-in screen over the signed-in one; back goes back.
+            val adding by model.addingAccount.collectAsState()
+            if (adding && screen is Screen.SignedIn) {
+                androidx.activity.compose.BackHandler { model.cancelAddAccount() }
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { SignInScreen(model) }
             }
             if (screen is Screen.SignedIn) ActionSheetHost(model)
             rings.lastOrNull()?.takeIf { screen is Screen.SignedIn }?.let { ring ->
@@ -83,9 +118,3 @@ fun Root(model: AppModel) {
         }
     }
 }
-            // Adding an account: the sign-in screen over the signed-in one; back goes back.
-            val adding by model.addingAccount.collectAsState()
-            if (adding && screen is Screen.SignedIn) {
-                androidx.activity.compose.BackHandler { model.cancelAddAccount() }
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { SignInScreen(model) }
-            }
