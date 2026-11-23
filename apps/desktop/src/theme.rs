@@ -270,6 +270,13 @@ solids!(
     fill_elevated: bg_elevated;
 );
 
+/// The background of a room's main area: a text channel's timeline and a
+/// voice channel's call view both use it, so they cannot drift apart (#346).
+#[inline]
+pub fn fill_room() -> gpui::Rgba {
+    fill_chat()
+}
+
 /// The backdrop under every region of the window: nothing when the window is transparent
 /// (each region draws its own translucent fill once, so they do not pile up into an
 /// almost opaque one), the chat colour otherwise.

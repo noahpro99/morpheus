@@ -167,7 +167,8 @@ pub fn room_call(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -> 
                         } else {
                             gpui::Hsla::from(gpui::transparent_black())
                         })
-                        .child(avatar(picture_of(shell, &user, 20), &name, 20.0, None)),
+                        .child(avatar(picture_of(shell, &user, 20), &name, 20.0, None))
+                        .e2e("div", "call-avatar-ring"),
                 )
                 .child(
                     div()
@@ -810,11 +811,19 @@ fn sized(
 
 /// What a shared screen's tile shows until its first picture comes: a screen
 /// in the middle, pulsing a little.
-fn screen_skeleton() -> AnyElement {
-    use gpui::{Animation, AnimationExt as _};
+/// A layer over a whole card, with the card's own rounded corners: GPUI clips to
+/// a rectangle, so every cover (paused, watch, thumbnail, skeleton) is made from
+/// this, and cannot be squarer than the card (#347).
+fn card_cover() -> gpui::Div {
     div()
         .absolute()
         .inset_0()
+        .rounded(px(theme::RADIUS_LG))
+}
+
+fn screen_skeleton() -> AnyElement {
+    use gpui::{Animation, AnimationExt as _};
+    card_cover()
         .flex()
         .items_center()
         .justify_center()
@@ -924,28 +933,16 @@ fn name_label(text: String, screen: bool) -> AnyElement {
 }
 
 fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyElement> {
-    let items = marks(media, with_video);
+    // No LIVE badge on a card (the channel list keeps its own): only icons.
+    let items: Vec<_> = marks(media, with_video)
+        .into_iter()
+        .filter(|m| m.class != "media-live")
+        .collect();
     if items.is_empty() {
         return None;
     }
     let discs = items.into_iter().map(|mark| {
-        // LIVE is a word, never the mic-off icon (a muted sharer showed two).
-        let Some(glyph) = mark.glyph else {
-            return div()
-                .h(px(26.0))
-                .px(px(8.0))
-                .flex()
-                .items_center()
-                .rounded_full()
-                .bg(rgb(theme::danger()))
-                .text_color(rgb(theme::on_danger()))
-                .text_size(px(0.65 * theme::REM))
-                .font_weight(FontWeight::EXTRA_BOLD)
-                .child(t("LIVE"))
-                .e2e("span", mark.class)
-                .attr("title", mark.title)
-                .text(t("LIVE"));
-        };
+        let glyph = mark.glyph.unwrap_or("video");
         div()
             .size(px(26.0))
             .flex()
@@ -974,6 +971,14 @@ fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyEl
     )
 }
 
+/// The colour of a person's card: the average of their picture (darkened), else
+/// the usual one. Their shared screen's placeholder uses it too (#349).
+fn person_card_bg(shell: &Shell, user: &OwnedUserId) -> u32 {
+    picture_of(shell, user, 72)
+        .and_then(|image| crate::media::card_color_of(&image))
+        .unwrap_or_else(theme::bg_elevated)
+}
+
 /// Someone in the call without a camera on: their picture, large.
 fn person_card(
     shell: &Shell,
@@ -997,10 +1002,7 @@ fn person_card(
     if speaking {
         classes.push_str(" speaking");
     }
-    // The average colour of their picture (darkened), else the usual one.
-    let card_bg = picture_of(shell, user, 72)
-        .and_then(|image| crate::media::card_color_of(&image))
-        .unwrap_or_else(theme::bg_elevated);
+    let card_bg = person_card_bg(shell, user);
     let mut tile = sized(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
@@ -1171,13 +1173,12 @@ fn video_card(
         // video itself is not sent until it is watched).
         if let Some((image, bytes, mean)) = shell.calls.share_thumbs.get(&feed.user) {
             tile = tile.child(
-                div()
-                    .absolute()
-                    .inset_0()
+                card_cover()
                     .child(
                         gpui::img(image.clone())
                             .size_full()
                             .object_fit(gpui::ObjectFit::Cover)
+                            .rounded(px(theme::RADIUS_LG))
                             .opacity(0.45),
                     )
                     .e2e("div", "share-thumb")
@@ -1189,9 +1190,7 @@ fn video_card(
     }
     if own && feed.screen && in_background() {
         tile = tile.child(
-            div()
-                .absolute()
-                .inset_0()
+            card_cover()
                 .bg(black(0.55))
                 .flex()
                 .items_center()
@@ -1396,9 +1395,7 @@ fn watch_overlay(shell: &Shell, cx: &mut Context<Shell>, user: &OwnedUserId) -> 
             .text(t("Watch"))
             .into_any_element()
     };
-    div()
-        .absolute()
-        .inset_0()
+    card_cover()
         .flex()
         .flex_col()
         .gap(px(8.0))
@@ -1586,16 +1583,18 @@ fn cards(
                             // A share: its icon, not the person's avatar.
                             Card::Video(feed) if feed.screen => {
                                 let name = shown(shell, &feed.user);
+                                let bg = person_card_bg(shell, &feed.user);
                                 sized(div().id(gpui::SharedString::from(format!("strip-share-{}", feed.user))), Fit::Strip(strip_h), None)
                                     .relative()
                                     .rounded(px(theme::RADIUS_LG))
-                                    .bg(rgb(theme::bg_elevated()))
+                                    .bg(rgb(bg))
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .child(icon("screen-share", 28.0).text_color(rgb(theme::text_muted())))
+                                    .child(icon("screen-share", 28.0).text_color(rgb(theme::on(bg))))
                                     .child(name_label(name, true))
                                     .e2e("div", "call-tile share-placeholder")
+                                    .attr("data-bg", format!("{bg:06x}"))
                                     .attr("data-user", feed.user.to_string())
                                     .into_any_element()
                             }
@@ -1769,7 +1768,6 @@ fn stage_body(
         .px(px(if voice_page { 16.0 } else { 16.0 }))
         .pt(px(if voice_page { 16.0 } else { 8.0 }))
         .pb(px(8.0))
-        .bg(theme::fill_rail())
         .min_h(px(200.0));
     stage = if voice_page {
         stage.flex_1().min_w_0().min_h_0()
@@ -1993,6 +1991,9 @@ pub fn voice_channel(
                 "Show the chat"
             },
         );
+    // No fill of its own anywhere in the call view: the chat container it sits in
+    // draws the room's (fill_room); another here would stack into a denser one
+    // when see-through.
     // The call's column: the button's strip, then the page (min width 0, so
     // a narrow window shrinks the call instead of pushing the chat out).
     let call = div()
@@ -2001,7 +2002,6 @@ pub fn voice_channel(
         .min_h_0()
         .flex()
         .flex_col()
-        .bg(theme::fill_rail())
         .child(
             div()
                 .flex_none()
@@ -2029,7 +2029,6 @@ pub fn voice_channel(
         .min_h_0()
         .flex()
         .relative()
-        .bg(theme::fill_rail())
         .child(call);
     if open && let Some(chat) = chat {
         // A card floating beside the call: 40% of the page unless dragged wider or narrower

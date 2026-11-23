@@ -438,7 +438,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
         .flex_1()
         .min_w_0()
         .h_full()
-        .bg(theme::fill_chat())
+        .bg(theme::fill_room())
         // Files dropped anywhere on the chat wait on the message being written.
         .on_drop::<ExternalPaths>(move |paths, _, cx| {
             if let Some(composer) = &composer {
