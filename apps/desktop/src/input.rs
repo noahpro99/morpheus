@@ -1214,8 +1214,8 @@ impl Render for TextInput {
         }
         let marks = self.marks(cx);
         let (shown, is_placeholder) = self.shown();
-        // The placeholder is not part of the measured text: drawn beside it, cut off with an
-        // ellipsis, it cannot hold the box wider than its row (#363: a narrow panel's box was
+        // The placeholder is not part of the measured text: drawn beside it, cut off plainly (no
+        // ellipsis: #372), it cannot hold the box wider than its row (#363: a narrow panel's box was
         // as wide as the placeholder, the buttons beside it pushed out).
         let placeholder = (is_placeholder && !shown.is_empty()).then(|| shown.clone());
         let mut text = StyledText::new(if placeholder.is_some() {
@@ -1292,9 +1292,10 @@ impl Render for TextInput {
                 .right_0()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .text_ellipsis()
                 .text_color(rgb(theme::text_faint()))
                 .child(text)
+                .e2e("div", "input-placeholder")
+                .attr("data-overflow", "clip")
         }));
         let mut outer = div()
             .id(self.name)
