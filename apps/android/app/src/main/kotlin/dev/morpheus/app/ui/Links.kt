@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +45,7 @@ private const val LINK = "URL"
 
 /** A message's text with its links drawn as links: a tap on one opens it, a tap elsewhere offers the message's actions. */
 @Composable
-fun LinkedText(body: MessageBody.Text, edited: Boolean, onActions: () -> Unit) {
+fun LinkedText(body: MessageBody.Text, edited: Boolean) {
     val context = LocalContext.current
     val text = remember(body, edited) {
         buildAnnotatedString {
@@ -67,10 +70,17 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, onActions: () -> Unit) {
         text,
         Modifier
             .pointerInput(text) {
-                detectTapGestures { at ->
-                    val offset = layout?.getOffsetForPosition(at)
-                    val link = offset?.let { text.getStringAnnotations(LINK, it, it).firstOrNull() }
-                    if (link != null) context.openLink(link.item) else onActions()
+                // Only a tap that lands on a link is this text's: anything else is left for the message (a double tap, a long press).
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val offset = layout?.getOffsetForPosition(down.position)
+                    val link = offset?.let { text.getStringAnnotations(LINK, it, it).firstOrNull() } ?: return@awaitEachGesture
+                    val up = waitForUpOrCancellation()
+                    // Held longer than a tap: that is the message's long press, not a link followed.
+                    if (up != null && up.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                        up.consume()
+                        context.openLink(link.item)
+                    }
                 }
             }
             .testTag("msg-body"),

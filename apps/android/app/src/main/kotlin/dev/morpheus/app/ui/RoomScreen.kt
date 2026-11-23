@@ -158,7 +158,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 model, rows, Modifier.weight(1f),
                 onActions = { message, held ->
                     app.openSheet(
-                        message.senderName, longPress = held, startFull = !held, quickReactions = quickReactions,
+                        message.senderName, longPress = held, startFull = false, quickReactions = quickReactions,
                         onOutcome = { outcome ->
                             when (outcome) {
                                 is uniffi.morpheus_ffi.MenuOutcome.Reply -> model.replyTo(message)
@@ -368,8 +368,15 @@ private fun MessageRow(
             .fillMaxWidth()
             .alpha(if (message.sending) 0.6f else 1f)
             .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent)
-            .pointerInput(message.key) { detectTapGestures(onLongPress = { onActions(latest, true) }, onTap = { onActions(latest, false) }) }
-            .semantics { onClick("Message actions") { onActions(latest, false); true } }
+            .pointerInput(message.key) {
+                // A tap does nothing; a double tap starts a reply and a long press opens the sheet (a tap with no handler
+                // waits for nothing: neither a long press nor a scroll is delayed).
+                detectTapGestures(
+                    onDoubleTap = { if (latest.eventId != null) model.replyTo(latest) },
+                    onLongPress = { onActions(latest, true) },
+                )
+            }
+            .semantics { onClick("Message actions") { onActions(latest, true); true } }
             .padding(horizontal = Space.md, vertical = if (message.showHeader) Space.sm else 1.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
@@ -407,7 +414,7 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> LinkedText(body, message.edited) { onActions(latest, false) }
+                is MessageBody.Text -> LinkedText(body, message.edited)
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
                 is MessageBody.File -> Text(
