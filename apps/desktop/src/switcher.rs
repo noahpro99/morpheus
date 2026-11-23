@@ -71,6 +71,9 @@ pub struct Switcher {
     scroll: gpui::ScrollHandle,
     /// The menu actions that apply to where you are (#276).
     context: Vec<crate::view_model::palette::ContextEntry>,
+    /// The rooms last opened, newest first, and the one open now (#375).
+    pub recent: Vec<String>,
+    pub current: Option<String>,
 }
 
 impl Switcher {
@@ -78,6 +81,8 @@ impl Switcher {
         rooms: Vec<SwitchRoom>,
         state: PaletteState,
         context: Vec<crate::view_model::palette::ContextEntry>,
+        recent: Vec<String>,
+        current: Option<String>,
         cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             TextInput::new(
@@ -120,23 +125,32 @@ impl Switcher {
             focus_next: true,
             scroll: gpui::ScrollHandle::new(),
             context,
+            recent,
+            current,
         }
     }
 
     fn entries(&self, cx: &gpui::App) -> Vec<Entry> {
         let needle = self.input.read(cx).value().to_lowercase();
-        let mut list: Vec<Entry> = self
-            .rooms
-            .iter()
-            .enumerate()
-            .filter(|(_, room)| {
-                needle.is_empty()
-                    || room.name.to_lowercase().contains(&needle)
-                    || room.real_name.to_lowercase().contains(&needle)
-            })
-            .take(8)
-            .map(|(index, _)| Entry::Room(index))
-            .collect();
+        let mut list: Vec<Entry> = if needle.is_empty() {
+            // The last rooms opened lead, then the usual list.
+            let ids: Vec<&str> = self.rooms.iter().map(|room| room.id.as_str()).collect();
+            crate::view_model::recent_rooms::palette_order(&ids, &self.recent, self.current.as_deref(), 8)
+                .into_iter()
+                .map(Entry::Room)
+                .collect()
+        } else {
+            self.rooms
+                .iter()
+                .enumerate()
+                .filter(|(_, room)| {
+                    room.name.to_lowercase().contains(&needle)
+                        || room.real_name.to_lowercase().contains(&needle)
+                })
+                .take(8)
+                .map(|(index, _)| Entry::Room(index))
+                .collect()
+        };
         list.extend(
             crate::view_model::palette::search(crate::view_model::palette::actions(self.state), &needle)
                 .into_iter()
@@ -445,7 +459,9 @@ impl crate::shell::Shell {
         let list = self.switch_rooms();
         let state = self.palette_state();
         let context = self.palette_context(cx);
-        let switcher = cx.new(|cx| Switcher::new(list, state, context, cx));
+        let recent = self.recent_rooms.clone();
+        let current = self.selected.as_ref().map(|room| room.to_string());
+        let switcher = cx.new(|cx| Switcher::new(list, state, context, recent, current, cx));
         cx.subscribe(
             &switcher,
             |this: &mut Self, _, event: &SwitcherEvent, cx| {

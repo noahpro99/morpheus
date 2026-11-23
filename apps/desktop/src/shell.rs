@@ -101,6 +101,8 @@ pub struct Shell {
     pub last_server: Scope,
     /// The room last open in each scope, for Ctrl+Alt+Right to land in.
     pub last_room_in: std::collections::HashMap<Scope, OwnedRoomId>,
+    /// The rooms the person opened, newest first, kept per account (#375).
+    pub recent_rooms: Vec<String>,
     pub selected: Option<OwnedRoomId>,
     pub prefs: Prefs,
     /// Counts theme changes, so only the last one in a moment is recorded.
@@ -526,6 +528,7 @@ impl Shell {
             scope: Scope::default(),
             last_server: Scope::Rooms,
             last_room_in: Default::default(),
+            recent_rooms: Vec::new(),
             selected: None,
             prefs: Prefs::default(),
             look_generation: 0,
@@ -1072,6 +1075,7 @@ impl Shell {
             self.save_last_rooms();
         }
         self.nav.record(id.clone());
+        self.record_recent_room(&id);
         // A voice channel (or a DM) is where a call is likely next: have its
         // token ready.
         self.prepare_call(Some(id.clone()), cx);

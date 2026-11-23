@@ -18,6 +18,7 @@ impl Shell {
             return;
         };
         self.place_user = user.to_string();
+        self.recent_rooms = crate::view_model::recent_rooms::read(&crate::data_dir(), &self.place_user);
         // The room last open in each server, kept since the last run.
         for (key, room) in last_place::read_rooms(&crate::data_dir(), &self.place_user) {
             if let (Some(scope), Ok(room)) = (
@@ -60,6 +61,21 @@ impl Shell {
             self.set_scope(scope, cx);
         }
         self.open_room_now(room.id, cx);
+    }
+
+    /// The person opened `room`: the newest of the rooms the palette leads
+    /// with. (Only the open-room point calls this, never the timelines kept
+    /// warm behind the scenes.)
+    pub fn record_recent_room(&mut self, room: &morpheus_core::OwnedRoomId) {
+        if self.place_user.is_empty() {
+            return;
+        }
+        crate::view_model::recent_rooms::record(&mut self.recent_rooms, room.as_str());
+        if let Err(err) =
+            crate::view_model::recent_rooms::write(&crate::data_dir(), &self.place_user, &self.recent_rooms)
+        {
+            eprintln!("morpheus-desktop: recent rooms not kept: {err}");
+        }
     }
 
     /// The room last open in each rail entry, for the next run.
