@@ -86,6 +86,9 @@ pub enum PendingUndo {
 impl Shell {
     /// A toast with `text`; it goes by itself after a while.
     pub fn toast(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
+        let text = text.into();
+        // The same notice again (a second copy) takes the place of the first, not a pile.
+        self.toasts.items.retain(|toast| toast.undo || toast.text != text);
         let id = self.toasts.push(text, false);
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -296,6 +299,7 @@ impl Shell {
             }
             MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
+                self.toast("Copied", cx);
             }
             MenuAction::SelectText(_) => {}
             MenuAction::Report => {

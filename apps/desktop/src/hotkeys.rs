@@ -235,6 +235,7 @@ impl Shell {
             && let Some(text) = self.selection_copy(cx)
         {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+            self.toast("Copied", cx);
             return true;
         }
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
