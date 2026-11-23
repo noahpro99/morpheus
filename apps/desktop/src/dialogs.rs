@@ -529,8 +529,24 @@ pub(crate) fn overlay(
         canvas(
             |_, _, _| (),
             move |_, _, window, cx| {
-                if !trap.contains_focused(window, cx) {
+                if trap.contains_focused(window, cx) {
+                    return;
+                }
+                // Nothing held (or the shell's root): the layer takes the keys now. Something
+                // else held: a dialog's own box, focused as it is built, is not inside in the
+                // last drawn frame this reads, so it is looked at again after this frame
+                // (taking the focus from it made the first Tab only go on from the layer to
+                // the first box, #362).
+                let root = cx.try_global::<crate::shell::RootFocus>().map(|r| r.0.clone());
+                if window.focused(cx).is_none_or(|held| root.as_ref() == Some(&held)) {
                     window.focus(&trap);
+                } else {
+                    let trap = trap.clone();
+                    window.on_next_frame(move |window, cx| {
+                        if !trap.contains_focused(window, cx) {
+                            window.focus(&trap);
+                        }
+                    });
                 }
             },
         )
