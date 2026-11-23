@@ -2774,7 +2774,7 @@ async fn watch_voice(
         if !got {
             continue;
         }
-        let now = if crate::gate::legacy() {
+        let now = if crate::gate::legacy() || AudioMode::from_env() == AudioMode::Tone {
             gate.feed(level, std::time::Instant::now())
         } else {
             vad_open
@@ -2803,7 +2803,7 @@ async fn watch_mic(mic: LocalAudioTrack, me: String, speech: UnboundedSender<Spe
     // Our own capture decides when we are heard (the gate); the ring shows that.
     // Without it (phones), or in the legacy mode, WebRTC's level is measured.
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    let own_gate = !crate::gate::legacy();
+    let own_gate = !crate::gate::legacy() && AudioMode::from_env() != AudioMode::Tone;
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     let own_gate = false;
     use livekit::webrtc::stats::RtcStats;
