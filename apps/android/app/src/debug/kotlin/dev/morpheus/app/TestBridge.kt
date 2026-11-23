@@ -220,20 +220,17 @@ class TestBridge(private val app: Application) {
                 .put("last_link", AppState.lastLink)
                 .put("room", AppState.room)
                 .put("haptics", AppState.haptics)
-                .put("loading_seen", AppState.loadingSeen)
-                .put("first_list_ms", AppState.firstListMs)
-                .put("first_room_ms", AppState.firstRoomMs)
-                .put("session_ms", AppState.sessionMs)
-                .put("marks", JSONArray(AppState.marks.map { JSONArray().put(it.first).put(it.second) }))
-                .put("image_fetches", AppState.imageFetches)
                 .put("image_fetches", AppState.imageFetches)
                 .put("ime_shown", AppState.imeShown)
                 .put("ime_hidden", AppState.imeHidden)
                 .put("slide_log", JSONArray(AppState.slideLog.map { JSONArray().put(it.first).put(it.second.toDouble()) }))
                 .put("avatars_drawn", AppState.avatarsDrawn)
                 .put("max_frame_gap_ms", FrameWatch.max)
-                .put("avatars_drawn", AppState.avatarsDrawn)
-                .put("max_frame_gap_ms", FrameWatch.max)
+                .put("loading_seen", AppState.loadingSeen)
+                .put("first_list_ms", AppState.firstListMs)
+                .put("first_room_ms", AppState.firstRoomMs)
+                .put("session_ms", AppState.sessionMs)
+                .put("marks", JSONArray(AppState.marks.map { JSONArray().put(it.first).put(it.second) }))
                 .put("version", BuildConfig.VERSION_NAME)
         }
         else -> error("unknown op $op")
@@ -322,11 +319,6 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_UP, down, x, y)
     }
 
-    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean, hold: Long) {
-        val down = SystemClock.uptimeMillis()
-        val steps = 12
-        touch(MotionEvent.ACTION_DOWN, down, x1, y1)
-        // Held still after the touch-down first: a long press, then the drag.
     private fun tapAt(x: Float, y: Float) {
         val down = SystemClock.uptimeMillis()
         touch(MotionEvent.ACTION_DOWN, down, x, y)
@@ -334,6 +326,11 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_UP, down, x, y)
     }
 
+    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean, hold: Long) {
+        val down = SystemClock.uptimeMillis()
+        val steps = 12
+        touch(MotionEvent.ACTION_DOWN, down, x1, y1)
+        // Held still after the touch-down first: a long press, then the drag.
         if (hold > 0) Thread.sleep(hold)
         for (i in 1..steps) {
             Thread.sleep(ms / steps)

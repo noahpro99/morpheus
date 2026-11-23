@@ -208,6 +208,9 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                         val clipboard = morpheusApp?.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
                         clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", outcome.text))
                     }
+                    is uniffi.morpheus_ffi.MenuOutcome.Switched -> accountChanged()
+                    is uniffi.morpheus_ffi.MenuOutcome.AddAccount -> beginAddAccount()
+                    is uniffi.morpheus_ffi.MenuOutcome.SignOut -> signOut()
                     is uniffi.morpheus_ffi.MenuOutcome.Page -> _page.value = PageRequest(outcome.kind, outcome.roomId, outcome.extra)
                     is uniffi.morpheus_ffi.MenuOutcome.NotYet -> _error.value = t("%{name} is not on the phone yet.", "name" to outcome.label)
                     else -> request.onOutcome(outcome)
@@ -217,9 +220,6 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             }
         }
     }
-                    is uniffi.morpheus_ffi.MenuOutcome.Switched -> accountChanged()
-                    is uniffi.morpheus_ffi.MenuOutcome.AddAccount -> beginAddAccount()
-                    is uniffi.morpheus_ffi.MenuOutcome.SignOut -> signOut()
 
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> = _settingsOpen.asStateFlow()
@@ -427,6 +427,11 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         open(room)
     }
 
+    /** The room that is opening was reached by a swipe (its composer takes the focus); read once. */
+    var swipeOpened = false
+
+    fun takeSwipeOpened(): Boolean = swipeOpened.also { swipeOpened = false }
+
     fun closeRoom() {
         _room.value = null
         keep("room", null)
@@ -436,11 +441,6 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     /** Encryption: made at sign-in, stopped at sign-out. */
     private val _security = MutableStateFlow<SecurityModel?>(null)
-    /** The room that is opening was reached by a swipe (its composer takes the focus); read once. */
-    var swipeOpened = false
-
-    fun takeSwipeOpened(): Boolean = swipeOpened.also { swipeOpened = false }
-
     val security: StateFlow<SecurityModel?> = _security.asStateFlow()
     private var securityScope: kotlinx.coroutines.CoroutineScope? = null
 
@@ -553,6 +553,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                     if (!morpheus.lockState(room.id).locked) {
                         _room.value = room
                     AppState.room = room.id
+                    }
                 }
             }
         }
@@ -579,6 +580,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         viewModelScope.launch {
             try {
                 val account = morpheus.login(homeserver.trim(), username.trim(), password)
+                _adding.value = false
                 keep("account", listOf(account.userId, account.homeserver, account.deviceId).joinToString("\n"))
                 _screen.value = Screen.SignedIn(account)
                 morpheusApp?.registerPushNow()
@@ -589,25 +591,6 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             }
         }
     }
-
-    fun signOut() {
-        // The screen goes first: its listeners stop with it, and the sign-in
-        // screen is there while the server is told.
-        _newOpen.value = false
-        _room.value = null
-        AppState.room = ""
-        _screen.value = Screen.SignedOut
-                _adding.value = false
-        listOf("account", "room", "last-room", "scope", "tab").forEach { keep(it, null) }
-        viewModelScope.launch {
-            try {
-                morpheus.logout()
-            } catch (e: Exception) {
-                _error.value = e.sentence()
-            }
-        }
-    }
-}
 
     private val _adding = MutableStateFlow(false)
 
@@ -669,6 +652,24 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    fun signOut() {
+        // The screen goes first: its listeners stop with it, and the sign-in
+        // screen is there while the server is told.
+        _newOpen.value = false
+        _room.value = null
+        AppState.room = ""
+        _screen.value = Screen.SignedOut
+        listOf("account", "room", "last-room", "scope", "tab").forEach { keep(it, null) }
+        viewModelScope.launch {
+            try {
+                morpheus.logout()
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            }
+        }
+    }
+}
+
 /** What the account says about people, for every screen: who is ignored. */
 object People {
     val ignored = MutableStateFlow<Set<String>>(emptySet())
@@ -698,24 +699,6 @@ object AppState {
     @Volatile
     var lastLink: String = ""
 
-    /** Long-press haptics fired (the debug bridge reports it; #325). */
-    @Volatile
-    var haptics: Int = 0
-
-    /** The room on screen (the debug bridge reports it). */
-    @Volatile
-    var room: String = ""
-
-    /** A spinner or skeleton was drawn since the process started (the debug bridge reports it; #309). */
-    @Volatile
-    var loadingSeen: Boolean = false
-
-    /** Milliseconds from the process start to the first channel list drawn with content (0: none yet). */
-    @Volatile
-    var firstListMs: Long = 0
-
-    /** Milliseconds from the process start to the first room drawn with messages (0: none yet; #313). */
-    @Volatile
     /** Times the keyboard was asked for and put away by a swipe (the debug bridge reports them; #344). */
     @Volatile
     var imeShown: Int = 0
@@ -738,6 +721,24 @@ object AppState {
     @Volatile
     var avatarsDrawn: Int = 0
 
+    /** Long-press haptics fired (the debug bridge reports it; #325). */
+    @Volatile
+    var haptics: Int = 0
+
+    /** The room on screen (the debug bridge reports it). */
+    @Volatile
+    var room: String = ""
+
+    /** A spinner or skeleton was drawn since the process started (the debug bridge reports it; #309). */
+    @Volatile
+    var loadingSeen: Boolean = false
+
+    /** Milliseconds from the process start to the first channel list drawn with content (0: none yet). */
+    @Volatile
+    var firstListMs: Long = 0
+
+    /** Milliseconds from the process start to the first room drawn with messages (0: none yet; #313). */
+    @Volatile
     var firstRoomMs: Long = 0
 
     /** Milliseconds from the process start to the session being restored (0: not yet). */
