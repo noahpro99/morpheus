@@ -632,26 +632,58 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
     let call = shell.calls.state.as_ref()?;
     let room_id = call.room_id.clone();
     let heard = crate::view_model::calls::heard_list(call);
-    let status = div()
+    // One target: both lines and the gaps between and around them. The pointer anywhere in
+    // it underlines both lines together (#373) and a click goes back to the call's page. The
+    // panel's buttons are beside it, not in it.
+    let over = shell.bar_hover == Some("voice-link");
+    let line = |colour: u32| {
+        over.then(|| {
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .bottom(px(0.0))
+                .h(px(1.0))
+                .bg(rgb(colour))
+        })
+    };
+    let state_colour = if call.connected {
+        theme::green()
+    } else {
+        theme::text_muted()
+    };
+    let name_colour = if over {
+        theme::text()
+    } else {
+        theme::text_muted()
+    };
+    let mut status = div().id("voice-link");
+    status.style().align_self = Some(gpui::AlignSelf::Stretch);
+    let status = status
+        .on_hover(crate::chat::bar_hover(cx, "voice-link"))
         .flex_1()
         .min_w_0()
         .flex()
         .flex_col()
+        .justify_center()
+        .py(px(10.0))
+        .pl(px(12.0))
+        .cursor_pointer()
+        .on_click(cx.listener(move |this, _, _, cx| this.open_room(room_id.clone(), cx)))
         .child(
-            div()
+            crate::hover_underline::as_wide_as_its_text(div())
+                .max_w_full()
+                .relative()
                 .text_size(px(0.85 * theme::REM))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(if call.connected {
-                    theme::green()
-                } else {
-                    theme::text_muted()
-                }))
+                .text_color(rgb(state_colour))
                 .truncate()
                 .child(if call.connected {
                     "Voice connected"
                 } else {
                     "Connecting…"
                 })
+                .children(line(state_colour))
                 .e2e(
                     "span",
                     if call.connected {
@@ -660,6 +692,7 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                         "voice-state"
                     },
                 )
+                .attr("data-underlined", over.to_string())
                 .text(if call.connected {
                     "Voice connected"
                 } else {
@@ -667,27 +700,25 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                 }),
         )
         .child(
-            div()
-                .id("voice-room")
+            crate::hover_underline::as_wide_as_its_text(div())
+                .max_w_full()
+                .relative()
                 .text_size(px(0.8 * theme::REM))
-                .text_color(rgb(theme::text_muted()))
+                .text_color(rgb(name_colour))
                 .truncate()
-                .cursor_pointer()
-                .hover(|s| s.text_color(rgb(theme::text())))
                 .child(call.room_name.clone())
-                .on_click(cx.listener(move |this, _, _, cx| this.open_room(room_id.clone(), cx)))
-                .e2e("button", "voice-room")
-                .attr("title", "Go to the room")
+                .children(line(name_colour))
+                .e2e("span", "voice-room")
+                .attr("data-underlined", over.to_string())
                 .text(call.room_name.clone()),
-        );
+        )
+        .e2e("div", "voice-link")
+        .attr("title", "Go to the room");
     let mut panel = div()
         .flex_none()
         .flex()
         .items_center()
         .gap(px(8.0))
-        .pt(px(10.0))
-        .pb(px(10.0))
-        .pl(px(12.0))
         .pr(px(6.0))
         .border_b_1()
         .border_color(rgba(theme::bg_hover()))
