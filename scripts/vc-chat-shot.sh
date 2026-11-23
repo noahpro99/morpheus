@@ -13,7 +13,7 @@ data=$(mktemp -d)
 just e2e-build >&2
 bin=$PWD/target/debug/morpheus-desktop-e2e
 cat > "$data/sway.conf" <<CONF
-output HEADLESS-1 mode 760x700
+output HEADLESS-1 mode $(awk "BEGIN{printf \"%d\", 760*${SCALE:-1}}")x$(awk "BEGIN{printf \"%d\", 700*${SCALE:-1}}") scale ${SCALE:-1}
 default_border none
 CONF
 nix shell nixpkgs#sway nixpkgs#grim -c bash -s -- "$data" "$bin" "$hs" "$test" <<'INNER'
