@@ -211,12 +211,13 @@ pub struct SettingsView {
     hsv_dragging: bool,
     colour_input: Entity<TextInput>,
     /// The colour picker's popover is open (#315), its focus (so Escape reaches it), the focus
-    /// still to be given, and when an outside click last closed it (the button's own click
+    /// still to be given, and where the outside click that closed it was released (the button's own click
     /// follows that click and must not reopen it).
     colour_open: bool,
     colour_focus: FocusHandle,
     colour_focus_pending: bool,
-    colour_closed_at: Option<std::time::Instant>,
+    colour_closed_at: Option<gpui::Point<gpui::Pixels>>,
+    colour_pressed_outside: std::rc::Rc<std::cell::Cell<bool>>,
     /// Appearance > Share: where a theme code is pasted, what it reads as (None until
     /// something is typed), and the note after saving or a failed file.
     import_input: Entity<TextInput>,
@@ -490,6 +491,7 @@ impl SettingsView {
             colour_focus: cx.focus_handle(),
             colour_focus_pending: false,
             colour_closed_at: None,
+            colour_pressed_outside: Default::default(),
             import_input,
             import: None,
             share_note: None,

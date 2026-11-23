@@ -2374,11 +2374,14 @@ impl SettingsView {
                     .e2e("span", "theme-name")
                     .text(t("Custom")),
             )
-            .on_click(cx.listener(|this, _, _, cx| {
-                let recent = this
-                    .colour_closed_at
-                    .is_some_and(|at| at.elapsed() < Duration::from_millis(250));
-                let open = !this.colour_open && !recent;
+            .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+                // The press that closed the menu (outside it, on this tile) is this click's
+                // own and must not open it again. Any later click is a fresh one (#359: a
+                // 250 ms window swallowed real clicks).
+                let closed_by_this = this.colour_closed_at.take().is_some_and(|at| {
+                    matches!(event, gpui::ClickEvent::Mouse(click) if click.up.position == at)
+                });
+                let open = !this.colour_open && !closed_by_this;
                 this.set_colour_open(open, cx);
             }))
             .e2e(
@@ -2406,13 +2409,14 @@ impl SettingsView {
             super::colour_field::popover(
                 content,
                 &self.colour_focus,
+                self.colour_pressed_outside.clone(),
                 move |_, cx| {
                     this.update(cx, |this, cx| this.set_colour_open(false, cx)).ok();
                 },
-                move |_, cx| {
+                move |event, _, cx| {
                     closer
                         .update(cx, |this, cx| {
-                            this.colour_closed_at = Some(std::time::Instant::now());
+                            this.colour_closed_at = Some(event.position);
                             this.set_colour_open(false, cx);
                         })
                         .ok();
