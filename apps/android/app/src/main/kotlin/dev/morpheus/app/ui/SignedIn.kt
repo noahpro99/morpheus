@@ -113,7 +113,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     Row(modifier.fillMaxSize().background(Palette.Background)) {
         Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = { model.openSheet(it.title) {
             // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
-            model.morpheus.serverMenuRows(it.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder", t("Reorder servers"), "move", false, false, false, null, emptyList())
+            model.morpheus.serverMenuRows(it.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
         } }) { model.selectScope(it.key) }
         if (scope == null) {
             EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
@@ -182,8 +182,8 @@ private fun RowScope.TabItem(
     mentions: ULong = 0UL, dot: Boolean = false, onClick: () -> Unit, onLong: (() -> Unit)? = null, onSecondTap: (() -> Unit)? = null,
     icon: @Composable (Boolean) -> Unit,
 ) {
-    val on = me == current
     var lastTap by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val on = me == current
     Column(
         Modifier
             .weight(1f).fillMaxHeight()

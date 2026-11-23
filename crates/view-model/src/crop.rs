@@ -127,6 +127,26 @@ impl Crop {
     }
 }
 
+/// The pixel size of a picture in a format that can be drawn and cut (PNG, JPEG, GIF, WebP), if it is one.
+pub fn picture_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+    matches!(
+        reader.format()?,
+        image::ImageFormat::Png | image::ImageFormat::Jpeg | image::ImageFormat::Gif | image::ImageFormat::WebP
+    )
+    .then_some(())?;
+    reader.into_dimensions().ok()
+}
+
+/// The square part of the picture `bytes` that `rect` names, as a PNG `side` pixels across.
+pub fn cropped_png(bytes: &[u8], rect: SourceRect, side: u32) -> Result<Vec<u8>, String> {
+    let picture = image::load_from_memory(bytes).map_err(|err| err.to_string())?;
+    let square = picture.crop_imm(rect.x, rect.y, rect.side, rect.side).resize_exact(side, side, image::imageops::FilterType::Lanczos3);
+    let mut out = std::io::Cursor::new(Vec::new());
+    square.write_to(&mut out, image::ImageFormat::Png).map_err(|err| err.to_string())?;
+    Ok(out.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +286,26 @@ mod tests {
                 side: 64
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod cut_tests {
+    use super::*;
+
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(width, height).write_to(&mut out, image::ImageFormat::Png).expect("png");
+        out.into_inner()
+    }
+
+    #[test]
+    fn a_picture_is_measured_and_cut_to_a_square_png() {
+        let bytes = png(40, 20);
+        assert_eq!(picture_size(&bytes), Some((40, 20)));
+        assert_eq!(picture_size(b"not a picture"), None);
+        let crop = Crop::new(40, 20);
+        let cut = cropped_png(&bytes, crop.source_rect(), 16).expect("cut");
+        assert_eq!(picture_size(&cut), Some((16, 16)));
     }
 }

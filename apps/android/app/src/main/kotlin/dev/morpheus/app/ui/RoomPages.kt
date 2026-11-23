@@ -10,6 +10,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import dev.morpheus.app.RoomHooks
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -56,6 +65,12 @@ fun RoomPageHost(app: AppModel) {
             "reactions" -> ReactionsPage(app, page)
             "report" -> ReportPage(app, page)
             "rename-folder" -> RenameFolderPage(app, page)
+            "unlock" -> UnlockPage(app, page)
+            "lock-set" -> LockSetPage(app, page)
+            "lock-remove" -> LockRemovePage(app, page)
+            "leave" -> LeavePage(app, page)
+            "category" -> CategoryPage(app, page)
+            "profile" -> ProfilePage(app, page)
         }
     }
 }
@@ -123,12 +138,10 @@ private fun EditPage(app: AppModel, page: PageRequest) {
     var ok by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch {
+    val picker = rememberPicturePicker { square ->
+        scope.launch {
             try {
-                val picked = context.read(uri) ?: return@launch
-                app.morpheus.setRoomPicture(page.roomId, picked.name, picked.bytes)
+                app.morpheus.setRoomPicture(page.roomId, "picture.png", square)
                 ok = t("Picture changed."); error = null
             } catch (e: Exception) { error = e.message }
         }
@@ -140,9 +153,10 @@ private fun EditPage(app: AppModel, page: PageRequest) {
         details?.let { d ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 Avatar(d.avatar, d.name, Size.avatarLg)
-                TextButton({ picker.launch("image/*") }, Modifier.testTag("edit-picture")) { Text(t("Choose a picture…")) }
+                TextButton({ picker.pick() }, Modifier.testTag("edit-picture")) { Text(t("Choose a picture…")) }
             }
         }
+        picker.Show()
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("edit-name"), singleLine = true, label = { Text(t("Name")) })
         OutlinedTextField(topic, { topic = it }, Modifier.fillMaxWidth().testTag("edit-topic"), label = { Text(t("Topic")) })
         Button({
@@ -293,5 +307,210 @@ private fun RenameFolderPage(app: AppModel, page: PageRequest) {
     PageFrame(app, "Rename folder", "page-rename-folder") {
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("rename-input"), singleLine = true, label = { Text(t("Name")) })
         Button({ app.renameFolder(page.roomId, name); app.closePage() }, Modifier.testTag("rename-save"), enabled = name.isNotBlank()) { Text(t("Save")) }
+    }
+}
+
+/**
+ * A picture in a square frame to drag and zoom (the desktop's crop: `view_model::crop` through ffi). "Use" hands back
+ * the square as a PNG; "Cancel" drops the picture.
+ */
+@Composable
+private fun CropPicture(frame: uniffi.morpheus_ffi.CropFrame, onUse: (ByteArray) -> Unit, onCancel: () -> Unit) {
+    val bitmap = remember(frame) {
+        val bytes = frame.picture()
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }
+    var tick by remember { mutableStateOf(0) }
+    var framePx by remember { mutableStateOf(1f) }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.testTag("crop"), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+        Text(t("Drag the picture and zoom to choose what shows."), color = Palette.Muted, style = Type.secondary)
+        androidx.compose.foundation.layout.Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Palette.Raised)
+                .onSizeChanged { framePx = it.width.toFloat() }
+                .pointerInput(frame) {
+                    detectDragGestures { change, drag ->
+                        change.consume()
+                        frame.panBy(drag.x, drag.y, framePx)
+                        tick++
+                    }
+                }
+                .testTag("crop-frame"),
+        ) {
+            tick
+            if (bitmap != null) {
+                val offset = frame.offset(framePx)
+                val shown = frame.shownSize(framePx)
+                androidx.compose.foundation.Image(
+                    bitmap, null,
+                    Modifier
+                        .offset { androidx.compose.ui.unit.IntOffset(offset.x.toInt(), offset.y.toInt()) }
+                        .requiredSize(with(androidx.compose.ui.platform.LocalDensity.current) { shown.x.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { shown.y.toDp() }),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
+                )
+            }
+        }
+        androidx.compose.material3.Slider(frame.zoomFraction().also { tick }, { frame.setZoomFraction(it); tick++ }, Modifier.testTag("crop-zoom"))
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+            Button({ scope.launch { onUse(frame.cut()) } }, Modifier.testTag("crop-use")) { Text(t("Use this picture")) }
+            TextButton(onCancel, Modifier.testTag("crop-cancel")) { Text(t("Cancel")) }
+        }
+    }
+}
+
+/** What a page does with a picture the person chose: the crop first, then the square. */
+@Composable
+private fun rememberPicturePicker(onSquare: (ByteArray) -> Unit): PicturePicker {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var frame by remember { mutableStateOf<uniffi.morpheus_ffi.CropFrame?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val take: (ByteArray) -> Unit = { bytes ->
+        val opened = uniffi.morpheus_ffi.openCrop(bytes)
+        if (opened == null) error = t("That file is not a picture Morpheus can show.") else { frame = opened; error = null }
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch { context.read(uri)?.let { take(it.bytes) } }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        RoomHooks.picture = { _, bytes -> take(bytes) }
+        onDispose { RoomHooks.picture = null }
+    }
+    return PicturePicker({ launcher.launch("image/*") }, frame, error, { frame = null }) { bytes -> frame = null; onSquare(bytes) }
+}
+
+private class PicturePicker(val pick: () -> Unit, val frame: uniffi.morpheus_ffi.CropFrame?, val error: String?, val cancel: () -> Unit, val use: (ByteArray) -> Unit) {
+    @Composable
+    fun Show() {
+        error?.let { Text(it, Modifier.testTag("page-error"), color = Palette.Danger, style = Type.secondary) }
+        frame?.let { CropPicture(it, use, cancel) }
+    }
+}
+
+@Composable
+private fun LeavePage(app: AppModel, page: PageRequest) {
+    val info = remember { app.morpheus.leaveServerInfo(page.roomId) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    PageFrame(app, "Leave server", "page-leave") {
+        Text(info.title, Modifier.testTag("leave-title"), style = Type.heading)
+        Text(info.body, Modifier.testTag("leave-body"), color = Palette.Muted, style = Type.body)
+        Button({
+            scope.launch {
+                try { app.morpheus.leaveServer(page.roomId); app.closePage(); app.selectTab(dev.morpheus.app.Tab.Servers) } catch (e: Exception) { error = e.message }
+            }
+        }, Modifier.testTag("leave-server"), colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Palette.Danger, contentColor = Palette.OnDanger)) { Text(t("Leave server")) }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun CategoryPage(app: AppModel, page: PageRequest) {
+    var name by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    PageFrame(app, "Create category", "page-category") {
+        Text(app.morpheus.createCategoryBlurb(), color = Palette.Muted, style = Type.secondary)
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("category-name"), singleLine = true, label = { Text(t("Name")) })
+        Button({
+            scope.launch { try { app.morpheus.createCategory(page.roomId, name); app.closePage() } catch (e: Exception) { error = e.message } }
+        }, Modifier.testTag("category-submit")) { Text(t("Create category")) }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun ProfilePage(app: AppModel, page: PageRequest) {
+    var blurb by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var square by remember { mutableStateOf<ByteArray?>(null) }
+    var ok by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val picker = rememberPicturePicker { bytes -> square = bytes }
+    LaunchedEffect(Unit) {
+        try { app.morpheus.serverProfile(page.roomId).let { blurb = it.blurb; name = it.name } } catch (e: Exception) { error = e.message }
+    }
+    PageFrame(app, "Edit per-server profile", "page-profile") {
+        Text(blurb, Modifier.testTag("profile-blurb"), color = Palette.Muted, style = Type.secondary)
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("profile-name"), singleLine = true, label = { Text(t("Name")) })
+        TextButton({ picker.pick() }, Modifier.testTag("profile-picture")) { Text(if (square == null) t("Choose a picture…") else t("Picture chosen")) }
+        picker.Show()
+        Button({
+            scope.launch {
+                try { app.morpheus.saveServerProfile(page.roomId, name, "picture.png", square ?: ByteArray(0)); ok = t("Saved for this server."); error = null } catch (e: Exception) { error = e.message; ok = null }
+            }
+        }, Modifier.testTag("profile-save")) { Text(t("Save")) }
+        Note(ok, error)
+    }
+}
+
+@Composable
+private fun UnlockPage(app: AppModel, page: PageRequest) {
+    var password by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val sidebar by app.sidebar.collectAsState()
+    val words = remember { app.morpheus.lockWords() }
+    PageFrame(app, page.extra.ifEmpty { "Locked" }, "page-unlock") {
+        Text(words.lockedTitle, Modifier.testTag("unlock-title"), style = Type.heading)
+        OutlinedTextField(
+            password, { password = it }, Modifier.fillMaxWidth().testTag("unlock-input"), singleLine = true, label = { Text(t("Password")) },
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+        )
+        Button({
+            scope.launch {
+                try {
+                    if (app.morpheus.unlockRoom(page.roomId, password)) {
+                        val room = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == page.roomId }
+                        app.closePage()
+                        room?.let { app.openUnlocked(it) }
+                    } else error = t("That is not the password.")
+                } catch (e: Exception) { error = e.message }
+            }
+        }, Modifier.testTag("unlock-submit")) { Text(t("Unlock")) }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun LockSetPage(app: AppModel, page: PageRequest) {
+    var password by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val words = remember { app.morpheus.lockWords() }
+    PageFrame(app, "Lock with a password…", "page-lock-set") {
+        Text(words.blurb, color = Palette.Muted, style = Type.secondary)
+        val hide = androidx.compose.ui.text.input.PasswordVisualTransformation()
+        OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth().testTag("lock-password"), singleLine = true, label = { Text(t("Password")) }, visualTransformation = hide)
+        OutlinedTextField(again, { again = it }, Modifier.fillMaxWidth().testTag("lock-again"), singleLine = true, label = { Text(t("Password again")) }, visualTransformation = hide)
+        Button({
+            scope.launch { try { app.morpheus.setLock(page.roomId, password, again); app.closePage() } catch (e: Exception) { error = e.message } }
+        }, Modifier.testTag("lock-set-submit")) { Text(t("Lock with a password…")) }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun LockRemovePage(app: AppModel, page: PageRequest) {
+    var password by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val words = remember { app.morpheus.lockWords() }
+    PageFrame(app, "Remove lock…", "page-lock-remove") {
+        OutlinedTextField(
+            password, { password = it }, Modifier.fillMaxWidth().testTag("lock-remove-password"), singleLine = true, label = { Text(t("Password")) },
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+        )
+        Text(words.forgot, color = Palette.Muted, style = Type.secondary)
+        Button({
+            scope.launch { try { app.morpheus.removeLock(page.roomId, password); app.closePage() } catch (e: Exception) { error = e.message } }
+        }, Modifier.testTag("lock-remove-submit")) { Text(t("Remove lock…")) }
+        Note(null, error)
     }
 }

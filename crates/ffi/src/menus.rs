@@ -16,6 +16,8 @@ use crate::{FfiError, Morpheus, timeline::{MessageBody, MessageItem}};
 pub struct MenuRow {
     /// Its place in the list: `"3"`, or `"2.1"` for the second row of the third row's submenu.
     pub path: String,
+    /// The label in English, whatever the language: what the rows are named by in tests and tags.
+    pub id: String,
     /// Translated.
     pub label: String,
     /// A Lucide glyph name (`"pin"`), as the desktop draws in front of the label.
@@ -47,14 +49,14 @@ pub enum MenuOutcome {
     OpenRoom { room_id: String },
     /// Add `@name ` to the message being written.
     Mention { name: String },
-    /// A page of the phone for this item: `kind` is `invite`, `create`, `edit`, `privacy`, `overview` or `rename-folder`; `room_id` the
-    /// room, server or folder it is about (the server to make a room in, for `create`, empty for none), `extra` its name where that matters.
     /// Another account is the signed-in one now.
     Switched,
     /// Sign in another account without signing out of this one.
     AddAccount,
     /// Sign out (the screen asks first).
     SignOut,
+    /// A page of the phone for this item: `kind` is `invite`, `create`, `edit`, `privacy`, `overview` or `rename-folder`; `room_id` the
+    /// room, server or folder it is about (the server to make a room in, for `create`, empty for none), `extra` its name where that matters.
     Page { kind: String, room_id: String, extra: String },
     /// The reactions of the message the sheet was opened on.
     ViewReactions,
@@ -77,6 +79,7 @@ pub fn rows_of(items: &[MenuItem], prefix: &str) -> Vec<MenuRow> {
         .map(|(i, item)| {
             let path = if prefix.is_empty() { i.to_string() } else { format!("{prefix}.{i}") };
             MenuRow {
+                id: item.label.clone(),
                 label: i18n::t(&item.label),
                 icon: item.glyph().map(str::to_owned),
                 danger: item.danger,
@@ -148,13 +151,13 @@ impl Morpheus {
         self.rooms_now.lock().ok()?.iter().find(|r| r.id.as_str() == id).cloned()
     }
 
-    fn store(&self, items: &[MenuItem], room: Option<OwnedRoomId>, event_id: Option<String>) -> Vec<MenuRow> {
-        let rows = rows_of(items, "");
-        if let Ok(mut slot) = self.menu.lock() {
     pub(crate) fn store_menu(&self, items: &[MenuItem]) -> Vec<MenuRow> {
         self.store(items, None, None)
     }
 
+    fn store(&self, items: &[MenuItem], room: Option<OwnedRoomId>, event_id: Option<String>) -> Vec<MenuRow> {
+        let rows = rows_of(items, "");
+        if let Ok(mut slot) = self.menu.lock() {
             *slot = Some(Stored { items: items.to_vec(), room, event_id });
         }
         rows
@@ -188,6 +191,8 @@ impl Morpheus {
             }
             None => room_menu(&room, session.notify_mode(room.id.clone()).await.ok()),
         };
+        let lock = self.lock_state_of(room.id.as_str());
+        let items = morpheus_view_model::room_menu::with_lock_items(items, morpheus_view_model::room_menu::lock_items(&room.id, lock.has_lock, lock.locked));
         Ok(self.store(&items, Some(room.id.clone()), None))
     }
 
@@ -199,7 +204,8 @@ impl Morpheus {
         let children = morpheus_view_model::scopes::rooms_in_scope(&rooms, &morpheus_view_model::scopes::Scope::Space(space.id.clone()));
         let prefs = session.ui_prefs().await?;
         let folders = morpheus_view_model::rail_folders::folder_choices(&prefs, space.id.as_str());
-        let items = space_menu(&space, &children, false, &folders);
+        let hide_muted = prefs.get("hide_muted").and_then(|v| v.as_bool()).unwrap_or(false);
+        let items = space_menu(&space, &children, hide_muted, &folders);
         Ok(self.store(&items, Some(space.id.clone()), None))
     }
 
@@ -344,12 +350,6 @@ impl Morpheus {
                 session.invite(room, user).await?;
                 MenuOutcome::Done
             }
-            MenuAction::ViewReactions => MenuOutcome::ViewReactions,
-            MenuAction::Report => MenuOutcome::Report,
-            MenuAction::ServerOverview(space) => MenuOutcome::Page { kind: "overview".into(), room_id: space.to_string(), extra: String::new() },
-            MenuAction::CreateChannel(space) => MenuOutcome::Page { kind: "create".into(), room_id: space.to_string(), extra: String::new() },
-            MenuAction::Ungroup(folder) => {
-                self.ungroup_folder(folder).await?;
             MenuAction::ToggleHideMuted => {
                 self.change_rail(|prefs| {
                     let on = prefs.get("hide_muted").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -370,6 +370,12 @@ impl Morpheus {
             }
             MenuAction::AddAccount => MenuOutcome::AddAccount,
             MenuAction::SignOut => MenuOutcome::SignOut,
+            MenuAction::ViewReactions => MenuOutcome::ViewReactions,
+            MenuAction::Report => MenuOutcome::Report,
+            MenuAction::ServerOverview(space) => MenuOutcome::Page { kind: "overview".into(), room_id: space.to_string(), extra: String::new() },
+            MenuAction::CreateChannel(space) => MenuOutcome::Page { kind: "create".into(), room_id: space.to_string(), extra: String::new() },
+            MenuAction::Ungroup(folder) => {
+                self.ungroup_folder(folder).await?;
                 MenuOutcome::Done
             }
             MenuAction::RoomDialog(kind) => {
@@ -384,6 +390,11 @@ impl Morpheus {
                         page("create", parent.map(|p| p.to_string()).unwrap_or_default(), String::new())
                     }
                     K::RenameFolder(id, name) => page("rename-folder", id, name),
+                    K::LockSet(room) => page("lock-set", room.to_string(), String::new()),
+                    K::LockRemove(room) => page("lock-remove", room.to_string(), String::new()),
+                    K::LeaveSpace(space) => page("leave", space.to_string(), String::new()),
+                    K::CreateSpace(Some(space)) => page("category", space.to_string(), String::new()),
+                    K::RoomProfile(space) => page("profile", space.to_string(), String::new()),
                     _ => MenuOutcome::NotYet { label: i18n::t(&label) },
                 }
             }
@@ -454,6 +465,7 @@ mod tests {
             sender_id: "@bob:x".into(),
             sender_name: "bob".into(),
             sender_avatar: None,
+        sender_avatar_key: None,
             time: "12:00".into(),
             timestamp_ms: 0,
             show_header: true,
@@ -481,4 +493,3 @@ mod tests {
         assert_eq!(rows[names.iter().position(|n| *n == "Add reaction").expect("grid")].grid, true);
     }
 }
-        sender_avatar_key: None,

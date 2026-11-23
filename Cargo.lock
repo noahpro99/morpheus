@@ -7510,6 +7510,7 @@ dependencies = [
  "argon2",
  "color-thief",
  "emojis",
+ "image",
  "jiff",
  "morpheus-core",
  "pulldown-cmark",

@@ -126,7 +126,16 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     private val _room = MutableStateFlow<RoomItem?>(null)
     val openRoom: StateFlow<RoomItem?> = _room.asStateFlow()
 
+    /** Open a room; a locked one asks for its password first (a page), then opens through [openUnlocked]. */
     fun open(room: RoomItem) {
+        if (morpheus.lockState(room.id).locked) {
+            _page.value = PageRequest("unlock", room.id, room.name)
+            return
+        }
+        openUnlocked(room)
+    }
+
+    fun openUnlocked(room: RoomItem) {
         _room.value = room
         keep("room", room.id)
         keep("last-room", room.id)
@@ -526,6 +535,13 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                 open(room)
             }
         }.launchIn(viewModelScope)
+        // Time passes for the password locks: an open one closes after the time away from it.
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(500)
+                morpheus.lockTick(_room.value?.id)
+            }
+        }
         // A session and a list from the last run: draw them now, restore the session behind them.
         kept?.getString("account", null)?.split("\n")?.takeIf { it.size == 3 }?.let { (user, server, device) ->
             val bar = startBar ?: return@let
@@ -534,7 +550,8 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             // The room that was open is drawn from its kept rows too (#313); it goes live once the session is back.
             kept?.getString("room", null)?.let { id ->
                 bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == id }?.let { room ->
-                    _room.value = room
+                    if (!morpheus.lockState(room.id).locked) {
+                        _room.value = room
                     AppState.room = room.id
                 }
             }
@@ -764,10 +781,3 @@ class SheetRequest(
 
 /** A page of the phone for a sheet item: what kind, which room (or server, or folder), a name where it matters, the message it is about. */
 class PageRequest(val kind: String, val roomId: String, val extra: String = "", val message: uniffi.morpheus_ffi.MessageItem? = null)
-    /** Pictures fetched over the network (not found on the disk), and avatars drawn (the debug bridge reports both; #334). */
-    @Volatile
-    var imageFetches: Int = 0
-
-    @Volatile
-    var avatarsDrawn: Int = 0
-

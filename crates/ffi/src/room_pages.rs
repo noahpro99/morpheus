@@ -232,3 +232,86 @@ impl Morpheus {
         self.change_rail(|prefs| morpheus_view_model::rail_folders::ungroup(prefs, &folder_id)).await
     }
 }
+
+/// What leaving a server says, and how many rooms go with it.
+#[derive(uniffi::Record)]
+pub struct LeaveInfo {
+    pub title: String,
+    pub body: String,
+}
+
+impl Morpheus {
+    /// The server and the rooms listed in it: what leaving or a per-server profile applies to.
+    fn server_rooms(&self, space: &OwnedRoomId) -> Vec<OwnedRoomId> {
+        let rooms = self.rooms_now.lock().map(|r| r.clone()).unwrap_or_default();
+        let mut ids = vec![space.clone()];
+        ids.extend(
+            morpheus_view_model::scopes::rooms_in_scope(&rooms, &morpheus_view_model::scopes::Scope::Space(space.clone())).into_iter().map(|room| room.id),
+        );
+        ids
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The question of "Leave server".
+    pub fn leave_server_info(&self, space_id: String) -> Result<LeaveInfo, FfiError> {
+        let id = room_id(&space_id)?;
+        let name = self.rooms_now.lock().ok().and_then(|rooms| rooms.iter().find(|r| r.id == id).map(|r| r.name.clone()));
+        let count = self.server_rooms(&id).len().saturating_sub(1);
+        Ok(LeaveInfo { title: room_dialogs::leave_space_title(name.as_deref()), body: room_dialogs::leave_space_body(count) })
+    }
+
+    /// Leave a server and every room listed in it.
+    pub async fn leave_server(&self, space_id: String) -> Result<(), FfiError> {
+        let id = room_id(&space_id)?;
+        let children: Vec<OwnedRoomId> = self.server_rooms(&id).into_iter().filter(|room| room != &id).collect();
+        Ok(self.session()?.leave_space(id, children).await?)
+    }
+
+    /// What a category is, in words.
+    pub fn create_category_blurb(&self) -> String {
+        i18n::t(room_dialogs::create_space_blurb(true))
+    }
+
+    /// Make a category (a space inside the server) with this name. Gives its ID.
+    pub async fn create_category(&self, space_id: String, name: String) -> Result<String, FfiError> {
+        if !room_dialogs::can_create(&name) {
+            return Err(failed(i18n::t("A room needs a name.")));
+        }
+        Ok(self.session()?.create_space(name, Some(room_id(&space_id)?)).await?.to_string())
+    }
+
+    /// How a per-server profile is explained, and the name you have in the server now.
+    pub async fn server_profile(&self, space_id: String) -> Result<ServerProfile, FfiError> {
+        let id = room_id(&space_id)?;
+        let blurb = room_dialogs::room_profile_blurb(self.server_rooms(&id).len());
+        let profile = self.session()?.room_profile(id).await?;
+        Ok(ServerProfile { blurb, name: profile.name })
+    }
+
+    /// Save your name (and, when `picture_bytes` is not empty, a picture, cut already) for a server and its rooms.
+    pub async fn save_server_profile(&self, space_id: String, name: String, picture_name: String, picture_bytes: Vec<u8>) -> Result<(), FfiError> {
+        let id = room_id(&space_id)?;
+        let targets = self.server_rooms(&id);
+        let path = if picture_bytes.is_empty() {
+            None
+        } else {
+            let path = self.dir.join(format!("server-profile-{}", picture_name.replace('/', "_")));
+            std::fs::write(&path, picture_bytes).map_err(|e| failed(e.to_string()))?;
+            Some(path)
+        };
+        let done = self.session()?.set_room_profile(targets, name, path.clone()).await;
+        if let Some(path) = path {
+            let _ = std::fs::remove_file(path);
+        }
+        Ok(done?)
+    }
+}
+
+/// The per-server profile page: its explanation and your name there now.
+#[derive(uniffi::Record)]
+pub struct ServerProfile {
+    pub blurb: String,
+    pub name: String,
+}

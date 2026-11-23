@@ -14,6 +14,10 @@ import uniffi.morpheus_ffi.MediaHandle
 object RoomHooks {
     @Volatile
     var attach: ((name: String, mime: String, bytes: ByteArray) -> Unit)? = null
+
+    /** What the open page does with a picture that was picked (the e2e bridge calls it too). */
+    @Volatile
+    var picture: ((name: String, bytes: ByteArray) -> Unit)? = null
 }
 
 /** A picked file: its name, type and bytes. */

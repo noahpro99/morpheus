@@ -163,6 +163,7 @@ class TestBridge(private val app: Application) {
             }
             out
         }
+        "slide_reset" -> { AppState.slideLog.clear(); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
         "click" -> onMain { click(find(request)) }
         "type" -> onMain {
@@ -183,6 +184,11 @@ class TestBridge(private val app: Application) {
         "attach" -> {
             val hook = RoomHooks.attach ?: error("no room is open")
             hook(request.getString("name"), request.getString("mime"), request.getString("text").toByteArray())
+            true
+        }
+        "pick_picture" -> {
+            val hook = RoomHooks.picture ?: error("no page takes a picture")
+            hook(request.getString("name"), android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))
             true
         }
         "push" -> {

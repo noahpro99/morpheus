@@ -25,7 +25,9 @@ mod accounts;
 mod bridges;
 mod calls;
 mod composer;
+mod crop;
 mod error;
+mod locks;
 mod media;
 mod menus;
 mod people;
@@ -159,6 +161,8 @@ pub struct Morpheus {
     pub(crate) rooms_now: Arc<Mutex<Vec<morpheus_core::RoomSummary>>>,
     /// The menu the sheet shows now.
     pub(crate) menu: Mutex<Option<crate::menus::Stored>>,
+    /// Password locks of this device.
+    pub(crate) locks: Mutex<morpheus_view_model::locks::Locks>,
 }
 
 impl Morpheus {
@@ -184,14 +188,17 @@ impl Morpheus {
     /// Everything is kept under `data_dir` (the app's private folder).
     #[uniffi::constructor]
     pub fn new(data_dir: String) -> Result<Arc<Self>, FfiError> {
+        let dir = std::path::PathBuf::from(&data_dir);
+        let locks = morpheus_view_model::locks::Locks::load(&dir);
         Ok(Arc::new(Self {
-            dir: std::path::PathBuf::from(&data_dir),
+            dir,
             core: Core::with_session_store(data_dir, store_kind())?,
             session: Mutex::new(None),
             muted_now: Arc::default(),
             layout_changed: Arc::default(),
             rooms_now: Arc::default(),
             menu: Mutex::new(None),
+            locks: Mutex::new(locks),
         }))
     }
 
@@ -229,6 +236,7 @@ impl Morpheus {
         session.logout().await?;
         let _ = std::fs::remove_file(self.dir.join("sidebar-cache.json"));
         crate::timeline_cache::forget(&self.dir);
+        self.clear_locks();
         Ok(())
     }
 

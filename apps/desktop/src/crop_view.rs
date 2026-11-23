@@ -59,26 +59,7 @@ pub(crate) fn picked_from(bytes: Vec<u8>) -> Option<Picked> {
     })
 }
 
-/// The square part of the picture `bytes` that `rect` names, as a PNG `side` pixels across.
-pub(crate) fn cropped_png(
-    bytes: &[u8],
-    rect: crate::view_model::crop::SourceRect,
-    side: u32,
-) -> Result<Vec<u8>, String> {
-    let picture = image::load_from_memory(bytes).map_err(|err| err.to_string())?;
-    let square = picture
-        .crop_imm(rect.x, rect.y, rect.side, rect.side)
-        .resize_exact(
-            side,
-            side,
-            image::imageops::FilterType::Lanczos3,
-        );
-    let mut out = std::io::Cursor::new(Vec::new());
-    square
-        .write_to(&mut out, image::ImageFormat::Png)
-        .map_err(|err| err.to_string())?;
-    Ok(out.into_inner())
-}
+pub(crate) use crate::view_model::crop::cropped_png;
 
 /// The crop view: the picture in a square frame under a circular mask,
 /// dragged to position, zoomed by the wheel or the slider.
