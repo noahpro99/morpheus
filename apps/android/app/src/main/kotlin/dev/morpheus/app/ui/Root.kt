@@ -26,7 +26,6 @@ import androidx.compose.ui.platform.testTag
 import dev.morpheus.app.AppModel
 import dev.morpheus.app.Screen
 import dev.morpheus.app.ShareInbox
-import dev.morpheus.app.ShareInbox
 
 /** The screen the app is on. */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -45,10 +44,6 @@ fun Root(model: AppModel) {
     ) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         val rings by model.ringModel.rings.collectAsState()
-            val sharing by ShareInbox.pending.collectAsState()
-            if (sharing != null && screen is Screen.SignedIn) ShareScreen(model, sharing!!)
-            // A share waits for the session (restoring) and for signing in; it is not lost.
-            else if (sharing != null && screen !is Screen.SignedOut) CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("share-waiting"))
             val sharing by ShareInbox.pending.collectAsState()
             if (sharing != null && screen is Screen.SignedIn) ShareScreen(model, sharing!!)
             // A share waits for the session (restoring) and for signing in; it is not lost.
