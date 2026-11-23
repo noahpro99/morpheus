@@ -412,7 +412,10 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     fun reopenLast() {
         val id = kept?.getString("last-room", null) ?: return
         val bar = sidebar.value ?: return
-        bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == id }?.let { open(it) }
+        // Swiping onto a room is also a swipe onto its composer: the room comes up with the keyboard (#344).
+        val room = bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == id } ?: return
+        swipeOpened = true
+        open(room)
     }
 
     fun closeRoom() {
@@ -424,6 +427,11 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     /** Encryption: made at sign-in, stopped at sign-out. */
     private val _security = MutableStateFlow<SecurityModel?>(null)
+    /** The room that is opening was reached by a swipe (its composer takes the focus); read once. */
+    var swipeOpened = false
+
+    fun takeSwipeOpened(): Boolean = swipeOpened.also { swipeOpened = false }
+
     val security: StateFlow<SecurityModel?> = _security.asStateFlow()
     private var securityScope: kotlinx.coroutines.CoroutineScope? = null
 
@@ -691,6 +699,28 @@ object AppState {
 
     /** Milliseconds from the process start to the first room drawn with messages (0: none yet; #313). */
     @Volatile
+    /** Times the keyboard was asked for and put away by a swipe (the debug bridge reports them; #344). */
+    @Volatile
+    var imeShown: Int = 0
+
+    @Volatile
+    var imeHidden: Int = 0
+
+    /** Where the room pane (1) and the lists pane (0) were at each layout while they slid (the debug bridge reports it; #333). */
+    val slideLog = java.util.concurrent.ConcurrentLinkedQueue<Pair<Int, Float>>()
+
+    fun slide(pane: Int, x: Float) {
+        slideLog.add(pane to x)
+        while (slideLog.size > 300) slideLog.poll()
+    }
+
+    /** Pictures fetched over the network (not found on the disk), and avatars drawn (the debug bridge reports both; #334). */
+    @Volatile
+    var imageFetches: Int = 0
+
+    @Volatile
+    var avatarsDrawn: Int = 0
+
     var firstRoomMs: Long = 0
 
     /** Milliseconds from the process start to the session being restored (0: not yet). */

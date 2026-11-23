@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.lazy.LazyColumn
@@ -118,6 +119,29 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     }
 
     val pager = rememberPagerState(initialPage = 1) { 3 }
+    // A swipe onto the chat focuses the composer and shows the keyboard; a swipe off it puts the keyboard away.
+    val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val openedBySwipe = remember { app.takeSwipeOpened() }
+    LaunchedEffect(pager, threadRoot) {
+        if (threadRoot != null) return@LaunchedEffect
+        var first = true
+        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page ->
+            if (page == 1) {
+                if (!first || openedBySwipe) {
+                    try { composerFocus.requestFocus() } catch (_: Exception) {}
+                    keyboard?.show()
+                    dev.morpheus.app.AppState.imeShown++
+                }
+            } else {
+                focusManager.clearFocus()
+                keyboard?.hide()
+                dev.morpheus.app.AppState.imeHidden++
+            }
+            first = false
+        }
+    }
     BackHandler {
         when {
             searching -> searching = false
@@ -222,7 +246,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)
             }
-            Composer(model, editing, onAttach = { picker.launch("*/*") }) { model.send(it) }
+            Composer(model, editing, composerFocus, onAttach = { picker.launch("*/*") }) { model.send(it) }
         } }
         viewing?.let { ImageViewer(it) { viewing = null } }
         thread?.let { root ->
@@ -505,7 +529,7 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit)
 }
 
 @Composable
-private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Unit, onSend: (String) -> Unit) {
+private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester, onAttach: () -> Unit, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     var panel by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
@@ -524,7 +548,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, onAttach: () -> Un
         IconAction(dev.morpheus.app.R.drawable.ic_lucide_paperclip, t("Attach a file"), "attach", onAttach, tint = Palette.Muted)
         OutlinedTextField(
             text, { text = it },
-            Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).testTag("composer"),
+            Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).focusRequester(focus).testTag("composer"),
             placeholder = { Text(t("Message"), color = Palette.Muted) },
             maxLines = 5,
             shape = RoundedCornerShape(24.dp),
