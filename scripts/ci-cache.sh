@@ -9,7 +9,13 @@
 #                    built at: files unchanged since that commit get an old
 #                    time, so only what changed rebuilds. Without a cache or
 #                    the commit, nothing is touched (a full rebuild).
-#   vendor-members   makes the patched crates in vendor/ workspace members (below).
+#   save-vendor      rust-cache deletes the build outputs of the patched crates in
+#                    vendor/ (webrtc-sys, libwebrtc, livekit, gpui, matrix-sdk-ui,
+#                    xattr; not workspace members, not outside the checkout, and
+#                    as members their dev-dependencies would change Cargo.lock),
+#                    so everything built on them rebuilt every time: this keeps
+#                    their outputs in .warm/vendor.tar, which is cached along,
+#                    and `restore-vendor` unpacks it after the cache restore.
 #   record           writes the current commit to .warm/sha, for the cache save.
 #   unique-key       makes the rust-cache key new for this run (it would
 #                    otherwise be the same until Cargo.lock changes, and an
@@ -28,19 +34,24 @@ case "${1:-}" in
     git -c core.quotepath=off ls-files | sort | comm -23 - "$changed" | tr "\n" "\0" | xargs -0 touch -t 200001010000
     echo "files unchanged since $sha now carry an old time; changed: $(wc -l < "$changed")"
     ;;
+  save-vendor)
+    mkdir -p .warm
+    list="${RUNNER_TEMP:-/tmp}/vendor-files.txt"
+    : > "$list"
+    for n in gpui libwebrtc livekit matrix-sdk-ui webrtc-sys xattr; do
+      u=${n//-/_}
+      find target -maxdepth 5 \( -path "*/.fingerprint/$n-*" -o -path "*/build/$n-*" \) -prune -print >> "$list"
+      find target -maxdepth 5 -path "*/deps/*" \( -name "$u-*" -o -name "lib$u-*" \) -print >> "$list"
+    done
+    echo "keeping $(wc -l < "$list") vendored build outputs"
+    tr "\n" "\0" < "$list" | tar --null -T - -cf .warm/vendor.tar
+    ;;
+  restore-vendor)
+    [ -f .warm/vendor.tar ] && tar -xf .warm/vendor.tar && echo "vendored build outputs restored" || echo "no .warm/vendor.tar: vendored crates rebuild"
+    ;;
   record)
     mkdir -p .warm
     git rev-parse HEAD > .warm/sha
-    ;;
-  vendor-members)
-    # The patched path crates in vendor/ are not workspace members, and
-    # rust-cache (even with cache-workspace-crates) deletes the build outputs of
-    # every package that is neither a member nor outside the checkout, so they
-    # (webrtc-sys, libwebrtc, livekit, gpui, ...) and everything built on them
-    # were rebuilt on every run. As members they are kept. Run before the
-    # restore, the build and the save alike, so all build them the same way.
-    sed -i.bak -E 's|^members = \[|members = ["vendor/gpui", "vendor/libwebrtc", "vendor/livekit", "vendor/matrix-sdk-ui", "vendor/webrtc-sys", "vendor/xattr", |' Cargo.toml
-    rm -f Cargo.toml.bak
     ;;
   unique-key)
     cp Cargo.lock "${RUNNER_TEMP:-/tmp}/Cargo.lock.orig"
@@ -50,5 +61,5 @@ case "${1:-}" in
   undo-key)
     cp "${RUNNER_TEMP:-/tmp}/Cargo.lock.orig" Cargo.lock
     ;;
-  *) echo "usage: $0 vendor-members|restore-mtimes|record|unique-key|undo-key" >&2; exit 2 ;;
+  *) echo "usage: $0 save-vendor|restore-vendor|restore-mtimes|record|unique-key|undo-key" >&2; exit 2 ;;
 esac

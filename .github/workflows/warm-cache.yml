@@ -52,8 +52,6 @@ jobs:
         run: scripts/ci-linux-deps.sh
       - name: Rust
         run: rustup show active-toolchain || rustup toolchain install
-      - name: Vendored crates as members
-        run: scripts/ci-cache.sh vendor-members
       - name: New cache key
         run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
@@ -65,11 +63,14 @@ jobs:
       - name: Cache file times
         run: |
           scripts/ci-cache.sh undo-key
+          scripts/ci-cache.sh restore-vendor
           scripts/ci-cache.sh restore-mtimes
       - name: Build
-        run: CARGO_LOG=cargo::core::compiler::fingerprint=info cargo build --release -p morpheus-desktop --locked 2>&1 | grep -E "dirty|stale|Compiling|Finished|error" | cut -c1-300 | tail -300; test "${PIPESTATUS[0]}" -eq 0
+        run: cargo build --release -p morpheus-desktop --locked
       - name: Record the commit
-        run: scripts/ci-cache.sh record
+        run: |
+          scripts/ci-cache.sh save-vendor
+          scripts/ci-cache.sh record
 
   windows:
     runs-on: windows-latest
@@ -85,8 +86,6 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add x86_64-pc-windows-msvc
-      - name: Vendored crates as members
-        run: scripts/ci-cache.sh vendor-members
       - name: New cache key
         run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
@@ -98,6 +97,7 @@ jobs:
       - name: Cache file times
         run: |
           scripts/ci-cache.sh undo-key
+          scripts/ci-cache.sh restore-vendor
           scripts/ci-cache.sh restore-mtimes
       - name: NASM
         run: |
@@ -106,7 +106,9 @@ jobs:
       - name: Build
         run: cargo build --release -p morpheus-desktop -p morpheus-launcher --locked --target x86_64-pc-windows-msvc
       - name: Record the commit
-        run: scripts/ci-cache.sh record
+        run: |
+          scripts/ci-cache.sh save-vendor
+          scripts/ci-cache.sh record
 
   macos:
     runs-on: macos-latest
@@ -131,8 +133,6 @@ jobs:
           else
             echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
           fi
-      - name: Vendored crates as members
-        run: scripts/ci-cache.sh vendor-members
       - name: New cache key
         run: scripts/ci-cache.sh unique-key
       - uses: Swatinem/rust-cache@v2
@@ -144,6 +144,7 @@ jobs:
       - name: Cache file times
         run: |
           scripts/ci-cache.sh undo-key
+          scripts/ci-cache.sh restore-vendor
           scripts/ci-cache.sh restore-mtimes
       - name: NASM
         if: matrix.target == 'x86_64-apple-darwin'
@@ -151,7 +152,9 @@ jobs:
       - name: Build
         run: cargo build --release -p morpheus-desktop --locked --target ${{ matrix.target }} $FEATURES
       - name: Record the commit
-        run: scripts/ci-cache.sh record
+        run: |
+          scripts/ci-cache.sh save-vendor
+          scripts/ci-cache.sh record
 
   # Every platform's newest entry stays, older ones go, and a warning says when
   # they no longer fit in 10 GB.

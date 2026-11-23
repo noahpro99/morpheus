@@ -55,8 +55,6 @@ jobs:
             echo "FEATURES=--features runtime-shaders" >> "$GITHUB_ENV"
           fi
 
-      - name: Vendored crates as members
-        run: scripts/ci-cache.sh vendor-members
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-${{ matrix.target }}
@@ -68,7 +66,9 @@ jobs:
       # What the cache was built at: files unchanged since then keep an old time, so Cargo
       # does not rebuild the vendored and workspace crates (#358).
       - name: Cache file times
-        run: scripts/ci-cache.sh restore-mtimes
+        run: |
+          scripts/ci-cache.sh restore-vendor
+          scripts/ci-cache.sh restore-mtimes
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # OpenH264 (videos): x86 assembly for the Intel build when nasm is
