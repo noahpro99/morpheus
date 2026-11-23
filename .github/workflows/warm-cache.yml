@@ -26,11 +26,14 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
-# A newer push replaces an older run: the old cache is deleted only after a
-# build succeeds (see "Replace the cache"), so a cancelled run loses nothing.
+# One run at a time; a newer push replaces the run waiting behind it (older
+# waiting runs are cancelled) but never one that is building: with pushes
+# every few minutes and builds of 20 minutes, cancelling the running one would
+# mean no build ever finishes and saves. The old cache is deleted only after a
+# build succeeds (see "Replace the cache").
 concurrency:
   group: warm-cache
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
