@@ -188,6 +188,67 @@ pub fn scope_has_unread(rooms: &[RoomSummary], scope: &Scope) -> bool {
     })
 }
 
+/// What the badge on a rail icon shows about calls in its scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallBadge {
+    /// No call going.
+    None,
+    /// Someone is in a voice channel: a speaker.
+    Voice,
+    /// Someone in it is sharing their screen: a screen, instead of the speaker.
+    Screen,
+}
+
+impl CallBadge {
+    /// The badge's glyph (`icons::glyph` names); None when there is no badge.
+    pub fn icon(self) -> Option<&'static str> {
+        match self {
+            CallBadge::None => None,
+            CallBadge::Voice => Some("volume-2"),
+            CallBadge::Screen => Some("screen-share"),
+        }
+    }
+}
+
+/// The rooms of a scope that have a call to show (`has_call`).
+fn rooms_with_calls<'a>(
+    rooms: &'a [RoomSummary],
+    scope: &Scope,
+    has_call: impl Fn(&RoomSummary) -> bool,
+) -> Vec<&'a RoomSummary> {
+    let mut found: Vec<&RoomSummary> = Vec::new();
+    if let Scope::Space(space_id) = scope
+        && let Some(space_room) = rooms.iter().find(|r| &r.id == space_id)
+    {
+        found.extend(rooms.iter().filter(|r| space_room.space_children.contains(&r.id) && has_call(r)));
+    }
+    for room in rooms_in_scope(rooms, scope) {
+        if has_call(&room) && !found.iter().any(|f| f.id == room.id) {
+            if let Some(r) = rooms.iter().find(|r| r.id == room.id) {
+                found.push(r);
+            }
+        }
+    }
+    found
+}
+
+/// The call badge of a scope: a screen when someone in one of its calls shares
+/// theirs, else a speaker when anyone is in a call, else none (#360).
+pub fn scope_call_badge(
+    rooms: &[RoomSummary],
+    scope: &Scope,
+    has_call: impl Fn(&RoomSummary) -> bool,
+) -> CallBadge {
+    let with_calls = rooms_with_calls(rooms, scope, has_call);
+    if with_calls.is_empty() {
+        CallBadge::None
+    } else if with_calls.iter().any(|r| r.call_media.iter().any(|(_, media)| media.screen)) {
+        CallBadge::Screen
+    } else {
+        CallBadge::Voice
+    }
+}
+
 /// Whether someone is in a call in a scope's voice channels (or DMs): the
 /// speaker badge on its rail icon. `has_call` says whether a room has one
 /// to show (`Shell::has_call_shown`: a call just hung up is gone at once).
@@ -500,5 +561,47 @@ pub mod tests {
             .call_participants
             .push(morpheus_core::OwnedUserId::try_from("@bob:x").unwrap());
         assert!(scope_has_call(&[space, channel], &scope, has_call));
+    }
+}
+
+#[cfg(test)]
+mod call_badge_tests {
+    use super::*;
+    use crate::test_room::room;
+
+    fn setup() -> (RoomSummary, RoomSummary) {
+        let mut space = room("!s:x", "Server");
+        space.is_space = true;
+        let mut channel = room("!v:x", "Voice");
+        channel.is_voice = true;
+        space.space_children = vec![channel.id.clone()];
+        (space, channel)
+    }
+
+    #[test]
+    fn the_rail_badge_is_none_a_speaker_or_a_screen() {
+        let (space, mut channel) = setup();
+        let scope = Scope::Space(space.id.clone());
+        let in_call = |r: &RoomSummary| !r.call_participants.is_empty();
+        assert_eq!(scope_call_badge(&[space.clone(), channel.clone()], &scope, in_call), CallBadge::None);
+        let bob = morpheus_core::OwnedUserId::try_from("@bob:x").expect("id");
+        channel.call_participants.push(bob.clone());
+        channel.call_media.push((bob.clone(), morpheus_core::CallMedia::default()));
+        let badge = scope_call_badge(&[space.clone(), channel.clone()], &scope, in_call);
+        assert_eq!((badge, badge.icon()), (CallBadge::Voice, Some("volume-2")));
+        channel.call_media = vec![(bob, morpheus_core::CallMedia { screen: true, ..Default::default() })];
+        let badge = scope_call_badge(&[space, channel], &scope, in_call);
+        assert_eq!((badge, badge.icon()), (CallBadge::Screen, Some("screen-share")));
+        assert_eq!(CallBadge::None.icon(), None);
+    }
+
+    #[test]
+    fn a_share_in_a_call_that_is_not_shown_does_not_count() {
+        let (space, mut channel) = setup();
+        let bob = morpheus_core::OwnedUserId::try_from("@bob:x").expect("id");
+        channel.call_media = vec![(bob, morpheus_core::CallMedia { screen: true, ..Default::default() })];
+        // No one in the call any more (just hung up): neither badge.
+        let scope = Scope::Space(space.id.clone());
+        assert_eq!(scope_call_badge(&[space, channel], &scope, |r| !r.call_participants.is_empty()), CallBadge::None);
     }
 }

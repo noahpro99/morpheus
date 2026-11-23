@@ -20,6 +20,7 @@ use crate::{
     icons::icon,
     media::avatar,
     model::{Scope, layout, rooms_in_scope, scope_has_call, scope_has_unread, top_spaces},
+    view_model::scopes::{CallBadge, scope_call_badge},
     prefs::RailEntry,
     shell::Shell,
     theme,
@@ -36,6 +37,8 @@ struct Badge {
     unread: bool,
     /// Someone is in a call here: a speaker badge at the top right.
     call: bool,
+    /// Someone in a call here shares their screen: a screen badge in place of the speaker.
+    screen: bool,
     /// You yourself are in this call (green if true, black if false).
     in_call: bool,
     extra: Vec<(&'static str, String)>,
@@ -88,6 +91,7 @@ impl Badge {
             selected,
             unread: unread && !selected,
             call: false,
+            screen: false,
             in_call: false,
             extra: Vec::new(),
             context: None,
@@ -225,9 +229,10 @@ impl Badge {
                             .justify_center()
                             .rounded_full()
                             .bg(rgb(badge_bg))
-                            .child(icon("volume-2", 10.0).text_color(rgb(theme::on(badge_bg)))),
+                            .child(icon(if self.screen { "screen-share" } else { "volume-2" }, 10.0).text_color(rgb(theme::on(badge_bg)))),
                     )
                     .e2e("span", "rail-call-badge")
+                    .attr("data-icon", if self.screen { "screen-share" } else { "volume-2" })
                     .attr(
                         "title",
                         if self.in_call {
@@ -333,6 +338,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     let in_call = in_call_in_scope(shell, &Scope::Dms);
     let dms = Badge {
         call: in_call || scope_has_call(rooms, &Scope::Dms, |r| shell.has_call_shown(r)),
+        screen: scope_call_badge(rooms, &Scope::Dms, |r| shell.has_call_shown(r)) == CallBadge::Screen,
         in_call,
         ..dms
     };
@@ -501,6 +507,10 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 badge.in_call = members
                     .iter()
                     .any(|s| in_call_in_scope(shell, &Scope::Space(s.id.clone())));
+                badge.screen = members.iter().any(|s| {
+                    scope_call_badge(rooms, &Scope::Space(s.id.clone()), |r| shell.has_call_shown(r))
+                        == CallBadge::Screen
+                });
                 badge.call = badge.in_call
                     || members
                         .iter()
@@ -720,6 +730,8 @@ fn space_badge(
     )
     .track(shell, cx);
     badge.in_call = in_call_in_scope(shell, &Scope::Space(space.id.clone()));
+    badge.screen = scope_call_badge(&shell.rooms, &Scope::Space(space.id.clone()), |r| shell.has_call_shown(r))
+        == CallBadge::Screen;
     badge.call = badge.in_call
         || scope_has_call(&shell.rooms, &Scope::Space(space.id.clone()), |r| {
             shell.has_call_shown(r)
