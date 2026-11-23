@@ -381,7 +381,7 @@ private fun MessageRow(
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
         if (message.showHeader) {
-            Avatar(message.senderAvatar, message.senderName, Size.avatar)
+            Avatar(message.senderAvatar, message.senderName, Size.avatar, key = message.senderAvatarKey)
         } else {
             Spacer(Modifier.size(Size.avatar))
         }

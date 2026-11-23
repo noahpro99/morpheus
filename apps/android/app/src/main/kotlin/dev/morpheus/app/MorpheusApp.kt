@@ -34,6 +34,7 @@ class MorpheusApp : Application() {
     override fun onCreate() {
         AppState.mark("application: onCreate")
         super.onCreate()
+        dev.morpheus.app.ui.Images.dir = java.io.File(cacheDir, "images").apply { mkdirs() }
         // WebRTC (calls) finds its Java classes from JNI_OnLoad, which runs when the library is
         // loaded this way (UniFFI's JNA load does not run it), and wants the app's context.
         try {

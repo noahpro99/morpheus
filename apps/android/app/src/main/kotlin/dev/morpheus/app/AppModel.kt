@@ -670,3 +670,10 @@ class SheetRequest(
 
 /** A page of the phone for a sheet item: what kind, which room (or server, or folder), a name where it matters, the message it is about. */
 class PageRequest(val kind: String, val roomId: String, val extra: String = "", val message: uniffi.morpheus_ffi.MessageItem? = null)
+    /** Pictures fetched over the network (not found on the disk), and avatars drawn (the debug bridge reports both; #334). */
+    @Volatile
+    var imageFetches: Int = 0
+
+    @Volatile
+    var avatarsDrawn: Int = 0
+

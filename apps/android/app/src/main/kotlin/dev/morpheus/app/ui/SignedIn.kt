@@ -256,7 +256,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                     contentAlignment = Alignment.Center,
                 ) {
                     when (scope.kind) {
-                        ScopeKind.SERVER -> Avatar(scope.avatar, scope.title, 48.dp, square = true)
+                        ScopeKind.SERVER -> Avatar(scope.avatar, scope.title, 48.dp, square = true, key = scope.avatarKey)
                         else -> GlyphIcon(
                             when (scope.kind) {
                                 ScopeKind.FAVORITES -> dev.morpheus.app.R.drawable.ic_lucide_star
@@ -350,7 +350,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
             ) {
                 if (room.isDm) {
-                    Avatar(room.avatar, room.name, Size.avatar)
+                    Avatar(room.avatar, room.name, Size.avatar, key = room.avatarKey)
                 } else {
                     GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (unread) Palette.Text else Palette.Muted)
                 }

@@ -13,6 +13,8 @@ struct Room {
     id: String,
     name: String,
     topic: Option<String>,
+    #[serde(default)]
+    avatar_key: Option<String>,
     is_dm: bool,
     is_voice: bool,
     is_encrypted: bool,
@@ -33,6 +35,8 @@ struct Scope {
     key: String,
     kind: String,
     title: String,
+    #[serde(default)]
+    avatar_key: Option<String>,
     has_unread: bool,
     highlights: u64,
     sections: Vec<Section>,
@@ -67,6 +71,7 @@ pub(crate) fn encode(sidebar: &Sidebar) -> String {
             key: scope.key.clone(),
             kind: kind_name(scope.kind).to_owned(),
             title: scope.title.clone(),
+            avatar_key: scope.avatar_key.clone(),
             has_unread: scope.has_unread,
             highlights: scope.highlights,
             sections: scope
@@ -81,6 +86,7 @@ pub(crate) fn encode(sidebar: &Sidebar) -> String {
                             id: room.id.clone(),
                             name: room.name.clone(),
                             topic: room.topic.clone(),
+                            avatar_key: room.avatar_key.clone(),
                             is_dm: room.is_dm,
                             is_voice: room.is_voice,
                             is_encrypted: room.is_encrypted,
@@ -107,6 +113,7 @@ pub(crate) fn decode(text: &str) -> Option<Sidebar> {
                 kind: kind_of(&scope.kind),
                 title: scope.title,
                 avatar: None,
+                avatar_key: scope.avatar_key,
                 has_unread: scope.has_unread,
                 highlights: scope.highlights,
                 sections: scope
@@ -122,6 +129,7 @@ pub(crate) fn decode(text: &str) -> Option<Sidebar> {
                                 name: room.name,
                                 topic: room.topic,
                                 avatar: None,
+                                avatar_key: room.avatar_key,
                                 is_dm: room.is_dm,
                                 is_voice: room.is_voice,
                                 is_encrypted: room.is_encrypted,
@@ -155,12 +163,12 @@ mod tests {
     #[test]
     fn a_list_comes_back_as_it_was_saved() {
         let room = RoomItem {
-            id: "!a:s".into(), name: "general".into(), topic: Some("t".into()), avatar: None, is_dm: false,
+            id: "!a:s".into(), name: "general".into(), topic: Some("t".into()), avatar: None, avatar_key: Some("mxc://s/a".into()), is_dm: false,
             is_voice: false, is_encrypted: true, unread: 3, highlights: 1, muted: false, pinned: true, call: Vec::new(),
         };
         let sidebar = Sidebar {
             scopes: vec![ScopeItem {
-                key: "space:!x:s".into(), kind: ScopeKind::Server, title: "Eng".into(), avatar: None, has_unread: true, highlights: 1,
+                key: "space:!x:s".into(), kind: ScopeKind::Server, title: "Eng".into(), avatar: None, avatar_key: None, has_unread: true, highlights: 1,
                 sections: vec![SectionItem { title: Some("Text".into()), rooms: vec![room] }],
             }],
             invites: Vec::new(),

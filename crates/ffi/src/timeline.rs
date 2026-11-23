@@ -80,6 +80,8 @@ pub struct MessageItem {
     pub sender_id: String,
     pub sender_name: String,
     pub sender_avatar: Option<Arc<MediaHandle>>,
+    /// The picture's key, kept with the rows of the last run (the app's disk cache has the picture).
+    pub sender_avatar_key: Option<String>,
     /// `HH:MM`.
     pub time: String,
     pub timestamp_ms: u64,
@@ -186,6 +188,7 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
         },
         sender_id: message.sender.to_string(),
         sender_name: message.sender_name.clone(),
+        sender_avatar_key: message.sender_avatar.as_ref().map(|m| m.key().to_owned()),
         sender_avatar: message
             .sender_avatar
             .clone()

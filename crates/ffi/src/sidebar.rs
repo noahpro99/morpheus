@@ -20,6 +20,8 @@ pub struct RoomItem {
     pub name: String,
     pub topic: Option<String>,
     pub avatar: Option<Arc<MediaHandle>>,
+    /// The picture's key (`MediaHandle::key`), also while the picture itself is not to be had (the list of the last run): the app's disk cache has it.
+    pub avatar_key: Option<String>,
     pub is_dm: bool,
     pub is_voice: bool,
     pub is_encrypted: bool,
@@ -60,6 +62,7 @@ pub struct ScopeItem {
     pub kind: ScopeKind,
     pub title: String,
     pub avatar: Option<Arc<MediaHandle>>,
+    pub avatar_key: Option<String>,
     pub has_unread: bool,
     pub highlights: u64,
     pub sections: Vec<SectionItem>,
@@ -86,6 +89,7 @@ fn room_item(room: &RoomSummary, session: &morpheus_core::Session, marks: &Marks
         name: room.name.clone(),
         topic: room.topic.clone().filter(|topic| !topic.is_empty()),
         avatar: room.avatar.clone().map(|m| MediaHandle::new(m, session)),
+        avatar_key: room.avatar.as_ref().map(|m| m.key().to_owned()),
         is_dm: room.is_dm,
         is_voice: room.is_voice,
         is_encrypted: room.is_encrypted,
@@ -97,8 +101,10 @@ fn room_item(room: &RoomSummary, session: &morpheus_core::Session, marks: &Marks
     }
 }
 
-fn scope_item(view: ScopeView, session: &morpheus_core::Session, marks: &Marks) -> ScopeItem {
-    let items = |rooms: &[RoomSummary]| rooms.iter().map(|r| room_item(r, session, marks)).collect();
+fn scope_item(view: ScopeView, session: &morpheus_core::Session, marks: &Marks, hide_muted: bool) -> ScopeItem {
+    let avatar_key = view.avatar.as_ref().map(|m| m.key().to_owned());
+    // Muted channels are left out when the account says so (DMs are not channels).
+    let items = |rooms: &[RoomSummary]| rooms.iter().filter(|r| !(hide_muted && !r.is_dm && marks.is_muted(r))).map(|r| room_item(r, session, marks)).collect();
     let mut sections = Vec::new();
     if matches!(view.scope, Scope::Dms) {
         sections.push(SectionItem {
@@ -129,6 +135,7 @@ fn scope_item(view: ScopeView, session: &morpheus_core::Session, marks: &Marks) 
         },
         title: view.title,
         avatar: view.avatar.map(|m| MediaHandle::new(m, session)),
+        avatar_key,
         has_unread: view.has_unread,
         highlights: view.highlights,
         sections,
@@ -139,7 +146,7 @@ fn scope_item(view: ScopeView, session: &morpheus_core::Session, marks: &Marks) 
 pub(crate) fn sidebar_of(rooms: &[RoomSummary], session: &morpheus_core::Session, layout: &Layout) -> Sidebar {
     let mut scopes: Vec<ScopeItem> = scope_views(rooms)
         .into_iter()
-        .map(|view| scope_item(view, session, &layout.marks))
+        .map(|view| scope_item(view, session, &layout.marks, layout.hide_muted))
         .collect();
     // Servers in the order the account keeps (the same layout on every device); the rest after, as listed.
     let place = |key: &str| key.strip_prefix("space:").and_then(|id| layout.rail.iter().position(|r| r == id));
@@ -227,6 +234,8 @@ impl Morpheus {
 pub(crate) struct Layout {
     pub marks: Marks,
     pub rail: Vec<String>,
+    /// "Hide muted channels": muted rooms stay out of the servers' lists.
+    pub hide_muted: bool,
 }
 
 impl Layout {
@@ -248,10 +257,9 @@ impl Layout {
                 *marks.map_mut(kind) = map;
             }
         }
-        let rail = session
-            .ui_prefs()
-            .await
-            .ok()
+        let prefs = session.ui_prefs().await.ok();
+        let hide_muted = prefs.as_ref().and_then(|p| p.get("hide_muted")).and_then(|v| v.as_bool()).unwrap_or(false);
+        let rail = prefs
             .and_then(|prefs| prefs.get("rail").and_then(|r| r.as_array().cloned()))
             .map(|items| {
                 items
@@ -266,7 +274,7 @@ impl Layout {
                     .collect()
             })
             .unwrap_or_default();
-        Self { marks, rail }
+        Self { marks, rail, hide_muted }
     }
 
     /// Equal layouts have equal signatures (the maps' order does not count).
@@ -284,6 +292,7 @@ impl Layout {
             parts.extend(entries);
         }
         parts.extend(self.rail.iter().map(|r| format!("r{r}")));
+        parts.push(format!("h{}", self.hide_muted));
         parts.join("|")
     }
 }

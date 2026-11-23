@@ -451,3 +451,4 @@ mod tests {
         assert_eq!(rows[names.iter().position(|n| *n == "Add reaction").expect("grid")].grid, true);
     }
 }
+        sender_avatar_key: None,

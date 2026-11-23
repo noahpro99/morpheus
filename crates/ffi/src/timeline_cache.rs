@@ -49,6 +49,8 @@ struct Message {
     event_id: Option<String>,
     sender_id: String,
     sender_name: String,
+    #[serde(default)]
+    sender_avatar_key: Option<String>,
     time: String,
     timestamp_ms: u64,
     show_header: bool,
@@ -85,6 +87,7 @@ fn row_of(row: &TimelineRow) -> Row {
             event_id: m.event_id.clone(),
             sender_id: m.sender_id.clone(),
             sender_name: m.sender_name.clone(),
+            sender_avatar_key: m.sender_avatar_key.clone(),
             time: m.time.clone(),
             timestamp_ms: m.timestamp_ms,
             show_header: m.show_header,
@@ -122,6 +125,7 @@ fn back(row: Row) -> TimelineRow {
                 sender_id: m.sender_id,
                 sender_name: m.sender_name,
                 sender_avatar: None,
+                sender_avatar_key: m.sender_avatar_key,
                 time: m.time,
                 timestamp_ms: m.timestamp_ms,
                 show_header: m.show_header,
@@ -190,7 +194,7 @@ mod tests {
     fn message(n: usize, body: MessageBody) -> TimelineRow {
         TimelineRow::Message {
             message: MessageItem {
-                key: format!("k{n}"), event_id: Some(format!("$e{n}")), sender_id: "@a:s".into(), sender_name: "alice".into(), sender_avatar: None,
+                key: format!("k{n}"), event_id: Some(format!("$e{n}")), sender_id: "@a:s".into(), sender_name: "alice".into(), sender_avatar: None, sender_avatar_key: Some("mxc://s/b".into()),
                 time: "12:00".into(), timestamp_ms: n as u64, show_header: n == 0, is_own: false, sending: false, edited: true, can_edit: false,
                 can_delete: false, body, reply_to: Some(ReplyItem { event_id: "$r".into(), sender_name: Some("bob".into()), summary: Some("hi".into()) }),
                 reactions: vec![ReactionItem { key: "+1".into(), count: 2, mine: true, senders: Vec::new() }], thread: None, preview_url: None, read_by: vec!["@b:s".into()],
@@ -209,6 +213,7 @@ mod tests {
         assert_eq!(back.len(), 4);
         let TimelineRow::Message { message } = &back[1] else { panic!("a message") };
         assert_eq!((message.sender_name.as_str(), message.edited, message.reactions[0].count), ("alice", true, 2));
+        assert_eq!(message.sender_avatar_key.as_deref(), Some("mxc://s/b"), "the picture's key is kept with the rows");
         assert!(matches!(&message.body, MessageBody::Text { text, .. } if text == "hello"));
         assert!(decode("!other:s", &encode("!a:s", &rows)).is_none(), "another room's rows are not this room's");
         assert!(decode("!a:s", "not json").is_none());
