@@ -246,6 +246,13 @@ fn replace_codes(text: &str, emotes: &[(String, String)]) -> String {
     out
 }
 
+/// Whether `body` could name an emoji as `:code:` at all: a send of text with no such shape need not
+/// ask the server for the packs first (that wait kept a sent message off the screen, #397).
+pub fn may_name_emote(body: &str) -> bool {
+    let parts: Vec<&str> = body.split(':').collect();
+    parts.len() > 2 && parts[1..parts.len() - 1].iter().any(|between| !between.is_empty() && between.chars().all(|c| !c.is_whitespace()))
+}
+
 /// The emoji of `emotes` that the plain text `body` names as `:code:`.
 pub fn used_in(body: &str, emotes: &[(String, String)]) -> Vec<(String, String)> {
     emotes
@@ -647,6 +654,16 @@ mod markdown_send_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_text_shaped_like_a_code_needs_the_packs() {
+        assert!(may_name_emote("hi :wave: there"));
+        assert!(may_name_emote(":a:"));
+        assert!(!may_name_emote("hello"));
+        assert!(!may_name_emote("meet at 12:30"));
+        assert!(!may_name_emote("note: this"));
+        assert!(!may_name_emote("::"));
+    }
 
     #[test]
     fn renaming_keeps_the_picture_and_refuses_a_taken_name() {

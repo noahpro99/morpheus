@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -45,7 +46,7 @@ private const val LINK = "URL"
 
 /** A message's text with its links drawn as links: a tap on one opens it, a tap elsewhere offers the message's actions. */
 @Composable
-fun LinkedText(body: MessageBody.Text, edited: Boolean) {
+fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false) {
     val context = LocalContext.current
     val text = remember(body, edited) {
         buildAnnotatedString {
@@ -62,7 +63,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean) {
         }
     }
     if (body.segments.none { it.url != null }) {
-        Text(text, Modifier.testTag("msg-body"), style = Type.body)
+        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), style = Type.body)
         return
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -83,6 +84,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean) {
                     }
                 }
             }
+            .semantics { if (sending) stateDescription = "sending" }
             .testTag("msg-body"),
         onTextLayout = { layout = it },
         style = Type.body,

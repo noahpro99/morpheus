@@ -447,7 +447,7 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> LinkedText(body, message.edited)
+                is MessageBody.Text -> LinkedText(body, message.edited, message.sending)
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage)
                 is MessageBody.File -> Text(

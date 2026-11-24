@@ -267,7 +267,7 @@ fn event_id(id: &str) -> Result<OwnedEventId, FfiError> {
 impl RoomTimeline {
     /// Send a message (Markdown is formatted).
     pub async fn send_text(&self, body: String) -> Result<(), FfiError> {
-        let emotes = self.emote_pairs().await;
+        let emotes = self.emote_pairs(&body).await;
         Ok(self.handle.send_text_with(body, emotes).await?)
     }
 
@@ -279,7 +279,7 @@ impl RoomTimeline {
 
     /// Send a message as a reply to the event `reply_to`.
     pub async fn send_reply(&self, body: String, reply_to: String) -> Result<(), FfiError> {
-        let emotes = self.emote_pairs().await;
+        let emotes = self.emote_pairs(&body).await;
         Ok(self.handle.send_reply_with(body, event_id(&reply_to)?, emotes).await?)
     }
 
@@ -298,7 +298,7 @@ impl RoomTimeline {
 
     /// Replace the text of one of my messages.
     pub async fn edit_message(&self, event_id_of: String, body: String) -> Result<(), FfiError> {
-        let emotes = self.emote_pairs().await;
+        let emotes = self.emote_pairs(&body).await;
         Ok(self.handle.edit_with(MessageId::Event(event_id(&event_id_of)?), body, emotes).await?)
     }
 

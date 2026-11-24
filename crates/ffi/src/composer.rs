@@ -93,7 +93,10 @@ impl RoomTimeline {
     }
 
     /// `(shortcode, mxc)` pairs a send turns into pictures.
-    pub(crate) async fn emote_pairs(&self) -> Vec<(String, String)> {
+    pub(crate) async fn emote_pairs(&self, body: &str) -> Vec<(String, String)> {
+        if !morpheus_core::may_name_emote(body) {
+            return Vec::new();
+        }
         self.emotes()
             .await
             .into_iter()

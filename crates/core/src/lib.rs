@@ -61,7 +61,7 @@ pub use calls::{
 };
 pub use directory::{PublicRoom, PublicRooms};
 pub use emotes::{
-    Emote, EmotePack, clean_shortcode, message_content, parse_pack, shortcode_from_file_name,
+    Emote, EmotePack, clean_shortcode, may_name_emote, message_content, parse_pack, shortcode_from_file_name,
 };
 pub use links::{LinkedRoom, MatrixLink, link_wants_chat, parse_matrix_link};
 pub use media::{AVATAR_FULL_MAX, AvatarStats, Media, MediaRef, avatar_stats};
