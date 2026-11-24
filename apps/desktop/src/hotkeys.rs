@@ -501,6 +501,18 @@ impl Shell {
             self.go_back(window, cx);
             return true;
         }
+        // Zoom works over everything: the settings, a dialog, a menu.
+        if let Some(zoom) = match action {
+            Hotkey::ZoomIn => Some(crate::view_model::ui_zoom::zoom_in(crate::ui_zoom::percent())),
+            Hotkey::ZoomOut => Some(crate::view_model::ui_zoom::zoom_out(crate::ui_zoom::percent())),
+            Hotkey::ZoomReset => Some(crate::view_model::ui_zoom::DEFAULT),
+            _ => None,
+        } {
+            let zoom = crate::ui_zoom::set(zoom, &crate::data_dir(), window, cx);
+            self.toasts.items.retain(|t| !t.text.starts_with("Zoom "));
+            self.toast(crate::view_model::ui_zoom::toast(zoom), cx);
+            return true;
+        }
         let toggles_help =
             matches!(action, Hotkey::Shortcuts) && matches!(self.dialog, Some(Dialog::Help));
         let toggles_switcher = matches!(action, Hotkey::Switcher) && self.switcher.is_some();
@@ -547,6 +559,7 @@ impl Shell {
             Hotkey::Reload => cx.emit(crate::shell::AccountEvent::Reload),
             Hotkey::Quit => crate::send_command(crate::Command::Quit),
             Hotkey::CopyLink => self.copy_room_link(cx),
+            Hotkey::ZoomIn | Hotkey::ZoomOut | Hotkey::ZoomReset => {}
             Hotkey::Page { down } => {
                 let in_thread = self.thread.as_ref().is_some_and(|(_, p)| {
                     let p = p.read(cx);

@@ -566,6 +566,37 @@ pub enum PlatformInput {
 }
 
 impl PlatformInput {
+    /// Morpheus: the event with its positions divided by the UI zoom (the
+    /// platform reports them at the display's scale, the UI is laid out at
+    /// that times the zoom).
+    pub(crate) fn unzoomed(mut self, zoom: f32) -> Self {
+        if (zoom - 1.0).abs() < f32::EPSILON {
+            return self;
+        }
+        match &mut self {
+            PlatformInput::MouseDown(e) => e.position = e.position / zoom,
+            PlatformInput::MouseUp(e) => e.position = e.position / zoom,
+            PlatformInput::MouseMove(e) => e.position = e.position / zoom,
+            PlatformInput::MouseExited(e) => e.position = e.position / zoom,
+            PlatformInput::ScrollWheel(e) => {
+                e.position = e.position / zoom;
+                if let ScrollDelta::Pixels(p) = &mut e.delta {
+                    *p = *p / zoom;
+                }
+            }
+            PlatformInput::FileDrop(drop) => match drop {
+                FileDropEvent::Entered { position, .. }
+                | FileDropEvent::Pending { position }
+                | FileDropEvent::Submit { position } => *position = *position / zoom,
+                FileDropEvent::Exited => {}
+            },
+            PlatformInput::KeyDown(_)
+            | PlatformInput::KeyUp(_)
+            | PlatformInput::ModifiersChanged(_) => {}
+        }
+        self
+    }
+
     pub(crate) fn mouse_event(&self) -> Option<&dyn Any> {
         match self {
             PlatformInput::KeyDown { .. } => None,

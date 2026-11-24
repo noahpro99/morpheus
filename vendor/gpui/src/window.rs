@@ -878,6 +878,11 @@ pub struct Window {
     modifiers: Modifiers,
     capslock: Capslock,
     scale_factor: f32,
+    /// Morpheus: the UI zoom (Ctrl+Plus / Ctrl+Minus), 1.0 = 100%. Everything is
+    /// drawn at the display's scale times this, and the window's logical size
+    /// (viewport) is the platform's divided by it, so layout, text, images
+    /// and input all scale together.
+    ui_zoom: f32,
     pub(crate) bounds_observers: SubscriberSet<(), AnyObserver>,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SubscriberSet<(), AnyObserver>,
@@ -1153,7 +1158,12 @@ impl Window {
             let mut cx = cx.to_async();
             Box::new(move |event| {
                 handle
-                    .update(&mut cx, |_, window, cx| window.dispatch_event(event, cx))
+                    .update(&mut cx, |_, window, cx| {
+                        // Morpheus: the platform's positions are at the display's
+                        // scale; the UI is laid out at that times the zoom.
+                        let event = event.unzoomed(window.ui_zoom);
+                        window.dispatch_event(event, cx)
+                    })
                     .log_err()
                     .unwrap_or(DispatchEventResult::default())
             })
@@ -1166,6 +1176,7 @@ impl Window {
             Box::new(move |at: Option<Point<Pixels>>| {
                 handle
                     .update(&mut cx, |_, window, _cx| {
+                        let at = at.map(|at| at / window.ui_zoom);
                         if let Some(at) = at {
                             return window
                                 .rendered_frame
@@ -1284,6 +1295,7 @@ impl Window {
             modifiers,
             capslock,
             scale_factor,
+            ui_zoom: 1.0,
             bounds_observers: SubscriberSet::new(),
             appearance,
             appearance_observers: SubscriberSet::new(),
@@ -1721,8 +1733,9 @@ impl Window {
     }
 
     fn bounds_changed(&mut self, cx: &mut App) {
-        self.scale_factor = self.platform_window.scale_factor();
-        self.viewport_size = self.platform_window.content_size();
+        self.scale_factor = self.platform_window.scale_factor() * self.ui_zoom;
+        let content = self.platform_window.content_size();
+        self.viewport_size = size(content.width / self.ui_zoom, content.height / self.ui_zoom);
         self.display_id = self.platform_window.display().map(|display| display.id());
 
         self.refresh();
@@ -1862,6 +1875,22 @@ impl Window {
     /// be rendered as two pixels on screen.
     pub fn scale_factor(&self) -> f32 {
         self.scale_factor
+    }
+
+    /// Morpheus: the UI zoom, 1.0 being 100%.
+    pub fn ui_zoom(&self) -> f32 {
+        self.ui_zoom
+    }
+
+    /// Morpheus: zooms the whole window (1.0 = 100%): layout, text, images
+    /// and input all scale, as in a browser.
+    pub fn set_ui_zoom(&mut self, zoom: f32, cx: &mut App) {
+        let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
+        if (zoom - self.ui_zoom).abs() < f32::EPSILON {
+            return;
+        }
+        self.ui_zoom = zoom;
+        self.bounds_changed(cx);
     }
 
     /// The size of an em for the base font of the application. Adjusting this value allows the

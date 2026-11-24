@@ -543,6 +543,7 @@ impl SettingsView {
             )
             .into_any_element(),
             self.custom_colour_section(cx).into_any_element(),
+            self.zoom_section(cx).into_any_element(),
             self.language_section(cx).into_any_element(),
             self.glass_section(cx).into_any_element(),
             self.share_section(cx).into_any_element(),
@@ -1953,6 +1954,48 @@ impl SettingsView {
                     .into_any_element(),
             ],
             self.hl("language"),
+        )
+    }
+
+    /// Appearance's Zoom: how big the whole window is drawn (also Ctrl+Plus, Ctrl+Minus, Ctrl+0).
+    fn zoom_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::view_model::ui_zoom as zoom;
+        let now = crate::ui_zoom::percent();
+        let step = |id: &'static str, label: &'static str, kind: Kind, to: fn(u16) -> u16, cx: &mut Context<Self>| {
+            button(id, label, kind, id)
+                .child(t(label))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    crate::ui_zoom::set(to(crate::ui_zoom::percent()), &this.data_dir, window, cx);
+                    cx.notify();
+                }))
+                .e2e("a", &format!("button zoom-button {id}"))
+                .text(t(label))
+        };
+        let level = div()
+            .child(zoom::label(now))
+            .e2e("span", "zoom-level")
+            .text(zoom::label(now))
+            .attr("data-zoom", now.to_string());
+        section(
+            "Zoom",
+            "zoom",
+            vec![
+                muted(
+                    "How big everything is drawn: text, spacing, icons and pictures. Ctrl+Plus and Ctrl+Minus step it, Ctrl+0 puts it back to 100%.",
+                    "muted",
+                )
+                .into_any_element(),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.0))
+                    .child(step("zoom-out", "Zoom out", Kind::Secondary, zoom::zoom_out, cx))
+                    .child(level)
+                    .child(step("zoom-in", "Zoom in", Kind::Secondary, zoom::zoom_in, cx))
+                    .child(step("zoom-reset", "Reset", Kind::Secondary, |_| zoom::DEFAULT, cx))
+                    .into_any_element(),
+            ],
+            self.hl("zoom"),
         )
     }
 

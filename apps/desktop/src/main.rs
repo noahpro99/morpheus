@@ -8,6 +8,7 @@
 use std::{borrow::Cow, path::PathBuf};
 
 mod about;
+mod ui_zoom;
 mod switch_timing;
 mod titlebar_shot;
 mod awake;
@@ -587,8 +588,9 @@ fn open_main_window(cx: &mut App) {
         return;
     };
     let options = window_options(cx);
-    let opened = cx.open_window(options, move |window, _| {
+    let opened = cx.open_window(options, move |window, cx| {
         window.set_window_title(TITLE);
+        ui_zoom::apply(window, cx);
         root
     });
     match &opened {
@@ -921,6 +923,7 @@ fn main() {
     }
     // The language (this device's choice, else the system's) before anything is drawn.
     view_model::i18n::init(&data_dir());
+    ui_zoom::init(&data_dir());
     // CI's check that an update installs and the new version starts: no window.
     if update_self_test::requested() {
         update_self_test::run(data_dir());

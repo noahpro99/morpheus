@@ -54,6 +54,12 @@ pub enum Hotkey {
     Diagnostics,
     /// Page Up / Page Down: scroll the chat by a page.
     Page { down: bool },
+    /// Ctrl+Plus / Ctrl+=: zoom the whole UI in.
+    ZoomIn,
+    /// Ctrl+Minus: zoom the whole UI out.
+    ZoomOut,
+    /// Ctrl+0: back to 100%.
+    ZoomReset,
 }
 
 /// The action for a key (a DOM key name, `a`, `ArrowUp`, `,`) pressed with
@@ -72,6 +78,15 @@ pub fn classify(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Hotkey>
         "ArrowRight" | "right" => Some(true),
         _ => None,
     };
+    // The zoom keys: Ctrl+Plus is Ctrl+Shift+= on most keyboards, so Shift is allowed.
+    if ctrl && !alt {
+        match key {
+            "+" | "=" | "add" => return Some(Hotkey::ZoomIn),
+            "-" | "_" | "subtract" => return Some(Hotkey::ZoomOut),
+            "0" if !shift => return Some(Hotkey::ZoomReset),
+            _ => {}
+        }
+    }
     match (ctrl, alt, shift) {
         (true, false, false) => match key {
             "f" => Some(Hotkey::Search),
@@ -216,6 +231,8 @@ pub const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+Shift+L", "Copy the open room's link"),
             ("Page Up / Page Down", "Scroll the chat"),
             ("F3", "Stats overlay: FPS, graphics card, call quality"),
+            ("Ctrl+Plus / Ctrl+Minus", "Zoom the whole window in / out"),
+            ("Ctrl+0", "Back to 100% zoom"),
             ("Ctrl+R", "Reload the app"),
             ("Ctrl+Q", "Quit Morpheus"),
         ],

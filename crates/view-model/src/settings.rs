@@ -173,6 +173,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "theme-share",
     ),
     entry(
+        "Zoom",
+        "appearance zoom scale size bigger smaller larger text ui interface magnify ctrl plus minus percent reset",
+        SettingsPage::Appearance,
+        "zoom",
+    ),
+    entry(
         "Language",
         "appearance language translation locale english spanish espanol idioma",
         SettingsPage::Appearance,
