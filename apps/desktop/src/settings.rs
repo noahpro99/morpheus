@@ -216,8 +216,6 @@ pub struct SettingsView {
     colour_open: bool,
     colour_focus: FocusHandle,
     colour_focus_pending: bool,
-    /// The popover just closed: if the focus was left inside it, Settings takes it back.
-    colour_focus_restore: bool,
     colour_closed_at: Option<gpui::Point<gpui::Pixels>>,
     colour_pressed_outside: std::rc::Rc<std::cell::Cell<bool>>,
     /// Appearance > Share: where a theme code is pasted, what it reads as (None until
@@ -297,7 +295,6 @@ impl SettingsView {
         }
         self.colour_open = open;
         self.colour_focus_pending = open;
-        self.colour_focus_restore = !open;
         cx.notify();
     }
 
@@ -493,7 +490,6 @@ impl SettingsView {
             colour_open: false,
             colour_focus: cx.focus_handle(),
             colour_focus_pending: false,
-            colour_focus_restore: false,
             colour_closed_at: None,
             colour_pressed_outside: Default::default(),
             import_input,
@@ -1562,13 +1558,26 @@ impl Render for SettingsView {
         if !self.open {
             return div().into_any_element();
         }
+        // Whatever holds the focus has gone from the window (a page switched away from a
+        // box that was focused, a popover or menu closed): the focus is then on a handle
+        // that is no longer drawn, or on the shell's root, and no key reaches Settings'
+        // own Escape. Settings takes it back, for every input and popup at once
+        // (#371, #374). Something else drawn (a dialog) keeps the focus it has.
+        if let Some(root) = cx.try_global::<crate::shell::RootFocus>().map(|r| r.0.clone()) {
+            if window.focused(cx).is_none_or(|held| held == root) {
+                window.focus(&self.focus);
+            }
+            // Once this frame is drawn (not before: it still has what is going): what was
+            // focused may be gone from it.
+            let mine = self.focus.clone();
+            window.defer(cx, move |window, cx| {
+                if window.focused(cx).is_some_and(|held| !root.contains(&held, window)) {
+                    window.focus(&mine);
+                }
+            });
+        }
         if std::mem::take(&mut self.colour_focus_pending) {
             window.focus(&self.colour_focus);
-        }
-        if std::mem::take(&mut self.colour_focus_restore) && self.colour_focus.contains_focused(window, cx) {
-            // The popover is gone, and its focus with it: without this the keys (Escape)
-            // reach no Settings handler (#371).
-            window.focus(&self.focus);
         }
         if self.take_focus {
             self.take_focus = false;
