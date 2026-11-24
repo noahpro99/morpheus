@@ -1605,6 +1605,12 @@ impl TimelineView {
     }
 }
 
+/// A jump (Escape, End, Home, the pill) ends the wheel's easing too: its remaining
+/// notches would move the view away from where the jump put it (#377).
+pub fn stop_wheel_ease(window: &mut Window) {
+    window.cancel_wheel_ease();
+}
+
 impl Drop for TimelineView {
     fn drop(&mut self) {
         // Leaving a room reads it up to its newest message (unless it was
@@ -1860,6 +1866,8 @@ impl Render for TimelineView {
         // timeline's pill shows the key cap unless a thread panel (whose own pill
         // it is) is open.
         let show_key = self.thread_root.is_some() || !THREAD_PANEL_OPEN.load(std::sync::atomic::Ordering::Relaxed);
+        let (rest_fill, rest_text) = theme::palette().jump_pill(false);
+        let (hover_fill, hover_text) = theme::palette().jump_pill(true);
         if away {
             timeline = timeline.child(
                 div()
@@ -1871,22 +1879,23 @@ impl Render for TimelineView {
                     .child(
                         div()
                             .id("jump-to-bottom")
+                            .group("jump-pill")
                             .px(px(12.0))
                             .py(px(6.0))
-                            .rounded_full()
-                            .bg(rgb(theme::accent_strong()))
-                            .text_color(rgb(theme::on_accent_strong()))
                             .text_size(px(0.8 * theme::REM))
+                            .rounded_full()
+                            .bg(rgb(rest_fill))
+                            .text_color(rgb(rest_text))
                             .font_weight(FontWeight::SEMIBOLD)
                             .shadow_md()
                             .cursor_pointer()
-                            .hover(|s| s.bg(rgb(theme::accent())))
-                            .on_click(cx.listener(|this, _, _, cx| this.jump_to_present(cx)))
+                            .hover(move |s| s.bg(rgb(hover_fill)).text_color(rgb(hover_text)))
+                            .on_click(cx.listener(|this, _, window, cx| { stop_wheel_ease(window); this.jump_to_present(cx) }))
                             .flex()
                             .items_center()
                             .gap(px(8.0))
                             .child(t("Jump to present ↓"))
-                            .children(show_key.then(|| crate::dialogs::key_cap("Esc", None)))
+                            .children(show_key.then(|| crate::dialogs::key_cap_hover("Esc", rest_fill, hover_fill, "jump-pill")))
                             .e2e("button", "jump-to-bottom")
                             .attr("title", "Jump to the newest message (Esc)")
                             .text(if show_key { "Jump to present ↓ Esc" } else { "Jump to present ↓" }),

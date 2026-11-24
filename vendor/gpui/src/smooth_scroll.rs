@@ -51,6 +51,11 @@ impl WheelEase {
         start
     }
 
+    /// Drops what is still to go (the view was moved some other way, e.g. a jump).
+    pub(crate) fn cancel(&mut self) {
+        self.remaining = Point::default();
+    }
+
     /// The next step, in lines: `(event for it, whether the animation is over)`.
     pub(crate) fn tick(&mut self) -> (Option<ScrollWheelEvent>, bool) {
         let now = std::time::Instant::now();

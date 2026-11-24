@@ -299,6 +299,7 @@ impl Shell {
             {
                 let (timeline, _) = panel.read(cx).timeline();
                 if timeline.read(cx).away_from_present() {
+                    crate::timeline::stop_wheel_ease(window);
                     timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
                     return true;
                 }
@@ -326,6 +327,7 @@ impl Shell {
                 if let Some((_, timeline)) = self.timeline.clone()
                     && timeline.read(cx).away_from_present()
                 {
+                    crate::timeline::stop_wheel_ease(window);
                     timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
                     return true;
                 }
@@ -357,6 +359,7 @@ impl Shell {
                     .as_ref()
                     .is_some_and(|(_, t)| t.read(cx).away_from_present());
                 if away && let Some((_, timeline)) = &self.timeline {
+                    crate::timeline::stop_wheel_ease(window);
                     timeline.update(cx, |timeline, cx| timeline.jump_to_present(cx));
                     return true;
                 }
@@ -464,6 +467,7 @@ impl Shell {
                     self.timeline.as_ref().map(|(_, t)| t.clone())
                 };
                 if let Some(timeline) = timeline {
+                    crate::timeline::stop_wheel_ease(window);
                     timeline.update(cx, |t, cx| {
                         if key == "home" {
                             t.jump_to_oldest(cx)

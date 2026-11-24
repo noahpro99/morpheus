@@ -3815,6 +3815,12 @@ impl Window {
         }
     }
 
+    /// Ends the wheel's easing: what is left of it would otherwise go on moving a
+    /// view that was just placed by a jump (Escape, End, Home).
+    pub fn cancel_wheel_ease(&mut self) {
+        self.wheel_ease.cancel();
+    }
+
     /// One frame of the eased wheel scroll: replays this frame's share of the
     /// notches taken in as a `Lines` event, and goes on next frame until done.
     fn ease_wheel(&mut self, cx: &mut App) {
