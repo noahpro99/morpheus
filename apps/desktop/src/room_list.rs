@@ -254,10 +254,11 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_none()
         .min_h_0()
         .h_full()
-        // See-through, a rounded corner would be a notch the wallpaper shows in; square
-        // there, so the column stays one piece with the rail and title bar.
-        .when(theme::glass_percent().is_none(), |d| d.rounded_tl(px(theme::RADIUS_LG)))
+        .rounded_tl(px(theme::RADIUS_LG))
         .bg(theme::fill_sidebar())
+        // See-through, the notch outside the curve would show the wallpaper; it is filled
+        // with the rail's own fill (same alpha), only outside the curve so nothing stacks.
+        .when(theme::glass_percent().is_some(), |d| d.child(corner_notch()))
         .child(header.e2e("header", "sidebar-header"))
         .child(
             list.e2e("div", "room-list")
@@ -300,6 +301,42 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .attr("data-bg", format!("{:06x}", theme::bg_sidebar()))
         .attr("data-alpha", theme::alpha_of(theme::fill_sidebar()).to_string())
         .attr("data-radius-tl", theme::RADIUS_LG.to_string())
+}
+
+/// The square's corner outside the sidebar's rounded top-left curve, in the rail's fill.
+fn corner_notch() -> impl IntoElement {
+    let r = theme::RADIUS_LG;
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size(px(r))
+        .child(
+            gpui::canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| {
+                    let o = bounds.origin;
+                    let mut path = gpui::PathBuilder::fill();
+                    path.move_to(o);
+                    path.line_to(gpui::point(o.x + px(r), o.y));
+                    path.arc_to(
+                        gpui::point(px(r), px(r)),
+                        px(0.0),
+                        false,
+                        false,
+                        gpui::point(o.x, o.y + px(r)),
+                    );
+                    path.close();
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, theme::fill_rail());
+                    }
+                },
+            )
+            .size_full(),
+        )
+        .e2e("div", "sidebar-notch")
+        .attr("data-bg", format!("{:06x}", theme::bg_rail()))
+        .attr("data-alpha", theme::alpha_of(theme::fill_rail()).to_string())
 }
 
 /// The rooms of `scope` in the order the sidebar draws them (the Friends
