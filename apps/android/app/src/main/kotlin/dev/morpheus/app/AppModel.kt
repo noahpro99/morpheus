@@ -701,6 +701,10 @@ object People {
 
 /** What the e2e bridge reports as the app's state (debug builds read it; nothing else does). */
 object AppState {
+    /** What the debug bridge adds to the clock the room screen reads, to see a day roll over (0 otherwise). */
+    @Volatile
+    var clockOffsetMs: Long = 0L
+
     @Volatile
     var screen: String = "loading"
 

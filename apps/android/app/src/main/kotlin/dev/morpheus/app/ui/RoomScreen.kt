@@ -344,7 +344,7 @@ private fun Timeline(
                     horizontalArrangement = Arrangement.spacedBy(Space.md),
                 ) {
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
-                    Text(row.label, Modifier.testTag("date-divider"), color = Palette.Muted, style = Type.caption.copy(fontWeight = FontWeight.SemiBold))
+                    Text(dayLabel(row.timestampMs.toLong(), rememberNow()), Modifier.testTag("date-divider"), color = Palette.Muted, style = Type.caption.copy(fontWeight = FontWeight.SemiBold))
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
                 }
                 TimelineRow.Start -> Text(
@@ -427,7 +427,7 @@ private fun MessageRow(
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(message.time, Modifier.testTag("msg-time"), color = Palette.Muted, style = Type.caption)
+                    Text(whenSent(message.timestampMs.toLong(), rememberNow()), Modifier.testTag("msg-time"), color = Palette.Muted, style = Type.caption)
                 }
             }
             message.replyTo?.let { reply ->
