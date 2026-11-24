@@ -33,6 +33,9 @@ pub enum Error {
     #[error("timeline error: {0}")]
     Timeline(#[from] matrix_sdk_ui::timeline::Error),
 
+    #[error("This server does not keep status messages")]
+    StatusUnavailable,
+
     #[error("login succeeded but the client has no session")]
     NoSession,
 
