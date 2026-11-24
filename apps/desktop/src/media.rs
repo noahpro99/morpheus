@@ -548,6 +548,32 @@ pub fn avatar_waiting(size: f32, radius: Option<f32>) -> Tagged<Div> {
 mod tests {
     use super::*;
 
+    /// A 20 px picture in a 2 px ring (the call list) is drawn exactly where a quad
+    /// of its bounds is at every display scale and row position, so it is
+    /// concentric with the ring; gpui used to snap the sprite alone to whole
+    /// pixels, up to a pixel off the ring at 1.25 and 1.5 (#353).
+    #[test]
+    fn rounded_sprites_keep_exact_bounds() {
+        use gpui::{Bounds, Corners, point, size};
+        for scale in [1.0_f32, 1.25, 1.5, 1.75, 2.0] {
+            for y in [3.0_f32, 33.0, 61.5, 100.25] {
+                let bounds = Bounds { origin: point(px(10.0), px(y + 2.0)), size: size(px(20.0), px(20.0)) }.scale(scale);
+                let rounded = Corners::all(px(10.0)).scale(scale);
+                assert_eq!(gpui::sprite_bounds(bounds, rounded), bounds, "scale {scale}, y {y}");
+            }
+        }
+    }
+
+    /// Square images still snap to whole pixels.
+    #[test]
+    fn square_sprites_snap_to_pixels() {
+        use gpui::{Bounds, Corners, point, size};
+        let bounds = Bounds { origin: point(px(10.0), px(5.3)), size: size(px(20.0), px(20.0)) }.scale(1.5);
+        let snapped = gpui::sprite_bounds(bounds, Corners::all(px(0.0)).scale(1.0));
+        assert_eq!(f64::from(snapped.origin.y), 7.0);
+        assert_eq!(f64::from(snapped.size.width), 30.0);
+    }
+
     /// What GPUI keeps decoded (and the atlas a copy of) is held to 32 MB: a
     /// screen of pictures needs a few MB, and 64 MB left 60 MB resident after
     /// visiting rooms (issue #10: 389 MB resident after 30 rooms).

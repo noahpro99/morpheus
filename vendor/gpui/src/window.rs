@@ -3289,9 +3289,7 @@ impl Window {
             order: 0,
             pad: 0,
             grayscale,
-            bounds: bounds
-                .map_origin(|origin| origin.floor())
-                .map_size(|size| size.ceil()),
+            bounds: sprite_bounds(bounds, corner_radii),
             content_mask,
             corner_radii,
             tile,
@@ -5264,3 +5262,18 @@ pub fn outline(
         border_style,
     }
 }
+
+/// Where an image sprite is drawn, in device pixels. A square-cornered image
+/// snaps to whole pixels (crisp edges). A rounded one keeps its exact bounds:
+/// the quads around it (a border ring, a background) are not snapped, and a
+/// sprite snapped alone sits up to a pixel off their circle at fractional
+/// display scales (1.25, 1.5), so a picture and its ring would not meet.
+pub fn sprite_bounds(bounds: Bounds<ScaledPixels>, corner_radii: Corners<ScaledPixels>) -> Bounds<ScaledPixels> {
+    if corner_radii != Corners::all(ScaledPixels(0.0)) {
+        return bounds;
+    }
+    bounds
+        .map_origin(|origin| origin.floor())
+        .map_size(|size| size.ceil())
+}
+
