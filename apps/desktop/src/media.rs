@@ -564,6 +564,26 @@ mod tests {
         }
     }
 
+    /// A big rounded picture (a focused call card's, 160 px) is drawn on whole device
+    /// pixels at its own size, not at a fractional origin that blends it with its
+    /// neighbours; with its size exact, so it is not stretched either (#393). Small ones
+    /// stay exact for their rings (#353, above).
+    #[test]
+    fn big_rounded_sprites_sit_on_whole_pixels_at_their_own_size() {
+        use gpui::{Bounds, Corners, point, size};
+        for scale in [1.0_f32, 1.25, 1.5, 2.0] {
+            for (x, y) in [(10.0_f32, 3.3_f32), (133.4, 61.5), (200.25, 100.75)] {
+                let bounds = Bounds { origin: point(px(x), px(y)), size: size(px(160.0), px(160.0)) }.scale(scale);
+                let rounded = Corners::all(px(80.0)).scale(scale);
+                let got = gpui::sprite_bounds(bounds, rounded);
+                assert_eq!(f64::from(got.origin.x).fract(), 0.0, "x at {scale}x, {x}");
+                assert_eq!(f64::from(got.origin.y).fract(), 0.0, "y at {scale}x, {y}");
+                assert_eq!(got.size, bounds.size, "size at {scale}x");
+                assert!((f64::from(got.origin.x) - f64::from(bounds.origin.x)).abs() <= 0.5);
+            }
+        }
+    }
+
     /// Square images still snap to whole pixels.
     #[test]
     fn square_sprites_snap_to_pixels() {

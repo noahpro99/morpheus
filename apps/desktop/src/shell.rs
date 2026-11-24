@@ -163,6 +163,8 @@ pub struct Shell {
     pub sidebar_drag: Option<(f32, f32)>,
     /// The width drawn this frame: the kept one within this window's limits.
     pub sidebar_shown: f32,
+    /// The window's display scale, kept from the last frame (which copy of a picture to fetch).
+    pub display_scale: f32,
     /// The F3 stats overlay is showing, and its redraw timer runs.
     pub diag_overlay: bool,
     pub diag_timer: bool,
@@ -564,6 +566,7 @@ impl Shell {
                 .map_or(theme::SIDEBAR_W, |w| w.clamp(crate::view_model::sidebar::MIN_WIDTH, crate::view_model::sidebar::MAX_WIDTH)),
             sidebar_drag: None,
             sidebar_shown: theme::SIDEBAR_W,
+            display_scale: 1.0,
             diag_overlay: false,
             diag_timer: false,
             pending: HashMap::new(),
@@ -1487,13 +1490,17 @@ impl Shell {
                 .and_then(|r| r.avatar.clone())
                 .map(|m| (m, 24)),
         );
+        let scale = self.display_scale;
         for person in self.calls.people.values() {
             wanted.extend(
                 person
                     .avatar
                     .clone()
                     .into_iter()
-                    .flat_map(|m| [(m.clone(), 20), (m, 72)]),
+                    .flat_map(|m| {
+                        let large = crate::view_model::calls::card_picture_large(scale);
+                        [(m.clone(), 20), (m.clone(), 72), (m, large)]
+                    }),
             );
         }
         // A DM's picture is the other person's: theirs falls back to their
@@ -1680,6 +1687,7 @@ impl Render for Shell {
         if let Some((_, timeline)) = &self.timeline {
             timeline.update(cx, |timeline, cx| timeline.set_covered(covered, cx));
         }
+        self.display_scale = window.scale_factor();
         self.fetch_avatars(cx);
         self.mark_menu_message(cx);
         self.fetch_people(cx);

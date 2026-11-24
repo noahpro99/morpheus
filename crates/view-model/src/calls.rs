@@ -601,6 +601,27 @@ pub fn focus_layout(others: usize, width: f32, height: f32, ratio: f32) -> Focus
     FocusLayout { main_w, main_h, strip_h }
 }
 
+/// The picture copies a call card asks for are named by the logical size they are cut for
+/// (a copy of `n` is `2n` pixels square). The small one serves a card whose picture is
+/// drawn in at most 144 device pixels.
+pub const CARD_PICTURE_SMALL: u32 = 72;
+
+/// The large copy: the biggest card picture (160) in device pixels, at most 480.
+pub fn card_picture_large(scale: f32) -> u32 {
+    ((160.0 * scale.max(1.0) / 2.0).ceil() as u32).clamp(80, 240)
+}
+
+/// Which copy of a person's picture a card draws, for a picture `drawn` logical pixels
+/// across at display `scale`: one never smaller than it is drawn, which would be
+/// scaled up and blurry (#393).
+pub fn card_picture_bucket(drawn: f32, scale: f32) -> u32 {
+    if drawn * scale <= (CARD_PICTURE_SMALL * 2) as f32 {
+        CARD_PICTURE_SMALL
+    } else {
+        card_picture_large(scale)
+    }
+}
+
 /// A person's picture on a card `card_w` wide: about a third of its height,
 /// from the strip's 40 up to 160.
 pub fn card_avatar_size(card_w: f32) -> f32 {
@@ -1474,6 +1495,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The copy of a card's picture fetched is at least as many device pixels as it is
+    /// drawn in, at every card size and display scale: one smaller is scaled up and
+    /// looks blurry (#393; a focused card's 160 px picture came from a 144 px copy).
+    #[test]
+    fn a_cards_picture_copy_is_never_smaller_than_it_is_drawn() {
+        for scale in [1.0_f32, 1.25, 1.5, 2.0, 2.5, 3.0] {
+            let mut drawn = 40.0_f32;
+            while drawn <= 160.0 {
+                let bucket = card_picture_bucket(drawn, scale);
+                let have = (bucket * 2) as f32;
+                assert!(have >= drawn * scale, "{drawn} px at {scale}x drawn from {have}");
+                drawn += 1.0;
+            }
+        }
+        // Small cards on a plain screen keep the small copy (no needless big fetch).
+        assert_eq!(card_picture_bucket(60.0, 1.0), 72);
     }
 
     #[test]

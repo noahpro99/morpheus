@@ -5264,16 +5264,28 @@ pub fn outline(
 }
 
 /// Where an image sprite is drawn, in device pixels. A square-cornered image
-/// snaps to whole pixels (crisp edges). A rounded one keeps its exact bounds:
+/// snaps to whole pixels (crisp edges). A small rounded one keeps its exact bounds:
 /// the quads around it (a border ring, a background) are not snapped, and a
 /// sprite snapped alone sits up to a pixel off their circle at fractional
-/// display scales (1.25, 1.5), so a picture and its ring would not meet.
+/// display scales (1.25, 1.5), so a picture and its ring would not meet (#353).
+/// A big rounded one (at least `BIG_SPRITE` device pixels across, a focused call
+/// card's picture) has its origin moved to the nearest whole pixel, at its own size:
+/// at a fractional origin the sampler blends every pixel with its neighbours and the
+/// picture looks blurry, and half a pixel is not seen against a picture that large
+/// (#393).
 pub fn sprite_bounds(bounds: Bounds<ScaledPixels>, corner_radii: Corners<ScaledPixels>) -> Bounds<ScaledPixels> {
     if corner_radii != Corners::all(ScaledPixels(0.0)) {
+        if bounds.size.width.min(bounds.size.height) >= ScaledPixels(BIG_SPRITE) {
+            return bounds.map_origin(|origin| ScaledPixels(origin.0.round()));
+        }
         return bounds;
     }
     bounds
         .map_origin(|origin| origin.floor())
         .map_size(|size| size.ceil())
 }
+
+/// How many device pixels across a rounded image must be for [`sprite_bounds`] to put
+/// it on whole pixels.
+const BIG_SPRITE: f32 = 64.0;
 

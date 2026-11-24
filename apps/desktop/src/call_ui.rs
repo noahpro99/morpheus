@@ -23,7 +23,7 @@ use crate::{
     theme,
     view_model::{
         calls::{
-            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_width, default_stage_height, focus_layout, focused_card,
+            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_picture_bucket, card_width, default_stage_height, focus_layout, focused_card,
             Mark, is_unwatched, listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
@@ -1086,7 +1086,13 @@ fn person_card(
         })
     })
     // The ring is the card's; the picture inside has none of its own.
-    .child(avatar(picture_of(shell, user, 72), &name, size, None))
+    .child(avatar(
+        picture_of(shell, user, card_picture_bucket(size, shell.display_scale))
+            .or_else(|| picture_of(shell, user, 72)),
+        &name,
+        size,
+        None,
+    ))
     .child(name_label(name, false, mic_mark(flags), flags.camera));
     if let Some(marks) = card_marks(flags, true) {
         tile = tile.child(marks);
