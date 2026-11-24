@@ -184,6 +184,8 @@ pub struct SteamDirs {
     pub registries: Vec<PathBuf>,
     /// Steam's own folders (each has `steamapps`, maybe `libraryfolders.vdf`).
     pub roots: Vec<PathBuf>,
+    /// A `/proc`-like folder to scan for Steam's `reaper` launcher (Linux; `None` skips it).
+    pub proc_dir: Option<PathBuf>,
 }
 
 impl SteamDirs {
@@ -192,6 +194,7 @@ impl SteamDirs {
         Self {
             registries: vec![root.join("registry.vdf")],
             roots: vec![root.to_path_buf()],
+            proc_dir: None,
         }
     }
 
@@ -208,6 +211,7 @@ impl SteamDirs {
                 dirs.roots.push(base.join(".local/share/Steam"));
                 dirs.roots.push(base.join(".steam/steam"));
             }
+            dirs.proc_dir = Some(PathBuf::from("/proc"));
         }
         dirs
     }
@@ -238,9 +242,79 @@ pub fn name_of(roots: &[PathBuf], id: u32) -> Option<String> {
     })
 }
 
-/// The game running now, if any: `app_id` is what the platform's own source (the
-/// Windows registry) says, else the registry files are read.
+/// The app id Steam's launcher is starting, from one process's argv: argv[0] is
+/// `reaper`, and `SteamLaunch` and `AppId=<number>` come before any `--` (what
+/// follows is the game's own command line). Id 0 is nothing.
+pub fn reaper_app_id<'a>(argv: impl IntoIterator<Item = &'a str>) -> Option<u32> {
+    let mut args = argv.into_iter();
+    let program = args.next()?;
+    if program.rsplit('/').next() != Some("reaper") {
+        return None;
+    }
+    let (mut launch, mut id) = (false, None);
+    for arg in args {
+        if arg == "--" {
+            break;
+        }
+        if arg == "SteamLaunch" {
+            launch = true;
+        } else if let Some(n) = arg.strip_prefix("AppId=") {
+            id = n.parse::<u32>().ok().filter(|n| *n != 0);
+        }
+    }
+    if launch { id } else { None }
+}
+
+/// Steam's own tools (Proton, the Linux runtimes, redistributables) are not games.
+pub fn is_tool(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.starts_with("proton")
+        || n.starts_with("steam linux runtime")
+        || n.starts_with("steamworks common")
+}
+
+/// The launcher's app id from a `/proc/<pid>/cmdline` (NUL separated).
+fn cmdline_app_id(raw: &[u8]) -> Option<u32> {
+    let text = match std::str::from_utf8(raw) {
+        Ok(text) => text,
+        Err(e) => std::str::from_utf8(&raw[..e.valid_up_to()]).ok()?,
+    };
+    reaper_app_id(text.split('\0'))
+}
+
+/// A running game found by scanning `proc_dir` for Steam's `reaper`: the first one
+/// with an installed manifest that is not a tool. Only each cmdline's start is read.
+pub fn scan_processes(proc_dir: &Path, roots: &[PathBuf]) -> Option<RunningGame> {
+    use std::io::Read;
+    let mut buf = [0u8; 1024];
+    let mut seen: Vec<u32> = Vec::new();
+    for entry in std::fs::read_dir(proc_dir).ok()?.flatten() {
+        if !entry.file_name().as_encoded_bytes().iter().all(u8::is_ascii_digit) {
+            continue;
+        }
+        let Ok(mut file) = std::fs::File::open(entry.path().join("cmdline")) else {
+            continue;
+        };
+        let Ok(n) = file.read(&mut buf) else { continue };
+        let Some(id) = cmdline_app_id(&buf[..n]) else { continue };
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id);
+        if let Some(name) = name_of(roots, id).filter(|name| !is_tool(name)) {
+            return Some(RunningGame { id, name });
+        }
+    }
+    None
+}
+
+/// The game running now, if any: a `reaper` process (Linux) wins, else `app_id` is
+/// what the platform's own source (the Windows registry) says, else the registry
+/// files are read.
 pub fn detect(dirs: &SteamDirs, app_id: Option<u32>) -> Option<RunningGame> {
+    if let Some(game) = dirs.proc_dir.as_deref().and_then(|p| scan_processes(p, &dirs.roots)) {
+        return Some(game);
+    }
     let id = app_id.or_else(|| {
         dirs.registries
             .iter()
@@ -330,6 +404,55 @@ mod tests {
             ]
         );
         assert_eq!(library_paths(OLD_LIBRARIES), vec![PathBuf::from("D:\\Games\\Steam")]);
+    }
+
+    const REAL: &str = "/home/me/.local/share/Steam/steamrt64/reaper\0SteamLaunch\0AppId=2406770\0--\0/home/me/.local/share/Steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point\0--verb=waitforexitandrun\0--";
+
+    #[test]
+    fn the_launcher_command_line_gives_the_app_id() {
+        assert_eq!(cmdline_app_id(REAL.as_bytes()), Some(2406770));
+        let argv = ["/x/steamrt64/reaper", "SteamLaunch", "AppId=5", "--", "game"];
+        assert_eq!(reaper_app_id(argv), Some(5));
+    }
+
+    #[test]
+    fn only_the_launcher_before_the_double_dash_counts() {
+        // After `--` it is the game's own arguments; other programs are lookalikes.
+        assert_eq!(reaper_app_id(["reaper", "SteamLaunch", "--", "AppId=5"]), None);
+        assert_eq!(reaper_app_id(["/usr/bin/sleep", "SteamLaunch", "AppId=5"]), None);
+        assert_eq!(reaper_app_id(["/x/notreaper", "SteamLaunch", "AppId=5"]), None);
+        assert_eq!(reaper_app_id(["reaper", "AppId=5"]), None);
+        assert_eq!(reaper_app_id(["reaper", "SteamLaunch", "AppId=0"]), None);
+        assert_eq!(reaper_app_id(["reaper", "SteamLaunch", "AppId=x"]), None);
+        assert_eq!(reaper_app_id(std::iter::empty()), None);
+    }
+
+    #[test]
+    fn a_game_is_found_by_its_launcher_process_and_tools_are_skipped() {
+        let dir = std::env::temp_dir().join(format!("morpheus-proc-{}", std::process::id()));
+        let proc_dir = dir.join("proc");
+        std::fs::create_dir_all(dir.join("steamapps")).expect("dirs");
+        for (pid, line) in [("10", "reaper\0SteamLaunch\0AppId=1493710\0--\0x"), ("20", REAL), ("abc", REAL)] {
+            std::fs::create_dir_all(proc_dir.join(pid)).expect("pid");
+            std::fs::write(proc_dir.join(pid).join("cmdline"), line).expect("cmdline");
+        }
+        std::fs::write(
+            dir.join("steamapps/appmanifest_1493710.acf"),
+            "\"AppState\"\n{\n\t\"name\"\t\t\"Proton 9.0\"\n}\n",
+        )
+        .expect("tool manifest");
+        let roots = vec![dir.clone()];
+        assert_eq!(scan_processes(&proc_dir, &roots), None);
+        std::fs::write(
+            dir.join("steamapps/appmanifest_2406770.acf"),
+            "\"AppState\"\n{\n\t\"name\"\t\t\"Bodycam\"\n}\n",
+        )
+        .expect("manifest");
+        let want = Some(RunningGame { id: 2406770, name: "Bodycam".into() });
+        assert_eq!(scan_processes(&proc_dir, &roots), want);
+        let dirs = SteamDirs { proc_dir: Some(proc_dir), ..SteamDirs::in_folder(&dir) };
+        assert_eq!(detect(&dirs, None), want);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

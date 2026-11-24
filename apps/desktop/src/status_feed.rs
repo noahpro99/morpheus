@@ -97,7 +97,10 @@ pub fn shutdown() {
 
 fn steam_dirs() -> (steam::SteamDirs, Option<u32>) {
     if let Some(dir) = std::env::var_os("MORPHEUS_STEAM_DIR") {
-        return (steam::SteamDirs::in_folder(&PathBuf::from(dir)), None);
+        let mut dirs = steam::SteamDirs::in_folder(&PathBuf::from(dir));
+        // Test hook: a fake /proc for the launcher scan (the real one is never scanned here).
+        dirs.proc_dir = std::env::var_os("MORPHEUS_STEAM_PROC").map(PathBuf::from);
+        return (dirs, None);
     }
     #[cfg(target_os = "windows")]
     {
@@ -105,6 +108,7 @@ fn steam_dirs() -> (steam::SteamDirs, Option<u32>) {
         let dirs = steam::SteamDirs {
             registries: Vec::new(),
             roots: path.into_iter().collect(),
+            proc_dir: None,
         };
         return (dirs, id);
     }
