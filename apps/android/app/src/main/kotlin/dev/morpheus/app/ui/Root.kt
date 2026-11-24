@@ -76,30 +76,31 @@ fun Root(model: AppModel) {
                     else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
                         if (going != null) CallBar(model.calls, going)
                         Box(Modifier.weight(1f)) {
-                            // The room and the lists are two panes side by side: opening a room slides the lists out to the left and
-                            // the room in from the right, closing a room the other way (a light spring, no dead time).
+                            // The room covers the lists: it slides in over them from the right and out again, and the lists under it stay
+                            // exactly where they are (they are only drawn while the room is moving or not open; #394).
                             var lastRoom by remember { mutableStateOf(open) }
                             if (open != null) lastRoom = open
-                            androidx.compose.animation.AnimatedContent(
-                                targetState = open != null,
-                                transitionSpec = {
-                                    val spec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)
-                                    if (targetState) {
-                                        androidx.compose.animation.slideInHorizontally(spec) { it } togetherWith androidx.compose.animation.slideOutHorizontally(spec) { -it }
-                                    } else {
-                                        androidx.compose.animation.slideInHorizontally(spec) { -it } togetherWith androidx.compose.animation.slideOutHorizontally(spec) { it }
-                                    }.using(androidx.compose.animation.SizeTransform(clip = false))
-                                },
-                                label = "room-and-lists",
-                            ) { roomOpen ->
-                                val shownRoom = lastRoom
-                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(if (roomOpen) 1 else 0, it.positionInWindow().x) }) {
-                                    if (roomOpen && shownRoom != null) RoomScreen(model, shownRoom)
-                                    else if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
+                            val roomShown = remember { androidx.compose.animation.core.MutableTransitionState(open != null) }
+                            roomShown.targetState = open != null
+                            val listsDrawn = !roomShown.isIdle || !roomShown.currentState
+                            val spec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)
+                            if (listsDrawn) {
+                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(0, it.positionInWindow().x) }) {
+                                    if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
                                     else if (reorderOpen) ReorderScreen(model)
                                     else if (newOpen) NewScreen(model)
                                     else if (securityOpen && shown != null) SecurityScreen(model, shown)
                                     else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
+                                }
+                            }
+                            androidx.compose.animation.AnimatedVisibility(
+                                visibleState = roomShown,
+                                enter = androidx.compose.animation.slideInHorizontally(spec) { it },
+                                exit = androidx.compose.animation.slideOutHorizontally(spec) { it },
+                            ) {
+                                val shownRoom = lastRoom
+                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(1, it.positionInWindow().x) }) {
+                                    if (shownRoom != null) RoomScreen(model, shownRoom)
                                 }
                             }
                             RoomPageHost(model)

@@ -1,11 +1,13 @@
-//! The phone's swipes between its two lists (Servers and DMs) and the last chat of each (#389).
+//! The phone's swipes between its two lists (Servers and DMs) and the last chat of each (#389, directions fixed in #394).
 //!
-//! The gestures are read by the direction the finger moves. From Servers, a swipe towards the DMs goes to the
-//! DMs, and from the DMs another one opens the last DM's chat; from the DMs, a swipe towards the servers goes to
-//! Servers, and from Servers another one opens the last server channel's chat. A second swipe with no such
-//! chat does nothing.
+//! "Swipe right" is the finger moving from the left of the screen to the right, "swipe left" the other way.
 //!
-//! Which way is which is the one pair of constants below: if the gestures feel backwards, swap them.
+//! - Servers, swipe right: show the DMs. Servers, swipe left: open the last server channel's chat.
+//! - DMs, swipe right: open the last DM's chat. DMs, swipe left: go back to Servers.
+//!
+//! A swipe that would open a chat when none was kept does nothing.
+//!
+//! Which way is which is the one pair of constants below.
 
 /// The way the finger moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,10 +16,10 @@ pub enum Finger {
     Right,
 }
 
-/// The finger direction that leads towards the DMs (and, from the DMs, on to their last chat).
-pub const TOWARDS_DMS: Finger = Finger::Left;
-/// The finger direction that leads towards the servers (and, from Servers, on to their last channel).
-pub const TOWARDS_SERVERS: Finger = Finger::Right;
+/// The finger direction that leads towards the DMs (and, from the DMs, on to their last chat): a swipe right.
+pub const TOWARDS_DMS: Finger = Finger::Right;
+/// The finger direction that leads towards the servers (and, from Servers, on to their last channel): a swipe left.
+pub const TOWARDS_SERVERS: Finger = Finger::Left;
 
 /// The list on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,24 +88,26 @@ mod tests {
     }
 
     #[test]
-    fn the_first_swipe_changes_the_list_and_the_second_opens_that_lists_last_chat() {
+    fn the_four_swipes_go_where_the_finger_moves() {
         let last = kept();
-        assert_eq!(last.swipe(List::Servers, TOWARDS_DMS), Step::Show(List::Dms));
-        assert_eq!(last.swipe(List::Dms, TOWARDS_DMS), Step::Open("!dm:x".into()));
-        assert_eq!(last.swipe(List::Dms, TOWARDS_SERVERS), Step::Show(List::Servers));
-        assert_eq!(last.swipe(List::Servers, TOWARDS_SERVERS), Step::Open("!chan:x".into()));
+        // Swipe right: the finger moves from the left to the right.
+        assert_eq!(last.swipe(List::Servers, Finger::Right), Step::Show(List::Dms));
+        assert_eq!(last.swipe(List::Dms, Finger::Right), Step::Open("!dm:x".into()));
+        // Swipe left: the other way.
+        assert_eq!(last.swipe(List::Dms, Finger::Left), Step::Show(List::Servers));
+        assert_eq!(last.swipe(List::Servers, Finger::Left), Step::Open("!chan:x".into()));
     }
 
     #[test]
-    fn with_no_last_chat_the_second_swipe_does_nothing_but_the_first_still_works() {
+    fn with_no_last_chat_the_chat_swipes_do_nothing_but_the_list_swipes_still_work() {
         let none = LastChats::default();
-        assert_eq!(none.swipe(List::Dms, TOWARDS_DMS), Step::Nothing);
-        assert_eq!(none.swipe(List::Servers, TOWARDS_SERVERS), Step::Nothing);
-        assert_eq!(none.swipe(List::Servers, TOWARDS_DMS), Step::Show(List::Dms));
-        assert_eq!(none.swipe(List::Dms, TOWARDS_SERVERS), Step::Show(List::Servers));
+        assert_eq!(none.swipe(List::Dms, Finger::Right), Step::Nothing);
+        assert_eq!(none.swipe(List::Servers, Finger::Left), Step::Nothing);
+        assert_eq!(none.swipe(List::Servers, Finger::Right), Step::Show(List::Dms));
+        assert_eq!(none.swipe(List::Dms, Finger::Left), Step::Show(List::Servers));
         let mut dm_only = LastChats::default();
         dm_only.opened("!dm:x", true);
-        assert_eq!(dm_only.swipe(List::Servers, TOWARDS_SERVERS), Step::Nothing, "a DM is not a server channel");
+        assert_eq!(dm_only.swipe(List::Servers, Finger::Left), Step::Nothing, "a DM is not a server channel");
     }
 
     #[test]
