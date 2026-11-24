@@ -40,6 +40,7 @@ pub mod url_scheme;
 pub mod invites;
 pub mod keys;
 pub mod last_place;
+pub mod list_swipes;
 pub mod recent_rooms;
 pub mod discover;
 pub mod link_previews;

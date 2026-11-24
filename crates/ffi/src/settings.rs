@@ -276,3 +276,43 @@ mod search_tests {
         assert!(search_settings("   ".into()).is_empty());
     }
 }
+
+/// The two lists the phone's swipes move between.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum SwipeList {
+    Servers,
+    Dms,
+}
+
+/// What a swipe along a list does (`view_model::list_swipes`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum SwipeStep {
+    Show { list: SwipeList },
+    Open { room: String },
+    Nothing,
+}
+
+/// The chats-opened-last record after `room` was opened (`kept` is the record as stored, empty for none).
+#[uniffi::export]
+pub fn last_chats_opened(kept: String, room: String, is_dm: bool) -> String {
+    let mut last = morpheus_view_model::list_swipes::LastChats::parse(&kept);
+    last.opened(&room, is_dm);
+    last.encode()
+}
+
+/// What a swipe on `list` does; `finger_left` is the direction the finger moved.
+#[uniffi::export]
+pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool) -> SwipeStep {
+    use morpheus_view_model::list_swipes::{Finger, List, Step};
+    let list = match list {
+        SwipeList::Servers => List::Servers,
+        SwipeList::Dms => List::Dms,
+    };
+    let finger = if finger_left { Finger::Left } else { Finger::Right };
+    match morpheus_view_model::list_swipes::LastChats::parse(&kept).swipe(list, finger) {
+        Step::Show(List::Servers) => SwipeStep::Show { list: SwipeList::Servers },
+        Step::Show(List::Dms) => SwipeStep::Show { list: SwipeList::Dms },
+        Step::Open(room) => SwipeStep::Open { room },
+        Step::Nothing => SwipeStep::Nothing,
+    }
+}

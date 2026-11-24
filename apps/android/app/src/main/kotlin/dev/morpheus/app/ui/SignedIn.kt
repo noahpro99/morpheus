@@ -86,7 +86,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean =
     // Back from Direct messages or Profile goes to Servers, the home; only from there does it leave the app.
     androidx.activity.compose.BackHandler(enabled = tab != Tab.Servers) { model.selectTab(Tab.Servers) }
     Column(Modifier.fillMaxSize().testTag("signed-in")) {
-        Box(Modifier.weight(1f).fillMaxWidth().lastRoomSwipe(model)) {
+        Box(Modifier.weight(1f).fillMaxWidth().listSwipe(model, tab)) {
             when (tab) {
                 Tab.Servers -> ServersPane(model, onOpenRoom)
                 Tab.Dms -> DmsPane(model, onOpenRoom)
@@ -138,7 +138,7 @@ fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
     }
 }
 
-/** The three tabs: a pill behind the icon of the one in use, an unread mark on the ones with news. */
+/** The three tabs, DMs first: a pill behind the icon of the one in use, an unread mark on the ones with news. */
 @Composable
 fun BottomBar(model: AppModel, tab: Tab) {
     val bar by model.sidebar.collectAsState()
@@ -150,11 +150,11 @@ fun BottomBar(model: AppModel, tab: Tab) {
     Column(Modifier.fillMaxWidth().background(Palette.Background)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         Row(Modifier.fillMaxWidth().height(Size.tabBar).testTag("tab-bar")) {
-            TabItem(Tab.Servers, tab, t("Servers"), "tab-servers", mentions = serverNews, dot = serverUnread, onClick = { model.selectTab(Tab.Servers) }) { on ->
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) Palette.Accent else Palette.Muted)
-            }
             TabItem(Tab.Dms, tab, t("DMs"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
                 GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) Palette.Accent else Palette.Muted)
+            }
+            TabItem(Tab.Servers, tab, t("Servers"), "tab-servers", mentions = serverNews, dot = serverUnread, onClick = { model.selectTab(Tab.Servers) }) { on ->
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) Palette.Accent else Palette.Muted)
             }
             TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) },
                 onLong = { model.openSheet(t("You")) { model.morpheus.accountMenuRows() } },
@@ -507,15 +507,23 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
 }
 
 
-/** A swipe from the lists over to the chat (a finger drag to the left, as the chat is the pane to their right) opens the chat opened most recently, wherever it was. */
-private fun Modifier.lastRoomSwipe(model: AppModel): Modifier = pointerInput(model) {
-    var total = 0f
-    detectHorizontalDragGestures(
-        onDragStart = { total = 0f },
-        onDragEnd = { if (total < -(size.width / 6f)) model.reopenLast() },
-        onDragCancel = { total = 0f },
-    ) { _, amount -> total += amount }
-}
+/**
+ * A swipe along Servers or DMs: to the other list, or on to the last chat of the far side (#389; which direction does what is in
+ * view-model list_swipes). A drag of a sixth of the width commits; the lists scroll vertically, so this takes only sideways drags.
+ */
+private fun Modifier.listSwipe(model: AppModel, tab: Tab): Modifier =
+    if (tab == Tab.Profile) this else pointerInput(model, tab) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = {
+                if (kotlin.math.abs(total) > size.width / 6f) {
+                    model.swipeList(if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS, fingerLeft = total < 0f)
+                }
+            },
+            onDragCancel = { total = 0f },
+        ) { _, amount -> total += amount }
+    }
 
 
 /**

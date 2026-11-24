@@ -138,7 +138,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     fun openUnlocked(room: RoomItem) {
         _room.value = room
         keep("room", room.id)
-        keep("last-room", room.id)
+        keep("last-chats", uniffi.morpheus_ffi.lastChatsOpened(kept?.getString("last-chats", null).orEmpty(), room.id, room.isDm))
         AppState.room = room.id
         AppState.screen = "room"
     }
@@ -417,14 +417,23 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
-    /** The chat opened most recently, whichever it was (a channel of any server, a DM) and across launches: the swipe from the lists goes back to it. */
-    fun reopenLast() {
-        val id = kept?.getString("last-room", null) ?: return
-        val bar = sidebar.value ?: return
-        // Swiping onto a room is also a swipe onto its composer: the room comes up with the keyboard (#344).
-        val room = bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == id } ?: return
-        swipeOpened = true
-        open(room)
+    /**
+     * A swipe along the Servers or DMs list (the finger moved left or right): to the other list, or on to the chat opened last
+     * on the far side (the last DM, the last server channel), across launches. What each direction does is in view-model
+     * (`list_swipes`); with no such chat there is nothing to do.
+     */
+    fun swipeList(list: uniffi.morpheus_ffi.SwipeList, fingerLeft: Boolean) {
+        when (val step = uniffi.morpheus_ffi.listSwipe(kept?.getString("last-chats", null).orEmpty(), list, fingerLeft)) {
+            is uniffi.morpheus_ffi.SwipeStep.Show -> selectTab(if (step.list == uniffi.morpheus_ffi.SwipeList.DMS) Tab.Dms else Tab.Servers)
+            is uniffi.morpheus_ffi.SwipeStep.Open -> {
+                val bar = sidebar.value ?: return
+                // Swiping onto a room is also a swipe onto its composer: the room comes up with the keyboard (#344).
+                val room = bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == step.room } ?: return
+                swipeOpened = true
+                open(room)
+            }
+            is uniffi.morpheus_ffi.SwipeStep.Nothing -> {}
+        }
     }
 
     /** The room that is opening was reached by a swipe (its composer takes the focus); read once. */
@@ -631,7 +640,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         AppState.room = ""
         _own.value = null
         _ownKey.value = null
-        listOf("room", "last-room", "scope", "own-avatar-key").forEach { keep(it, null) }
+        listOf("room", "last-chats", "scope", "own-avatar-key").forEach { keep(it, null) }
         keep("account", listOf(account.userId, account.homeserver, account.deviceId).joinToString("\n"))
         _screen.value = Screen.SignedIn(account)
         viewModelScope.launch { morpheusApp?.registerPushNow() }
@@ -659,7 +668,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _room.value = null
         AppState.room = ""
         _screen.value = Screen.SignedOut
-        listOf("account", "room", "last-room", "scope", "tab").forEach { keep(it, null) }
+        listOf("account", "room", "last-chats", "scope", "tab").forEach { keep(it, null) }
         viewModelScope.launch {
             try {
                 morpheus.logout()
