@@ -165,6 +165,37 @@ pub const EXTERNAL_LABEL: &str = "Other apps and browser extensions";
 pub const EXTERNAL_HINT: &str = "Programs on this computer can set your status (\"Listening to ...\") through a local socket, for example a browser extension for your music. See docs/activity-ipc.md.";
 pub const SECTION_NOTE: &str = "A status you type yourself while one of these is showing is never replaced.";
 
+/// Shown in Settings > Activity status (and once as a toast) when the server
+/// keeps no status message, so a game or app cannot show as one (#384).
+pub const NOT_KEPT_NOTICE: &str = "Your server does not keep status messages, so your activity cannot show as your status.";
+
+/// What the activity status knows of the server refusing to keep its status:
+/// the notice shows while it keeps failing and goes when a set succeeds, and the
+/// toast comes once, the first time.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct KeepNotice {
+    failing: bool,
+    toasted: bool,
+}
+
+impl KeepNotice {
+    /// A set was refused. True when the toast is due (only the first time).
+    pub fn refused(&mut self) -> bool {
+        self.failing = true;
+        !std::mem::replace(&mut self.toasted, true)
+    }
+
+    /// A set worked: the notice goes (a later refusal shows it again, with no second toast).
+    pub fn kept(&mut self) {
+        self.failing = false;
+    }
+
+    /// Whether the line in Settings shows.
+    pub fn showing(&self) -> bool {
+        self.failing
+    }
+}
+
 /// Which switch a source answers to: `steam` or `external`.
 pub fn setting_group(source: &str) -> &str {
     if source.starts_with("ext:") { "external" } else { source }
@@ -447,6 +478,19 @@ pub fn native_read(input: &mut impl Read) -> std::io::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_not_kept_notice_shows_while_failing_and_toasts_once() {
+        let mut notice = KeepNotice::default();
+        assert!(!notice.showing());
+        assert!(notice.refused(), "the first refusal toasts");
+        assert!(notice.showing());
+        assert!(!notice.refused(), "the next ones do not");
+        notice.kept();
+        assert!(!notice.showing(), "a set that works takes the notice away");
+        assert!(!notice.refused(), "a later refusal shows the line again, without a second toast");
+        assert!(notice.showing());
+    }
+
 
     fn act(source: &str, kind: Kind, name: &str) -> Activity {
         Activity { source: source.into(), kind, name: name.into(), details: None, url: None }

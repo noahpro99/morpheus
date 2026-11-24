@@ -16,6 +16,18 @@ use crate::view_model::{
     steam,
 };
 
+/// What each account's activity status knows of its server refusing to keep a status (#384).
+fn notices() -> &'static Mutex<std::collections::HashMap<String, activity::KeepNotice>> {
+    static NOTICES: OnceLock<Mutex<std::collections::HashMap<String, activity::KeepNotice>>> = OnceLock::new();
+    NOTICES.get_or_init(Default::default)
+}
+
+/// Whether `user`'s server refused the last status an activity set (the line in
+/// Settings > Activity status shows).
+pub fn status_not_kept(user: &str) -> bool {
+    notices().lock().ok().and_then(|n| n.get(user).map(activity::KeepNotice::showing)).unwrap_or(false)
+}
+
 fn sources() -> &'static Mutex<Sources> {
     static SOURCES: OnceLock<Mutex<Sources>> = OnceLock::new();
     SOURCES.get_or_init(Default::default)
@@ -358,12 +370,28 @@ impl crate::shell::Shell {
                         match within(cx, STATUS_CALL_LIMIT, session.set_status(text.clone())).await {
                             Some(Ok(())) => {
                                 tracing::info!(set = text.is_some(), "activity status: status set");
+                                if text.is_some() {
+                                    notices().lock().ok().map(|mut n| n.entry(own.clone()).or_default().kept());
+                                    refresh_settings(&this, cx);
+                                }
                                 if this.update(cx, |this, cx| this.reload_own_profile(cx)).is_err() {
                                     return;
                                 }
                             }
                             Some(Err(err)) => {
                                 let refused = format!("{err}");
+                                if matches!(err, morpheus_core::Error::StatusUnavailable) {
+                                    let first = notices().lock().ok().is_some_and(|mut n| n.entry(own.clone()).or_default().refused());
+                                    let shown = this.update(cx, |this, cx| {
+                                        if first {
+                                            this.toast(activity::NOT_KEPT_NOTICE, cx);
+                                        }
+                                    });
+                                    if shown.is_err() {
+                                        return;
+                                    }
+                                    refresh_settings(&this, cx);
+                                }
                                 tracing::warn!(error = %refused, "activity status: the server did not take the status (presence refused or failing)");
                             }
                             None => tracing::warn!("activity status: setting the status timed out"),
@@ -527,6 +555,16 @@ async fn within<T>(
         Either::Left((value, _)) => Some(value),
         Either::Right(_) => None,
     }
+}
+
+/// Redraws Settings, if open, for the notice that came or went.
+fn refresh_settings(this: &gpui::WeakEntity<crate::shell::Shell>, cx: &mut gpui::AsyncApp) {
+    this.update(cx, |this, cx| {
+        if let Some(settings) = &this.settings {
+            settings.update(cx, |_, cx| cx.notify());
+        }
+    })
+    .ok();
 }
 
 /// Logs `message` as a warning unless it is the one logged last.

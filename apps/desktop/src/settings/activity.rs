@@ -25,11 +25,16 @@ impl SettingsView {
     pub(super) fn activity_sections(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let steam_on = vm::group_enabled(&self.data_dir, steam::SOURCE);
         let external_on = vm::group_enabled(&self.data_dir, "external");
-        let sources = section(
-            "Activity status",
-            "activity-status",
-            vec![
-                super::muted(vm::SECTION_NOTE, "muted").into_any_element(),
+        let not_kept = self
+            .session
+            .as_ref()
+            .and_then(|s| s.user_id())
+            .is_some_and(|user| crate::status_feed::status_not_kept(user.as_str()));
+        let mut children = vec![super::muted(vm::SECTION_NOTE, "muted").into_any_element()];
+        if not_kept {
+            children.push(super::muted(vm::NOT_KEPT_NOTICE, "muted status-not-kept").into_any_element());
+        }
+        children.extend([
                 switch_row(
                     "activity-steam",
                     "activity-steam-switch",
@@ -46,10 +51,8 @@ impl SettingsView {
                     external_on,
                     cx.listener(move |this, _, _, cx| this.set_activity_group("external", !external_on, cx)),
                 ),
-            ],
-            self.hl("activity-status"),
-        )
-        .into_any_element();
+        ]);
+        let sources = section("Activity status", "activity-status", children, self.hl("activity-status")).into_any_element();
 
         let prefs = presence::load(&self.data_dir);
         let mut rows = vec![switch_row(
