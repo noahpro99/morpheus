@@ -70,7 +70,7 @@ impl Marks {
 
     /// The DMs the list shows: closed ones stay out until a new message
     /// comes (or they are the open one), pinned ones come first, in the
-    /// order they were pinned; the rest keep their order.
+    /// order they were pinned; the rest newest message first.
     pub fn visible_dms(
         &self,
         dms: Vec<RoomSummary>,
@@ -86,11 +86,13 @@ impl Marks {
                     || (Some(&room.id) == open && !friends_page_open)
             })
             .collect();
+        // Pinned first (in the order pinned), then the newest message first; equal times keep the list's order
+        // (the core's sort by recency can lag behind a room's latest event, and a phone drew the newest last).
         shown.sort_by_key(|room| {
-            self.pinned
-                .get(room.id.as_str())
-                .copied()
-                .unwrap_or(i64::MAX)
+            (
+                self.pinned.get(room.id.as_str()).copied().unwrap_or(i64::MAX),
+                std::cmp::Reverse(room.latest_ms),
+            )
         });
         shown
     }
@@ -139,6 +141,18 @@ mod tests {
         let all = vec![dm("!a:x", "a", 0), dm("!b:x", "b", 0), dm("!c:x", "c", 0), dm("!d:x", "d", 0)];
         let shown = marks.visible_dms(all, None, false);
         assert_eq!(names(&shown), ["c", "b", "a", "d"]);
+    }
+
+    #[test]
+    fn unpinned_dms_are_newest_message_first_whatever_order_they_arrive_in() {
+        let marks = Marks::default();
+        let all = vec![dm("!a:x", "old", 100), dm("!b:x", "new", 300), dm("!c:x", "none", 0), dm("!d:x", "mid", 200)];
+        assert_eq!(names(&marks.visible_dms(all, None, false)), ["new", "mid", "old", "none"]);
+        // Pinned ones stay first, in the order pinned; equal times keep the order they came in.
+        let mut marks = Marks::default();
+        marks.set(marks::PINNED, "!a:x", Some(10));
+        let all = vec![dm("!b:x", "new", 300), dm("!a:x", "old", 100), dm("!c:x", "tie1", 50), dm("!d:x", "tie2", 50)];
+        assert_eq!(names(&marks.visible_dms(all, None, false)), ["old", "new", "tie1", "tie2"]);
     }
 
     #[test]
