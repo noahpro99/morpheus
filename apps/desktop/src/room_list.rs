@@ -254,11 +254,14 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex_none()
         .min_h_0()
         .h_full()
-        .rounded_tl(px(theme::RADIUS_LG))
-        .bg(theme::fill_sidebar())
-        // See-through, the notch outside the curve would show the wallpaper; it is filled
-        // with the rail's own fill (same alpha), only outside the curve so nothing stacks.
-        .when(theme::glass_percent().is_some(), |d| d.child(corner_notch()))
+        // Opaque: a rounded quad. See-through: the fill and the notch outside the curve are
+        // two paths from the same curve points (see glass_fill), so no seam shows.
+        .when(theme::glass_percent().is_none(), |d| {
+            d.rounded_tl(px(theme::RADIUS_LG)).bg(theme::fill_sidebar())
+        })
+        .when(theme::glass_percent().is_some(), |d| {
+            d.child(glass_fill()).child(corner_notch())
+        })
         .child(header.e2e("header", "sidebar-header"))
         .child(
             list.e2e("div", "room-list")
@@ -303,6 +306,65 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .attr("data-radius-tl", theme::RADIUS_LG.to_string())
 }
 
+/// The points of the list's top-left curve, from (r, 0) round to (0, r), in a square of
+/// side `r`. The notch and the list's own fill both take their edge from these exact
+/// points.
+fn corner_arc(r: f32) -> Vec<(f32, f32)> {
+    let steps = 32;
+    (0..=steps)
+        .map(|i| {
+            let t = -std::f32::consts::FRAC_PI_2
+                - std::f32::consts::FRAC_PI_2 * (i as f32 / steps as f32);
+            (r + r * t.cos(), r + r * t.sin())
+        })
+        .collect()
+}
+
+/// A filled polygon of `points` (px, from `origin`) in `colour`.
+fn paint_polygon(
+    window: &mut gpui::Window,
+    origin: gpui::Point<gpui::Pixels>,
+    points: &[(f32, f32)],
+    colour: gpui::Rgba,
+) {
+    let mut path = gpui::PathBuilder::fill();
+    for (i, p) in points.iter().enumerate() {
+        let p = gpui::point(origin.x + px(p.0), origin.y + px(p.1));
+        if i == 0 {
+            path.move_to(p);
+        } else {
+            path.line_to(p);
+        }
+    }
+    path.close();
+    if let Ok(path) = path.build() {
+        window.paint_path(path, colour);
+    }
+}
+
+/// The list's own fill under Transparent: a polygon with the curve cut from its top-left
+/// corner. Drawn by the same rasteriser as the notch from the same points, so along the
+/// curve the two cover each pixel exactly between them; a rounded quad beside a path
+/// covered the edge pixels differently and a hairline of the two stacked showed there
+/// (#392).
+fn glass_fill() -> impl IntoElement {
+    let r = theme::RADIUS_LG;
+    gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+            let mut points = corner_arc(r);
+            points.reverse();
+            points.extend([(r, 0.0), (w, 0.0), (w, h), (0.0, h)]);
+            paint_polygon(window, bounds.origin, &points, theme::fill_sidebar());
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
 /// The square's corner outside the sidebar's rounded top-left curve, in the rail's fill.
 fn corner_notch() -> impl IntoElement {
     let r = theme::RADIUS_LG;
@@ -315,21 +377,9 @@ fn corner_notch() -> impl IntoElement {
             gpui::canvas(
                 |_, _, _| {},
                 move |bounds, _, window, _| {
-                    let o = bounds.origin;
-                    let mut path = gpui::PathBuilder::fill();
-                    path.move_to(o);
-                    path.line_to(gpui::point(o.x + px(r), o.y));
-                    path.arc_to(
-                        gpui::point(px(r), px(r)),
-                        px(0.0),
-                        false,
-                        false,
-                        gpui::point(o.x, o.y + px(r)),
-                    );
-                    path.close();
-                    if let Ok(path) = path.build() {
-                        window.paint_path(path, theme::fill_rail());
-                    }
+                    let mut points = vec![(0.0, 0.0)];
+                    points.extend(corner_arc(r));
+                    paint_polygon(window, bounds.origin, &points, theme::fill_rail());
                 },
             )
             .size_full(),
