@@ -2465,7 +2465,7 @@ impl SettingsView {
                 .into_any_element(),
                 preview(palette).into_any_element(),
             ],
-            false,
+            self.hl("theme-preview"),
         )
     }
 }

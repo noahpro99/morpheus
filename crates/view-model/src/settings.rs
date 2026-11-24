@@ -257,6 +257,60 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "startup",
     ),
     entry(
+        "Display name",
+        "profile name nickname username change rename account edit",
+        SettingsPage::Account,
+        "profile-name",
+    ),
+    entry(
+        "Profile picture",
+        "profile avatar photo image icon change remove account edit",
+        SettingsPage::Account,
+        "profile-picture",
+    ),
+    entry(
+        "Locked chats",
+        "security lock locked private pin passcode password hide protect chats rooms dms",
+        SettingsPage::Security,
+        "locked-chats",
+    ),
+    entry(
+        "Link previews",
+        "appearance links url cards embed preview website unfurl encrypted rooms privacy",
+        SettingsPage::Appearance,
+        "link-previews-section",
+    ),
+    entry(
+        "Theme preview",
+        "appearance theme custom colour color accent hex preview sample palette",
+        SettingsPage::Appearance,
+        "theme-preview",
+    ),
+    entry(
+        "Noise suppression",
+        "voice video mic noise cancel filter krisp background calls",
+        SettingsPage::VoiceVideo,
+        "noise-suppression",
+    ),
+    entry(
+        "Camera preview",
+        "voice video camera webcam video preview test calls",
+        SettingsPage::VoiceVideo,
+        "video-preview",
+    ),
+    entry(
+        "Another bridge bot",
+        "bridges bridge bot custom other mautrix matrix id add name",
+        SettingsPage::Bridges,
+        "bridge-bot",
+    ),
+    entry(
+        "Patch notes",
+        "help whats new changelog changes release notes updates version",
+        SettingsPage::Help,
+        "patch-notes",
+    ),
+    entry(
         "Report a bug",
         "help feedback issue github",
         SettingsPage::Help,
@@ -902,6 +956,79 @@ mod tests {
             assert!(
                 SETTINGS_INDEX.iter().any(|e| e.anchor == anchor && e.page == SettingsPage::Account),
                 "{anchor} has no search entry"
+            );
+        }
+    }
+
+    /// The `(title, anchor)` of every `section("..", "anchor", ..)` the
+    /// desktop's settings pages draw, read from their source.
+    fn drawn_sections() -> Vec<(String, String)> {
+        let sources = [
+            include_str!("../../../apps/desktop/src/settings.rs"),
+            include_str!("../../../apps/desktop/src/settings/pages.rs"),
+            include_str!("../../../apps/desktop/src/settings/activity.rs"),
+            include_str!("../../../apps/desktop/src/settings/bridges.rs"),
+            include_str!("../../../apps/desktop/src/settings/video.rs"),
+        ];
+        // The next string literal after `rest`'s leading whitespace.
+        fn literal(rest: &str) -> Option<(&str, &str)> {
+            let rest = rest.trim_start().strip_prefix('"')?;
+            let end = rest.find('"')?;
+            Some((&rest[..end], &rest[end + 1..]))
+        }
+        let mut found = Vec::new();
+        for source in sources {
+            for call in ["section(", "section_classed("] {
+                for (at, _) in source.match_indices(call) {
+                    let before = source[..at].chars().next_back().unwrap_or(' ');
+                    if before.is_alphanumeric() || before == '_' {
+                        continue;
+                    }
+                    let Some((title, rest)) = literal(&source[at + call.len()..]) else { continue };
+                    let Some(rest) = rest.trim_start().strip_prefix(',') else { continue };
+                    if let Some((anchor, _)) = literal(rest) {
+                        found.push((title.to_owned(), anchor.to_owned()));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// Sections that are deliberately not searchable (none so far).
+    const UNINDEXED_SECTIONS: &[&str] = &[];
+
+    /// Every section a settings page draws has a search entry on the same
+    /// anchor, so a new section cannot be left out of the search.
+    #[test]
+    fn every_settings_section_is_indexed() {
+        let sections = drawn_sections();
+        assert!(sections.len() > 25, "the section scan found only {}", sections.len());
+        for (title, anchor) in sections {
+            if UNINDEXED_SECTIONS.contains(&anchor.as_str()) {
+                continue;
+            }
+            assert!(
+                SETTINGS_INDEX.iter().any(|e| e.anchor == anchor),
+                "the {title:?} section ({anchor}) has no SETTINGS_INDEX entry"
+            );
+        }
+    }
+
+    #[test]
+    fn the_missing_sections_are_found_by_their_words() {
+        for (query, anchor) in [
+            ("display name", "profile-name"),
+            ("avatar", "profile-picture"),
+            ("link previews", "link-previews-section"),
+            ("locked", "locked-chats"),
+            ("bridge bot", "bridge-bot"),
+            ("changelog", "patch-notes"),
+            ("preview", "theme-preview"),
+        ] {
+            assert!(
+                find_settings(query, true).iter().any(|e| e.anchor == anchor),
+                "{query} does not find {anchor}"
             );
         }
     }

@@ -379,7 +379,7 @@ impl SettingsView {
                 self.hl("bridges"),
             )
             .into_any_element(),
-            section("Another bridge bot", "bridge-bot", add, false).into_any_element(),
+            section("Another bridge bot", "bridge-bot", add, self.hl("bridge-bot")).into_any_element(),
         ]
     }
 
