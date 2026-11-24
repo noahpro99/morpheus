@@ -3,6 +3,7 @@
 //! the account, mutes that end, favorites, leaving a room (undoable),
 //! friends, and the layout preferences.
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{AppContext as _, ClipboardItem, Context, Pixels, Point};
@@ -370,14 +371,14 @@ impl Shell {
                     let inviting = session.invite(room, user);
                     cx.spawn(async move |this, cx| match inviting.await {
                         Ok(()) => {
-                            this.update(cx, |this, cx| this.toast("Invite sent", cx))
+                            this.update(cx, |this, cx| this.toast(t("Invite sent"), cx))
                                 .ok();
                         }
                         Err(err) => {
                             let msg = err.to_string();
                             this.update(cx, |this, cx| {
                                 if msg.to_lowercase().contains("already in the room") {
-                                    this.toast("Already in the server", cx);
+                                    this.toast(t("Already in the server"), cx);
                                 } else {
                                     this.fail("invite", &msg, cx);
                                 }
@@ -430,7 +431,7 @@ impl Shell {
             MenuAction::FullProfile(_) => self.show_full_profile(cx),
             MenuAction::ShareProfile(link) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(link));
-                self.toast("Link copied", cx);
+                self.toast(t("Link copied"), cx);
             }
             MenuAction::RoomDialog(kind) => self.open_room_dialog(kind, cx),
             MenuAction::LockNow(room) => self.lock_now(&room, cx),

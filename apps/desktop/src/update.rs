@@ -3,6 +3,7 @@
 //! shows an update/download action. Update downloads this platform's build, puts it
 //! in place of the running one and starts it (`morpheus_core::Session::install_update`).
 
+use crate::view_model::i18n::t;
 use std::time::Duration;
 
 use gpui::{AnyElement, Context, IntoElement, div, prelude::*, px, rgb, rgba};
@@ -73,7 +74,7 @@ impl Shell {
             return;
         }
         self.update_busy = true;
-        self.toast("Downloading update…", cx);
+        self.toast(t("Downloading update…"), cx);
         cx.notify();
         let installing = session.install_update(download);
         cx.spawn(async move |this, cx| {

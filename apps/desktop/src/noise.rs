@@ -9,6 +9,7 @@
 //! deafen button), plays your microphone back as the call sends it (after
 //! suppression) and shows its level; stopping puts deafen back as it was.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::time::Duration;
 
@@ -312,7 +313,7 @@ pub fn controls<V: 'static>(
     } else {
         0.0
     };
-    let label = if testing { "Stop Testing" } else { "Mic Test" };
+    let label = if testing { ts("Stop Testing") } else { ts("Mic Test") };
     let test_button = div()
         .id("mic-test")
         .flex_none()
@@ -372,9 +373,9 @@ pub fn controls<V: 'static>(
         .text_size(px(0.75 * theme::REM))
         .text_color(rgb(theme::text_muted()))
         .child(if testing {
-            "You hear yourself as others will. Deafened in a call while testing."
+            ts("You hear yourself as others will. Deafened in a call while testing.")
         } else {
-            "Hear how you sound, after noise suppression."
+            ts("Hear how you sound, after noise suppression.")
         })
         .into_any_element();
     let mut controls = vec![
@@ -689,7 +690,7 @@ pub fn advanced<V: 'static>(
                 .gap(px(2.0))
                 .child(div().child(t("Model")))
                 .child(about_line(
-                    "The neural model Strong runs; a low-latency one will be listed here when there is one.",
+                    ts("The neural model Strong runs; a low-latency one will be listed here when there is one."),
                 )),
         )
         .child(
@@ -701,7 +702,7 @@ pub fn advanced<V: 'static>(
         .attr("data-key", "model")
         .attr("data-value", tuning.model.key())
         .into_any_element();
-    let mut rows = vec![heading("Strong (DeepFilterNet)"), model];
+    let mut rows = vec![heading(ts("Strong (DeepFilterNet)")), model];
     for key in [
         "atten_limit_db",
         "min_snr_db",
@@ -712,15 +713,15 @@ pub fn advanced<V: 'static>(
     }
     rows.push(switch_row(cx, switch("post_filter")));
     rows.push(number_row(cx, param("post_filter_beta")));
-    rows.push(heading("Smoothing on top"));
+    rows.push(heading(ts("Smoothing on top")));
     rows.push(number_row(cx, param("floor_margin_db")));
     rows.push(number_row(cx, param("max_fall_db")));
-    rows.push(heading("Standard (WebRTC), in every mode"));
+    rows.push(heading(ts("Standard (WebRTC), in every mode")));
     for key in ["echo_cancellation", "auto_gain", "high_pass"] {
         rows.push(switch_row(cx, switch(key)));
     }
     rows.push(about_line(
-        "WebRTC's noise suppression level is fixed by the library and cannot be changed here.",
+        ts("WebRTC's noise suppression level is fixed by the library and cannot be changed here."),
     ));
     let latency = div()
         .flex()
@@ -874,7 +875,7 @@ pub fn sensitivity<V: 'static>(cx: &mut Context<V>) -> Vec<AnyElement> {
         .attr("data-threshold", format!("{shown_threshold:.0}"))
         .attr("data-open", open.to_string());
     vec![
-        heading("Input Sensitivity"),
+        heading(ts("Input Sensitivity")),
         switch_row(cx, switch),
         meter.into_any_element(),
         div()
@@ -883,14 +884,14 @@ pub fn sensitivity<V: 'static>(cx: &mut Context<V>) -> Vec<AnyElement> {
             .text_size(px(0.75 * theme::REM))
             .text_color(rgb(theme::text_muted()))
             .child(if auto {
-                "Follows your room: keys and noise between words are kept out.".to_owned()
+                ts("Follows your room: keys and noise between words are kept out.").to_owned()
             } else {
                 format!("Threshold {} {}: drag it over your level to set it.", shown(shown_threshold), param.unit)
             })
             .child(if morpheus_call::applied_noise_suppression().is_some() {
                 ""
             } else {
-                "Start Mic Test to see your level."
+                ts("Start Mic Test to see your level.")
             })
             .into_any_element(),
     ]

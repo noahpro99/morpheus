@@ -4,6 +4,7 @@
 //! the data directory (`screen-quality.json`) for the next time. What the
 //! choices mean for the encoder is `morpheus_call::ScreenQuality`.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, IntoElement, MouseButton, Pixels, Point, anchored, deferred, div,
@@ -244,7 +245,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         )
         .child(row(
             cx,
-            "Resolution",
+            ts("Resolution"),
             "screen-res",
             resolutions,
             move |this, r, cx| {
@@ -254,7 +255,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> {
         ))
         .child(row(
             cx,
-            "Frame rate",
+            ts("Frame rate"),
             "screen-fps",
             rates,
             move |this, fps, cx| {

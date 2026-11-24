@@ -4,6 +4,7 @@
 //! handle that resizes it), a voice channel's page, the rings. Video frames
 //! are drawn natively by [`VideoFrame`] from the call crate's raw pixels.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Arc, time::Duration};
 
@@ -356,9 +357,9 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
                 "call-control mute-button".into()
             },
             title: if muted {
-                "Unmute (Ctrl+Shift+M)".into()
+                ts("Unmute (Ctrl+Shift+M)").into()
             } else {
-                "Mute (Ctrl+Shift+M)".into()
+                ts("Mute (Ctrl+Shift+M)").into()
             },
             glyph: if muted { "mic-off" } else { "mic" },
             size: 20.0,
@@ -400,9 +401,9 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
                     "call-control camera-button".into()
                 },
                 title: if call.camera {
-                    "Turn off camera".into()
+                    ts("Turn off camera").into()
                 } else {
-                    "Turn on camera".into()
+                    ts("Turn on camera").into()
                 },
                 glyph: if call.camera { "video" } else { "video-off" },
                 size: 20.0,
@@ -439,7 +440,7 @@ fn stage_controls(shell: &Shell, cx: &mut Context<Shell>, call: &CallState) -> A
         Control {
             id: "stage-hang-up",
             classes: "call-control hang-up".into(),
-            title: "Disconnect".into(),
+            title: ts("Disconnect").into(),
             glyph: "phone-off",
             size: 20.0,
             enabled: true,
@@ -465,9 +466,9 @@ fn screen_classes(base: &str, call: &CallState) -> String {
 
 fn screen_title(call: &CallState) -> &'static str {
     if call.screen {
-        "Stop sharing your screen"
+        ts("Stop sharing your screen")
     } else {
-        "Share your screen"
+        ts("Share your screen")
     }
 }
 
@@ -595,7 +596,7 @@ pub fn join_error(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> 
         .child(ghost_button(
             "call-retry-join",
             "ghost retry-join".into(),
-            "Try again",
+            ts("Try again"),
             "refresh-cw",
             false,
             false,
@@ -608,7 +609,7 @@ pub fn join_error(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement> 
         .child(ghost_button(
             "call-dismiss-join-error",
             "ghost dismiss-join-error".into(),
-            "Dismiss",
+            ts("Dismiss"),
             "x",
             false,
             false,
@@ -679,9 +680,9 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                 .text_color(rgb(state_colour))
                 .truncate()
                 .child(if call.connected {
-                    "Voice connected"
+                    ts("Voice connected")
                 } else {
-                    "Connecting…"
+                    ts("Connecting…")
                 })
                 .children(line(state_colour))
                 .e2e(
@@ -694,9 +695,9 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                 )
                 .attr("data-underlined", over.to_string())
                 .text(if call.connected {
-                    "Voice connected"
+                    ts("Voice connected")
                 } else {
-                    "Connecting…"
+                    ts("Connecting…")
                 }),
         )
         .child(
@@ -734,9 +735,9 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                 "ghost camera-button".into()
             },
             if call.camera {
-                "Turn off camera"
+                ts("Turn off camera")
             } else {
-                "Turn on camera"
+                ts("Turn on camera")
             },
             if call.camera { "video" } else { "video-off" },
             call.camera,
@@ -769,7 +770,7 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
     panel = panel.child(ghost_button(
         "voice-hang-up",
         "ghost hang-up".into(),
-        "Disconnect",
+        ts("Disconnect"),
         "phone-off",
         false,
         false,
@@ -883,7 +884,7 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
     let label = if zoomed {
         format!("{:.0}%", zoom * 100.0)
     } else {
-        "Zoom".to_owned()
+        ts("Zoom").to_owned()
     };
     div()
         .id("screen-zoom-button")
@@ -929,9 +930,9 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
         .attr(
             "title",
             if zoomed {
-                "Reset zoom (fit to tile)"
+                ts("Reset zoom (fit to tile)")
             } else {
-                "Zoom in halfway"
+                ts("Zoom in halfway")
             },
         )
         .text(label)
@@ -1268,7 +1269,7 @@ fn video_card(
         // count): nothing is sent while it is nobody.
         let n = shell.calls.state.as_ref().map_or(0, |c| c.watchers);
         let text = if n == 0 {
-            "Nobody is watching".to_owned()
+            ts("Nobody is watching").to_owned()
         } else {
             crate::view_model::i18n::tf("%{n} watching", &[("n", &n.to_string())])
         };
@@ -1482,9 +1483,9 @@ pub fn sent_screen_audio() -> String {
 fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: Fit) -> AnyElement {
     let room = room.clone();
     let label = if direct {
-        "Invite to call"
+        ts("Invite to call")
     } else {
-        "Invite to voice channel"
+        ts("Invite to voice channel")
     };
     // The text goes with the icon when the card has room for it (about 8.5 px a
     // letter, the icon, the gaps and the card's own edge), else only the icon,
@@ -1699,9 +1700,9 @@ fn cards(
     if has_others {
         let top = pad + if hidden { card_h - 26.0 } else { card_h - 6.0 };
         let (name, title) = if hidden {
-            ("chevron-up", "Show members")
+            ("chevron-up", ts("Show members"))
         } else {
-            ("chevron-down", "Hide members")
+            ("chevron-down", ts("Hide members"))
         };
         col.push(
             div()
@@ -2046,9 +2047,9 @@ pub fn voice_channel(
         .attr(
             "title",
             if open {
-                "Hide the chat"
+                ts("Hide the chat")
             } else {
-                "Show the chat"
+                ts("Show the chat")
             },
         );
     // No fill of its own anywhere in the call view: the chat container it sits in
@@ -2194,7 +2195,7 @@ pub fn incoming_calls(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyEleme
         let locked = crate::locks::is_locked(&call.room_id);
         let (name, picture) = match room {
             // A locked chat: not who, not which, only that it rings.
-            _ if locked => (crate::locks::LOCKED_CALL.to_owned(), None),
+            _ if locked => (crate::locks::locked_call(), None),
             Some(room) => (room.name.clone(), shell.picture(&room.avatar, 48)),
             None => (call.caller.localpart().to_owned(), None),
         };
@@ -2854,7 +2855,7 @@ mod widget_tests {
             cx.notify();
         });
         redraw(cx);
-        assert_eq!(texts(".voice-panel .voice-state"), ["Connecting…"]);
+        assert_eq!(texts(".voice-panel .voice-state"), [ts("Connecting…")]);
         assert_eq!(query(".room.voice.in-call").len(), 1);
         shell.update(cx, |s, cx| {
             if let Some(state) = s.calls.state.as_mut() {
@@ -2865,7 +2866,7 @@ mod widget_tests {
         redraw(cx);
         assert_eq!(
             texts(".voice-panel .voice-state.connected"),
-            ["Voice connected"]
+            [ts("Voice connected")]
         );
         assert_eq!(texts(".voice-panel .voice-room"), ["lounge"]);
         // Hanging up ends it.

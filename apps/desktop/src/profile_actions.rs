@@ -1,5 +1,6 @@
 //! Opening the profile card and what its menu and buttons do for the shell.
 
+use crate::view_model::i18n::t;
 use gpui::{AppContext as _, Context, Pixels, Point};
 use morpheus_core::{MediaRef, OwnedUserId, RoomSummary};
 
@@ -49,7 +50,7 @@ impl Shell {
                 }
                 ProfileEvent::Copied(link) => {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
-                    this.toast("Link copied", cx);
+                    this.toast(t("Link copied"), cx);
                 }
                 ProfileEvent::ModView(user) => {
                     let shown = this.card.as_ref().map(|card| card.read(cx).name());

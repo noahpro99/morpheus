@@ -5,6 +5,7 @@
 //! what the bot last said. What the replies mean is `view_model::bridges`; this sends the
 //! commands it names and draws the state.
 
+use crate::view_model::i18n::ts;
 use std::sync::Arc;
 
 use gpui::{AnyElement, Context, Entity, FontWeight, IntoElement, div, prelude::*, px, rgb};
@@ -343,10 +344,10 @@ impl SettingsView {
         }
         if rows.is_empty() {
             let (text, class) = if self.bridges.finding || !self.bridges.looked {
-                ("Looking for bridges...", "muted bridge-looking")
+                (ts("Looking for bridges..."), "muted bridge-looking")
             } else {
                 (
-                    "No bridge bots were found on your server. If your bridge's bot has another name, add it below.",
+                    ts("No bridge bots were found on your server. If your bridge's bot has another name, add it below."),
                     "muted bridge-none",
                 )
             };
@@ -501,7 +502,7 @@ impl SettingsView {
             );
         } else {
             let bot = bot_id.clone();
-            let text = if matches!(status, Status::NeedsLogin(_)) { "Log in again" } else { "Connect" };
+            let text = if matches!(status, Status::NeedsLogin(_)) { ts("Log in again") } else { ts("Connect") };
             buttons = buttons.child(
                 button(id("connect"), text, Kind::Primary, "bridge-connect")
                     .child(icon("link", 16.0).text_color(rgb(theme::on_accent_solid())))

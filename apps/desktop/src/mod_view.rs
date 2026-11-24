@@ -3,6 +3,7 @@
 //! moderation you may do in each. Which controls a row has is decided in
 //! `view_model::mod_view`; this draws them and runs the calls.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, ElementId, Entity, EventEmitter, FocusHandle, FontWeight, IntoElement,
@@ -156,7 +157,7 @@ impl ModView {
         let shown = roles
             .iter()
             .find(|(role, _)| *role == current)
-            .map_or("Member", |(_, name)| name);
+            .map_or(ts("Member"), |(_, name)| name);
         let head = div()
             .id(ElementId::from(SharedString::from(format!("role-{id}"))))
             .flex()
@@ -230,7 +231,7 @@ impl ModView {
             Some((roles, current)) => self.role_select(room, roles, *current, cx),
             None => div()
                 .text_size(px(0.8 * theme::REM))
-                .text_color(rgb(if view.state == "Banned" {
+                .text_color(rgb(if view.state == ts("Banned") {
                     theme::danger()
                 } else {
                     theme::text_muted()
@@ -247,7 +248,7 @@ impl ModView {
             buttons.push(self.small_button(
                 format!("kick-{id}"),
                 "user-x",
-                "Kick",
+                ts("Kick"),
                 "secondary mod-kick",
                 busy,
                 cx.listener(move |this, _, _, cx| {
@@ -262,7 +263,7 @@ impl ModView {
             buttons.push(self.small_button(
                 format!("unban-{id}"),
                 "circle-minus",
-                "Unban",
+                ts("Unban"),
                 "secondary mod-unban",
                 busy,
                 cx.listener(move |this, _, _, cx| {
@@ -276,7 +277,7 @@ impl ModView {
             buttons.push(self.small_button(
                 format!("ban-{id}"),
                 "ban",
-                "Ban",
+                ts("Ban"),
                 "danger mod-ban",
                 busy,
                 cx.listener(move |this, _, _, cx| {

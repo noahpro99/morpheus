@@ -2,6 +2,7 @@
 //! once in the background, shown in Settings > Help & Feedback, and on the
 //! first launch after an update in a "What's new" popup (once).
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Mutex};
 
@@ -141,7 +142,7 @@ impl Shell {
             _ => return None,
         };
         let title = vm::popup_title(VERSION);
-        let more = dialog_button("whats-new-more", "View release on GitHub", false)
+        let more = dialog_button("whats-new-more", ts("View release on GitHub"), false)
             .text_color(rgb(theme::text()))
             .on_click(cx.listener(|_, _, _, cx| open_external(&page(), cx)))
             .e2e("button", "secondary whats-new-more")

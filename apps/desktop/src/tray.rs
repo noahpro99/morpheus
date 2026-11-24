@@ -5,6 +5,7 @@
 //! Closing the window hides it: the app (sync, notifications, rings) keeps
 //! running, and the tray brings it back.
 
+use crate::view_model::i18n::ts;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -30,10 +31,10 @@ impl TrayAction {
 
     pub fn label(self) -> &'static str {
         match self {
-            TrayAction::Open => "Open Morpheus",
-            TrayAction::CheckForUpdates => "Check for Updates…",
-            TrayAction::Acknowledgements => "Acknowledgements",
-            TrayAction::Quit => "Quit Morpheus",
+            TrayAction::Open => ts("Open Morpheus"),
+            TrayAction::CheckForUpdates => ts("Check for Updates…"),
+            TrayAction::Acknowledgements => ts("Acknowledgements"),
+            TrayAction::Quit => ts("Quit Morpheus"),
         }
     }
 }

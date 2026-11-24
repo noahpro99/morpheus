@@ -4,6 +4,7 @@
 //! real pop-ups on the developer's desktop): they write what would show to
 //! `shown-notifications.jsonl`.
 
+use crate::view_model::i18n::ts;
 use std::path::PathBuf;
 
 use std::sync::{
@@ -201,7 +202,7 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                     if crate::streamer::notifications_hidden() {
                         show(
                             "Morpheus".into(),
-                            "Someone sent a message".into(),
+                            ts("Someone sent a message").into(),
                             None,
                             None,
                             None,
@@ -283,14 +284,14 @@ pub fn spawn_ring_watcher(session: Session) {
                                     || crate::streamer::notifications_hidden();
                                 show(
                                     if crate::locks::is_locked(&call.room_id) {
-                                        crate::locks::LOCKED_CALL.to_owned()
+                                        crate::locks::locked_call()
                                     } else {
                                         format!(
                                             "{} is calling",
-                                            if hidden { "Someone" } else { &name }
+                                            if hidden { ts("Someone") } else { &name }
                                         )
                                     },
-                                    "Open Morpheus to answer".into(),
+                                    ts("Open Morpheus to answer").into(),
                                     None,
                                     None,
                                     Some(RING_SOUND),

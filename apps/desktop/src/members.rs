@@ -9,6 +9,7 @@
 //! are drawn and have their pictures fetched (a uniform list: every row is
 //! [`ROW`] high, headings too).
 
+use crate::view_model::i18n::t;
 use std::{collections::HashSet, ops::Range, sync::Arc};
 
 use gpui::{
@@ -426,7 +427,7 @@ fn member_row(
             div()
                 .ml_auto()
                 .text_size(px(0.65 * theme::REM))
-                .child("blocked")
+                .child(t("blocked"))
                 .e2e("span", "tag")
                 .attr("title", "You blocked this user")
                 .text("blocked"),

@@ -5,6 +5,7 @@
 //! account, as in Discord. What the call looks like is `call_ui.rs`; what
 //! its state means is `view_model::calls`.
 
+use crate::view_model::i18n::ts;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -339,7 +340,7 @@ impl Shell {
                             )
                                 == crate::view_model::settings::NotificationContent::Hidden;
                             let title = if crate::locks::is_locked(&ring_room) {
-                                crate::locks::LOCKED_CALL.to_owned()
+                                crate::locks::locked_call()
                             } else {
                                 crate::view_model::i18n::tf("%{name} is calling", &[("name", &if hidden { crate::view_model::i18n::t("Someone") } else { name.to_string() })])
                             };
@@ -1846,7 +1847,7 @@ impl Shell {
 fn notify_ring(title: String) {
     crate::notify::show(
         title,
-        "Open Morpheus to answer".into(),
+        ts("Open Morpheus to answer").into(),
         None,
         None,
         Some(crate::notify::RING_SOUND),

@@ -6,6 +6,7 @@
 //! (a Matrix invite, a message with a link) and reports back with
 //! `set_state`. What matches the filter is `view_model::friends`.
 
+use crate::view_model::i18n::ts;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -205,11 +206,11 @@ impl FriendPicker {
             None => (self.action.to_owned(), "idle"),
             Some(RowState::Working) => ("…".to_owned(), "working"),
             Some(RowState::Done) => (self.done.to_owned(), "sent"),
-            Some(RowState::Failed(_)) => ("Failed, retry".to_owned(), "failed"),
+            Some(RowState::Failed(_)) => (ts("Failed, retry").to_owned(), "failed"),
         };
         let member = self.members.contains(&key);
         let (label, tag) = if member {
-            ("Already in".to_owned(), "member")
+            (ts("Already in").to_owned(), "member")
         } else {
             (label, tag)
         };
@@ -317,9 +318,9 @@ impl Render for FriendPicker {
             .children(rows)
             .when(empty, |d| {
                 let text = if self.friends.is_empty() {
-                    "No friends yet. Type a full Matrix ID like @name:server."
+                    ts("No friends yet. Type a full Matrix ID like @name:server.")
                 } else {
-                    "No friend matches. A full Matrix ID like @name:server works too."
+                    ts("No friend matches. A full Matrix ID like @name:server works too.")
                 };
                 d.child(
                     div()

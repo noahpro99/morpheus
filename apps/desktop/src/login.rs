@@ -3,6 +3,7 @@
 //! button and the way back to a stored account. Signs in through
 //! `morpheus_core`; the root view takes the [`Session`] from [`SignedIn`].
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::time::Duration;
 
@@ -153,7 +154,7 @@ impl Login {
         if self.busy.is_some() {
             return;
         }
-        self.busy = Some("Signing in…");
+        self.busy = Some(ts("Signing in…"));
         self.error = None;
         let request = LoginRequest {
             homeserver: self.homeserver.read(cx).value().to_owned(),
@@ -173,7 +174,7 @@ impl Login {
         if self.busy.is_some() {
             return;
         }
-        self.busy = Some("Finish signing in in your browser…");
+        self.busy = Some(ts("Finish signing in in your browser…"));
         self.error = None;
         let signing_in = self
             .core

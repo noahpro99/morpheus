@@ -10,6 +10,7 @@
 //! by gpui's `StyledText`, whose layout answers where the caret goes and
 //! which index a click is at.
 
+use crate::view_model::i18n::t;
 use std::{
     cell::{Cell, RefCell},
     ops::Range,
@@ -928,16 +929,16 @@ impl TextInput {
                 ));
             }
             if suggestions.is_empty() {
-                rows.push(row("spell-none".into(), "No suggestions".into(), None, cx));
+                rows.push(row("spell-none".into(), t("No suggestions"), None, cx));
             }
-            rows.push(row("spell-add".into(), "Add to dictionary".into(), Some(SpellChoice::Add), cx));
-            rows.push(row("spell-ignore".into(), "Ignore".into(), Some(SpellChoice::Ignore), cx));
+            rows.push(row("spell-add".into(), t("Add to dictionary"), Some(SpellChoice::Add), cx));
+            rows.push(row("spell-ignore".into(), t("Ignore"), Some(SpellChoice::Ignore), cx));
             rows.push(div().h(px(1.0)).my(px(4.0)).bg(theme::fill_elevated()).into_any_element());
         }
         let _ = has_word;
-        rows.push(row("spell-cut".into(), "Cut".into(), has_selection.then_some(SpellChoice::Cut), cx));
-        rows.push(row("spell-copy".into(), "Copy".into(), has_selection.then_some(SpellChoice::Copy), cx));
-        rows.push(row("spell-paste".into(), "Paste".into(), Some(SpellChoice::Paste), cx));
+        rows.push(row("spell-cut".into(), t("Cut"), has_selection.then_some(SpellChoice::Cut), cx));
+        rows.push(row("spell-copy".into(), t("Copy"), has_selection.then_some(SpellChoice::Copy), cx));
+        rows.push(row("spell-paste".into(), t("Paste"), Some(SpellChoice::Paste), cx));
         let panel = div()
             .id("spell-menu")
             .absolute()

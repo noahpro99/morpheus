@@ -3,6 +3,7 @@
 //! start of the room and placeholders. Classes and attributes are the
 //! Dioxus app's (`crates/ui/src/components/timeline.rs`) so tests find them.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
@@ -1334,7 +1335,7 @@ fn body_el(
             return video_el(body, *width, *height, *duration, pics.media.clone());
         }
         MessageKind::Redacted => {
-            return muted_body("Message deleted");
+            return muted_body(ts("Message deleted"));
         }
         // On a device that can read encrypted history, keys usually arrive
         // shortly: a loading shimmer. On one that cannot, they never will
@@ -1567,7 +1568,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         bar = bar.child(action_button(
             format!("more-{uid}").into(),
             "action more-reactions",
-            "Add reaction",
+            ts("Add reaction"),
             icon("smile-plus", 15.0).into_any_element(),
             RowAction::MoreReactions(Point::default()),
             uid,
@@ -1579,7 +1580,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         bar = bar.child(action_button(
             format!("reply-{uid}").into(),
             "action reply",
-            "Reply",
+            ts("Reply"),
             icon("reply", 15.0).into_any_element(),
             RowAction::Reply,
             uid,
@@ -1588,7 +1589,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         bar = bar.child(action_button(
             format!("thread-{uid}").into(),
             "action thread",
-            "Reply in thread",
+            ts("Reply in thread"),
             icon("messages-square", 15.0).into_any_element(),
             RowAction::Thread,
             uid,
@@ -1599,7 +1600,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         bar = bar.child(action_button(
             format!("edit-{uid}").into(),
             "action edit",
-            "Edit",
+            ts("Edit"),
             icon("pencil", 15.0).into_any_element(),
             RowAction::Edit,
             uid,
@@ -1610,7 +1611,7 @@ fn actions_bar(m: &Message, group: SharedString, actions: &ActionHandler) -> Any
         bar = bar.child(action_button(
             format!("delete-{uid}").into(),
             "action delete",
-            "Delete",
+            ts("Delete"),
             icon("trash-2", 15.0).into_any_element(),
             RowAction::Delete(false),
             uid,

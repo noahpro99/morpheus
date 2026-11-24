@@ -6,6 +6,7 @@
 //! its "…" opens a menu (the full profile, share, invite, block, report,
 //! copy), and the shield opens the mod view.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{sync::Arc, time::Duration};
 
@@ -336,7 +337,7 @@ impl ProfileCard {
             this.update(cx, |this, cx| {
                 this.report_busy = false;
                 this.report_note = Some(match result {
-                    Ok(()) => Note::ok("Reported to the server admins."),
+                    Ok(()) => Note::ok(ts("Reported to the server admins.")),
                     Err(err) => Note::error(err.to_string()),
                 });
                 cx.notify();
@@ -651,10 +652,10 @@ impl Render for ProfileCard {
         let tag_h = 0.7 * theme::REM * theme::LINE_HEIGHT + 2.0;
         let mut tags = div().flex().flex_wrap().gap(px(6.0)).min_h(px(tag_h));
         if self.own {
-            tags = tags.child(tag("This is you", false));
+            tags = tags.child(tag(ts("This is you"), false));
         }
         if self.blocked {
-            tags = tags.child(tag("Blocked", true));
+            tags = tags.child(tag(ts("Blocked"), true));
         }
         if let Some(role) = self.role {
             tags = tags.child(tag(role_tag(role), false));
@@ -968,13 +969,13 @@ impl ProfileCard {
             );
         }
         if self.own {
-            body = body.child(tag("This is you", false));
+            body = body.child(tag(ts("This is you"), false));
         }
         if !self.own {
             let servers = shared_servers(&self.servers, &self.mutual);
             let loading = self.session.is_some() && !self.loaded;
             let heading = if loading {
-                "Mutual servers".to_string()
+                ts("Mutual servers").to_string()
             } else {
                 mutual_heading(servers.len())
             };

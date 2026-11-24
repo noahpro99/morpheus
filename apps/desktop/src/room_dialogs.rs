@@ -5,6 +5,7 @@
 //! server. One entity serves all of them (`kind` says which); what they
 //! accept and say is decided in `view_model::room_dialogs`.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::path::PathBuf;
 
@@ -158,7 +159,7 @@ impl RoomDialog {
                         nicknames.clone(),
                         "user",
                         "Search friends or enter @friend:matrix.org",
-                        "Invite",
+                        ts("Invite"),
                         "Invited",
                         cx,
                     )
@@ -188,7 +189,7 @@ impl RoomDialog {
                 topic = field(
                     cx,
                     "topic",
-                    "What is this room about?",
+                    ts("What is this room about?"),
                     room.as_ref()
                         .and_then(|r| r.topic.as_deref())
                         .unwrap_or_default(),
@@ -201,7 +202,7 @@ impl RoomDialog {
             RoomDialogKind::CreateSpace(_) => name = field(cx, "name", "", ""),
             RoomDialogKind::RoomProfile(_) => name = field(cx, "nickname", "", ""),
             RoomDialogKind::EditProfile => name = field(cx, "displayname", "", ""),
-            RoomDialogKind::SetStatus => name = field(cx, "status", "In a meeting", ""),
+            RoomDialogKind::SetStatus => name = field(cx, "status", ts("In a meeting"), ""),
             RoomDialogKind::Nickname(user, current) => {
                 let existing = nicknames.get(user.as_str()).cloned().unwrap_or_default();
                 name = field(cx, "nickname", current, &existing);
@@ -443,7 +444,7 @@ impl RoomDialog {
                 files: true,
                 directories: false,
                 multiple: false,
-                prompt: Some("Choose a picture".into()),
+                prompt: Some(ts("Choose a picture").into()),
                 filters: crate::view_model::room_dialogs::picture_filters(),
             })
         });
@@ -586,7 +587,7 @@ impl RoomDialog {
                     .child(button(
                         &format!("save-emoji-{code}"),
                         Some("check"),
-                        "Save",
+                        ts("Save"),
                         "save-emoji-name",
                         false,
                         self.busy,
@@ -595,7 +596,7 @@ impl RoomDialog {
                     .child(button(
                         &format!("cancel-emoji-{code}"),
                         None,
-                        "Cancel",
+                        ts("Cancel"),
                         "cancel-emoji-name",
                         false,
                         false,
@@ -641,7 +642,7 @@ impl RoomDialog {
         }
         if pack.editable {
             if let Some(name) = &self.emoji_name {
-                section = section.child(field("New emoji name", name));
+                section = section.child(field(ts("New emoji name"), name));
             }
             section = section.child(actions(vec![button(
                 "add-emoji",
@@ -763,7 +764,7 @@ impl RoomDialog {
         };
         let link = crate::call_invite::channel_link(&room, None);
         let copied = self.link_copied;
-        let label = if copied { "Copied" } else { "Copy link" };
+        let label = if copied { ts("Copied") } else { ts("Copy link") };
         div()
             .flex()
             .items_center()
@@ -895,7 +896,7 @@ impl RoomDialog {
                 let saving = self.session.edit_room(room, Some(name), Some(topic));
                 self.run(saving, cx, |this, result, _| {
                     this.note = Some(match result {
-                        Ok(()) => Note::ok("Saved."),
+                        Ok(()) => Note::ok(ts("Saved.")),
                         Err(err) => Note::error(err),
                     });
                 });
@@ -937,7 +938,7 @@ impl RoomDialog {
                 let saving = self.session.set_privacy(room, privacy);
                 self.run(saving, cx, |this, result, _| {
                     this.note = Some(match result {
-                        Ok(()) => Note::ok("Saved."),
+                        Ok(()) => Note::ok(ts("Saved.")),
                         Err(err) => Note::error(err),
                     });
                 });
@@ -952,7 +953,7 @@ impl RoomDialog {
                     this.note = Some(match result {
                         Ok(()) => {
                             cx.emit(Done::ProfileSaved);
-                            Note::ok("Saved for this server.")
+                            Note::ok(ts("Saved for this server."))
                         }
                         Err(err) => Note::error(err),
                     });
@@ -965,7 +966,7 @@ impl RoomDialog {
                     this.note = Some(match result {
                         Ok(()) => {
                             cx.emit(Done::OwnProfileChanged);
-                            Note::ok("Saved.")
+                            Note::ok(ts("Saved."))
                         }
                         Err(err) => Note::error(err),
                     });
@@ -1110,7 +1111,7 @@ impl RoomDialog {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Choose a picture".into()),
+            prompt: Some(ts("Choose a picture").into()),
             filters: crate::view_model::room_dialogs::picture_filters(),
         });
         cx.spawn(async move |this, cx| {
@@ -1260,7 +1261,7 @@ impl RoomDialog {
                     this.note = Some(match result {
                         Ok(()) => {
                             cx.emit(Done::OwnProfileChanged);
-                            Note::ok("Avatar updated.")
+                            Note::ok(ts("Avatar updated."))
                         }
                         Err(err) => Note::error(err),
                     });
@@ -1271,7 +1272,7 @@ impl RoomDialog {
                 self.run(setting, cx, move |this, result, _| {
                     cleanup();
                     this.note = Some(match result {
-                        Ok(()) => Note::ok("Icon updated."),
+                        Ok(()) => Note::ok(ts("Icon updated.")),
                         Err(err) => Note::error(err),
                     });
                 });
@@ -1552,21 +1553,21 @@ impl RoomDialog {
                 false,
                 "text",
                 "hash",
-                "Text",
-                "Send messages, pictures and files",
+                ts("Text"),
+                ts("Send messages, pictures and files"),
             ))
             .child(option(
                 true,
                 "voice",
                 "volume-2",
-                "Voice",
-                "Hang out with voice, video and screen share",
+                ts("Voice"),
+                ts("Hang out with voice, video and screen share"),
             ))
             .into_any_element()
     }
 
     fn category_select(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut options = vec!["None".to_owned()];
+        let mut options = vec![ts("None").to_owned()];
         options.extend(self.categories.iter().map(|(_, name)| name.clone()));
         let shown = options.get(self.category).cloned().unwrap_or_default();
         let open = self.category_open;
@@ -1671,7 +1672,7 @@ impl RoomDialog {
                 .into_any_element(),
         ];
         match state {
-            Encryption::Checking => parts.push(para("Checking…", "muted", theme::text_muted())),
+            Encryption::Checking => parts.push(para(ts("Checking…"), "muted", theme::text_muted())),
             Encryption::On => {
                 parts.push(para(ENCRYPTION_ON, "ok", theme::ok()));
                 parts.push(para(ENCRYPTION_PERMANENT, "muted", theme::text_muted()));
@@ -1712,7 +1713,7 @@ impl RoomDialog {
                         button(
                             "cancel-encryption",
                             None,
-                            "Cancel",
+                            ts("Cancel"),
                             "secondary",
                             false,
                             false,
@@ -1745,7 +1746,7 @@ impl RoomDialog {
     /// The dialog's contents and its class.
     /// The crop step of a chosen picture: frame and zoom, then "Use picture".
     fn crop_body(&mut self, cx: &mut Context<Self>) -> (&'static str, Vec<AnyElement>) {
-        let mut parts: Vec<AnyElement> = vec![heading("Crop picture").into_any_element()];
+        let mut parts: Vec<AnyElement> = vec![heading(ts("Crop picture")).into_any_element()];
         if let Some((picked, _)) = &self.cropping {
             parts.push(crate::crop_view::crop_view(picked, Self::picked_mut, cx));
         }
@@ -1764,7 +1765,7 @@ impl RoomDialog {
                 button(
                     "cancel-crop",
                     None,
-                    "Cancel",
+                    ts("Cancel"),
                     "secondary cancel-crop",
                     false,
                     false,
@@ -1787,15 +1788,15 @@ impl RoomDialog {
         let note = self.note.as_ref().map(note_el);
         match self.kind.clone() {
             RoomDialogKind::Invite(_) => {
-                parts.push(heading("Invite people").into_any_element());
+                parts.push(heading(ts("Invite people")).into_any_element());
                 if let Some(picker) = &self.picker {
                     parts.push(picker.clone().into_any_element());
                 }
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(Some("user-plus"), "Invite", cx),
-                        self.close_button("Close", cx),
+                        self.submit_button(Some("user-plus"), ts("Invite"), cx),
+                        self.close_button(ts("Close"), cx),
                     ])
                     .into_any_element(),
                 );
@@ -1803,12 +1804,12 @@ impl RoomDialog {
                 ("invite-dialog", parts)
             }
             RoomDialogKind::Edit(_) => {
-                parts.push(heading("Edit room").into_any_element());
+                parts.push(heading(ts("Edit room")).into_any_element());
                 if let Some(name) = &self.name {
-                    parts.push(field("Name", name));
+                    parts.push(field(ts("Name"), name));
                 }
                 if let Some(topic) = &self.topic {
-                    parts.push(field("Topic", topic));
+                    parts.push(field(ts("Topic"), topic));
                 }
                 parts.push(
                     actions(vec![button(
@@ -1827,15 +1828,15 @@ impl RoomDialog {
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(None, "Save", cx),
-                        self.close_button("Close", cx),
+                        self.submit_button(None, ts("Save"), cx),
+                        self.close_button(ts("Close"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("edit-room-dialog", parts)
             }
             RoomDialogKind::Create => {
-                parts.push(heading("Create room").into_any_element());
+                parts.push(heading(ts("Create room")).into_any_element());
                 let space_name = self.scope.space_id().and_then(|id| self.name_of(id));
                 parts.push(
                     muted(&vm::create_room_scope(space_name.as_deref()), "muted")
@@ -1843,10 +1844,10 @@ impl RoomDialog {
                 );
                 parts.push(self.channel_types(cx));
                 if let Some(name) = &self.name {
-                    parts.push(field("Name", name));
+                    parts.push(field(ts("Name"), name));
                 }
                 if let Some(topic) = &self.topic {
-                    parts.push(field("Topic (optional)", topic));
+                    parts.push(field(ts("Topic (optional)"), topic));
                 }
                 if !self.categories.is_empty() {
                     parts.push(self.category_select(cx));
@@ -1856,8 +1857,8 @@ impl RoomDialog {
                 }
                 parts.push(
                     actions(vec![
-                        self.submit_button(Some("plus"), "Create", cx),
-                        self.close_button("Cancel", cx),
+                        self.submit_button(Some("plus"), ts("Create"), cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );
@@ -1868,15 +1869,15 @@ impl RoomDialog {
                 parts.push(heading(vm::create_space_title(is_category)).into_any_element());
                 parts.push(muted(vm::create_space_blurb(is_category), "muted").into_any_element());
                 if let Some(name) = &self.name {
-                    parts.push(field("Name", name));
+                    parts.push(field(ts("Name"), name));
                 }
                 if let Some(Note::Error(text)) = &self.note {
                     parts.push(note_el(&Note::error(text.clone())));
                 }
                 parts.push(
                     actions(vec![
-                        self.submit_button(Some("plus"), "Create", cx),
-                        self.close_button("Cancel", cx),
+                        self.submit_button(Some("plus"), ts("Create"), cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );
@@ -1903,7 +1904,7 @@ impl RoomDialog {
                 ("create-space-dialog", parts)
             }
             RoomDialogKind::Privacy(room) => {
-                parts.push(heading("Privacy").into_any_element());
+                parts.push(heading(ts("Privacy")).into_any_element());
                 let shows = vm::privacy_parts(&self.rooms, &room);
                 if shows.encryption {
                     parts.push(self.encryption_section(cx));
@@ -1926,7 +1927,7 @@ impl RoomDialog {
                             )
                         })
                         .collect();
-                    parts.push(choice_group("Who can join", join));
+                    parts.push(choice_group(ts("Who can join"), join));
                     let history = HISTORY_CHOICES
                         .iter()
                         .enumerate()
@@ -1944,23 +1945,23 @@ impl RoomDialog {
                             )
                         })
                         .collect();
-                    parts.push(choice_group("History new members can read", history));
+                    parts.push(choice_group(ts("History new members can read"), history));
                 }
                 parts.extend(note);
                 let mut buttons = Vec::new();
                 if shows.join_and_history {
-                    buttons.push(self.submit_button(None, "Save", cx));
+                    buttons.push(self.submit_button(None, ts("Save"), cx));
                 }
-                buttons.push(self.close_button("Close", cx));
+                buttons.push(self.close_button(ts("Close"), cx));
                 parts.push(actions(buttons).into_any_element());
                 ("privacy-dialog", parts)
             }
             RoomDialogKind::RoomProfile(room) => {
-                parts.push(heading("Server profile").into_any_element());
+                parts.push(heading(ts("Server profile")).into_any_element());
                 let rooms = self.server_rooms(&room).len() - 1;
                 parts.push(muted(&vm::room_profile_blurb(rooms), "muted").into_any_element());
                 if let Some(name) = &self.name {
-                    parts.push(field("Nickname", name));
+                    parts.push(field(ts("Nickname"), name));
                 }
                 let mut pick = vec![button(
                     "choose-avatar",
@@ -1986,29 +1987,29 @@ impl RoomDialog {
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(None, "Save", cx),
-                        self.close_button("Close", cx),
+                        self.submit_button(None, ts("Save"), cx),
+                        self.close_button(ts("Close"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("room-profile-dialog", parts)
             }
             RoomDialogKind::RenameFolder(..) => {
-                parts.push(heading("Rename folder").into_any_element());
+                parts.push(heading(ts("Rename folder")).into_any_element());
                 if let Some(name) = &self.name {
-                    parts.push(field("Name", name));
+                    parts.push(field(ts("Name"), name));
                 }
                 parts.push(
                     actions(vec![
-                        self.submit_button(None, "Save", cx),
-                        self.close_button("Cancel", cx),
+                        self.submit_button(None, ts("Save"), cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("rename-folder-dialog", parts)
             }
             RoomDialogKind::Nickname(_, current) => {
-                parts.push(heading("Nickname").into_any_element());
+                parts.push(heading(ts("Nickname")).into_any_element());
                 parts.push(
                     muted(
                         &crate::view_model::nicknames::nickname_blurb(&current),
@@ -2022,15 +2023,15 @@ impl RoomDialog {
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(None, "Save", cx),
-                        self.close_button("Cancel", cx),
+                        self.submit_button(None, ts("Save"), cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("nickname-editor", parts)
             }
             RoomDialogKind::EditProfile => {
-                parts.push(heading("Edit profile").into_any_element());
+                parts.push(heading(ts("Edit profile")).into_any_element());
                 parts.push(
                     actions(vec![button(
                         "change-avatar",
@@ -2044,27 +2045,27 @@ impl RoomDialog {
                     .into_any_element(),
                 );
                 if let Some(name) = &self.name {
-                    parts.push(field("Display name", name));
+                    parts.push(field(ts("Display name"), name));
                 }
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(None, "Save", cx),
-                        self.close_button("Close", cx),
+                        self.submit_button(None, ts("Save"), cx),
+                        self.close_button(ts("Close"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("profile-editor", parts)
             }
             RoomDialogKind::SetStatus => {
-                parts.push(heading("Set status").into_any_element());
+                parts.push(heading(ts("Set status")).into_any_element());
                 if let Some(name) = &self.name {
-                    parts.push(field("What are you up to?", name));
+                    parts.push(field(ts("What are you up to?"), name));
                 }
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(None, "Save", cx),
+                        self.submit_button(None, ts("Save"), cx),
                         button(
                             "clear-status",
                             None,
@@ -2074,42 +2075,42 @@ impl RoomDialog {
                             self.busy,
                             cx.listener(|this, _, _, cx| this.set_status(None, cx)),
                         ),
-                        self.close_button("Close", cx),
+                        self.close_button(ts("Close"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("profile-editor status-editor", parts)
             }
             RoomDialogKind::LockSet(_) => {
-                parts.push(heading("Lock with a password").into_any_element());
+                parts.push(heading(ts("Lock with a password")).into_any_element());
                 parts.push(muted(vm_locks::LOCK_BLURB, "muted").into_any_element());
                 if let Some(input) = &self.name {
-                    parts.push(field("Password", input));
+                    parts.push(field(ts("Password"), input));
                 }
                 if let Some(input) = &self.topic {
-                    parts.push(field("Password again", input));
+                    parts.push(field(ts("Password again"), input));
                 }
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(Some("lock"), "Lock", cx),
-                        self.close_button("Cancel", cx),
+                        self.submit_button(Some("lock"), ts("Lock"), cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );
                 ("lock-dialog", parts)
             }
             RoomDialogKind::LockRemove(_) => {
-                parts.push(heading("Remove lock").into_any_element());
+                parts.push(heading(ts("Remove lock")).into_any_element());
                 parts.push(muted(vm_locks::FORGOT, "muted forgot").into_any_element());
                 if let Some(input) = &self.name {
-                    parts.push(field("Password", input));
+                    parts.push(field(ts("Password"), input));
                 }
                 parts.extend(note);
                 parts.push(
                     actions(vec![
-                        self.submit_button(Some("lock-open"), "Remove lock", cx),
-                        self.close_button("Cancel", cx),
+                        self.submit_button(Some("lock-open"), ts("Remove lock"), cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );
@@ -2134,7 +2135,7 @@ impl RoomDialog {
                             self.busy,
                             cx.listener(|this, _, _, cx| this.submit(cx)),
                         ),
-                        self.close_button("Cancel", cx),
+                        self.close_button(ts("Cancel"), cx),
                     ])
                     .into_any_element(),
                 );

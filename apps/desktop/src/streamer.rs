@@ -3,6 +3,7 @@
 //! whether the screen is being shared. `Shell::sync_streamer` keeps the share
 //! flag current and redraws when the mode flips.
 
+use crate::view_model::i18n::ts;
 use std::sync::{Mutex, RwLock};
 
 use crate::view_model::streamer::{ShareTracker, StreamerSettings, mask_id, mask_name};
@@ -182,9 +183,9 @@ impl Shell {
         self.ask_tick = false;
         self.ask_scope = None;
         let confirm = Confirm {
-            title: "Open server".into(),
+            title: ts("Open server").into(),
             body,
-            confirm: "Open".into(),
+            confirm: ts("Open").into(),
         };
         self.dialog_open(
             Dialog::Confirm(confirm, ConfirmAction::OpenWelcome(space)),
@@ -229,9 +230,9 @@ impl Shell {
         self.ask_tick = false;
         self.ask_scope = scope;
         let confirm = Confirm {
-            title: "Open channel".into(),
+            title: ts("Open channel").into(),
             body,
-            confirm: "Open".into(),
+            confirm: ts("Open").into(),
         };
         self.dialog_open(Dialog::Confirm(confirm, ConfirmAction::OpenRoom(id)), cx);
     }

@@ -3,6 +3,7 @@
 //! deafen and the settings gear. Not ported yet: the account menu behind the
 //! chip, what the buttons do (calls and settings come with their screens).
 
+use crate::view_model::i18n::ts;
 use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
 use crate::tooltip::TipExt as _;
@@ -189,7 +190,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         voice.mic_off(),
         Shell::toggle_mute,
         false,
-        "Microphone",
+        ts("Microphone"),
         cx,
     );
     let deafen = pair(
@@ -208,7 +209,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         voice.deafened,
         Shell::toggle_deafen,
         true,
-        "Speaker",
+        ts("Speaker"),
         cx,
     );
     let row = div()
@@ -232,7 +233,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .child(ghost(
             "settings",
             "settings",
-            "Settings (Ctrl+,)",
+            ts("Settings (Ctrl+,)"),
             "ghost settings-button",
             Some(Box::new(cx.listener(|this, _, _, cx| {
                 this.open_settings(SettingsFocus::None, cx)

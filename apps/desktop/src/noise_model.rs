@@ -3,6 +3,7 @@
 //! data directory, with progress and errors shown in the setting; it is used
 //! only once its SHA-256 has been checked. The default model is built in.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::sync::{
     Arc, Mutex,
@@ -175,12 +176,12 @@ pub fn picker<V: 'static>(
         let low = model == NoiseModel::DeepFilterNet3LowDelay;
         let label = if low {
             if downloaded {
-                "Low delay (10 ms)".to_owned()
+                ts("Low delay (10 ms)").to_owned()
             } else {
                 crate::view_model::i18n::tf("Low delay (10 ms, %{size} MB download)", &[("size", &mb(morpheus_call::LOW_DELAY_BYTES).to_string())])
             }
         } else {
-            "Standard delay (30 ms, built in)".to_owned()
+            ts("Standard delay (30 ms, built in)").to_owned()
         };
         div()
             .id(gpui::SharedString::from(format!("noise-model-{}", model.key())))

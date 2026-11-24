@@ -93,6 +93,25 @@ pub fn t(key: &str) -> String {
     t_in(language(), key)
 }
 
+/// [`t`] for a literal, as text that lives for the whole run: for the places that hold a `&str`
+/// (a button's label, a menu's title) and cannot own a `String`. Each (language, key) is
+/// translated once and kept, so the memory is bounded by the catalogue.
+pub fn ts(key: &'static str) -> &'static str {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static KEPT: Mutex<Option<HashMap<(&'static str, &'static str), &'static str>>> = Mutex::new(None);
+    let code = language();
+    if code == SOURCE {
+        return key;
+    }
+    let Ok(mut kept) = KEPT.lock() else { return key };
+    let kept = kept.get_or_insert_with(HashMap::new);
+    *kept.entry((code, key)).or_insert_with(|| {
+        let text = t_in(code, key);
+        if text == key { key } else { Box::leak(text.into_boxed_str()) }
+    })
+}
+
 /// The text for `key` in `code`: English where that language has no entry.
 pub fn t_in(code: &str, key: &str) -> String {
     if code == SOURCE {
@@ -258,6 +277,9 @@ pub fn init(dir: &std::path::Path) -> Choice {
 }
 
 #[cfg(test)]
+mod hardcoded;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
@@ -302,7 +324,7 @@ mod tests {
     /// The functions whose first argument, when a string literal, is text the app shows
     /// (and so a key): `t` and `tf`, and the settings screens' helpers that translate
     /// what they are given.
-    const CALLS: &[&str] = &["t", "tf", "tn", "muted", "note", "section", "section_classed", "group", "label"];
+    const CALLS: &[&str] = &["t", "ts", "tf", "tn", "muted", "note", "section", "section_classed", "group", "label"];
 
     /// The string literal whose text starts at `s` (just after its opening quote): its
     /// value, and what follows the closing quote.

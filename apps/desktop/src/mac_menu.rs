@@ -8,6 +8,7 @@
 //! The menus are built on every system (so the tests see them) and only
 //! installed on a Mac, where `set_menus` shows them.
 
+use crate::view_model::i18n::ts;
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
 actions!(
@@ -36,31 +37,31 @@ pub fn menus() -> Vec<Menu> {
         Menu {
             name: "Morpheus".into(),
             items: vec![
-                MenuItem::action("About Morpheus", About),
+                MenuItem::action(ts("About Morpheus"), About),
                 MenuItem::separator(),
-                MenuItem::os_submenu("Services", SystemMenuType::Services),
+                MenuItem::os_submenu(ts("Services"), SystemMenuType::Services),
                 MenuItem::separator(),
-                MenuItem::action("Hide Morpheus", Hide),
-                MenuItem::action("Hide Others", HideOthers),
-                MenuItem::action("Show All", ShowAll),
+                MenuItem::action(ts("Hide Morpheus"), Hide),
+                MenuItem::action(ts("Hide Others"), HideOthers),
+                MenuItem::action(ts("Show All"), ShowAll),
                 MenuItem::separator(),
-                MenuItem::action("Quit Morpheus", Quit),
+                MenuItem::action(ts("Quit Morpheus"), Quit),
             ],
         },
         Menu {
-            name: "Edit".into(),
+            name: ts("Edit").into(),
             items: vec![
-                MenuItem::os_action("Cut", Cut, OsAction::Cut),
-                MenuItem::os_action("Copy", Copy, OsAction::Copy),
-                MenuItem::os_action("Paste", Paste, OsAction::Paste),
-                MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
+                MenuItem::os_action(ts("Cut"), Cut, OsAction::Cut),
+                MenuItem::os_action(ts("Copy"), Copy, OsAction::Copy),
+                MenuItem::os_action(ts("Paste"), Paste, OsAction::Paste),
+                MenuItem::os_action(ts("Select All"), SelectAll, OsAction::SelectAll),
             ],
         },
         Menu {
-            name: "Window".into(),
+            name: ts("Window").into(),
             items: vec![
-                MenuItem::action("Minimize", Minimize),
-                MenuItem::action("Close", CloseWindow),
+                MenuItem::action(ts("Minimize"), Minimize),
+                MenuItem::action(ts("Close"), CloseWindow),
             ],
         },
     ]

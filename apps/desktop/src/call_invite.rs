@@ -4,6 +4,7 @@
 //! to the channel, which opens it for them. In a DM's call the room is a
 //! conversation of two, so the invite is the room's own Matrix invite.
 
+use crate::view_model::i18n::ts;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, IntoElement, Render, Window, div, prelude::*, px,
 };
@@ -58,8 +59,8 @@ impl CallInvite {
                 nicknames,
                 "friend-filter",
                 "Search friends or enter @friend:matrix.org",
-                if direct { "Invite" } else { "Send invite" },
-                if direct { "Invited" } else { "Sent" },
+                if direct { ts("Invite") } else { ts("Send invite") },
+                if direct { ts("Invited") } else { ts("Sent") },
                 cx,
             )
         });
@@ -139,14 +140,14 @@ impl Render for CallInvite {
             self.picker.read(cx).input().read(cx).focus(window);
         }
         let title = if self.direct {
-            "Invite to call"
+            ts("Invite to call")
         } else {
-            "Invite to voice channel"
+            ts("Invite to voice channel")
         };
         let hint = if self.direct {
-            "They are invited to this conversation and can join the call."
+            ts("They are invited to this conversation and can join the call.")
         } else {
-            "They get a message with a link that opens the channel."
+            ts("They get a message with a link that opens the channel.")
         };
         let boxed = dialog_box()
             .id("call-invite-dialog")

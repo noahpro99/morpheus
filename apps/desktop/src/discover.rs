@@ -8,6 +8,7 @@
 //! Alt+Left, the mouse's back button) returns to where it was opened from.
 //! What a row says and how results merge is `view_model::discover`.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::collections::HashSet;
 
@@ -255,11 +256,11 @@ impl Discover {
             .as_ref()
             .and_then(|media| self.avatars.get(media, 40));
         let label = if joined {
-            "Open"
+            ts("Open")
         } else if joining {
-            "Joining…"
+            ts("Joining…")
         } else {
-            "Join"
+            ts("Join")
         };
         let (look, join) = (room.clone(), room.clone());
         let (via_look, via_join) = (entry.servers.clone(), entry.servers.clone());
@@ -441,11 +442,11 @@ impl Render for Discover {
         problems.extend(self.join_error.clone().map(|e| (None, e)));
         let selected = self.dirs.selected();
         let info = if selected.is_empty() {
-            Some("Switch on a server above to see its public rooms.".to_owned())
+            Some(ts("Switch on a server above to see its public rooms.").to_owned())
         } else if self.results.loading() && entries.is_empty() {
-            Some("Loading…".to_owned())
+            Some(ts("Loading…").to_owned())
         } else if entries.is_empty() && problems.is_empty() {
-            Some("No public rooms found.".to_owned())
+            Some(ts("No public rooms found.").to_owned())
         } else {
             None
         };

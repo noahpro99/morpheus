@@ -4,6 +4,7 @@
 //! joining a voice channel's call. The settings entries of the Dioxus
 //! palette are not ported.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::sync::Arc;
 
@@ -414,7 +415,7 @@ impl crate::shell::Shell {
             use crate::model::Scope;
             if room.is_space {
                 return (
-                    "Server".to_owned(),
+                    ts("Server").to_owned(),
                     self.picture(&room.avatar, 40),
                     Some(room.name.clone()),
                 );
@@ -430,11 +431,11 @@ impl crate::shell::Shell {
                     )
                 }
                 Scope::Dms => (
-                    "Direct message".to_owned(),
+                    ts("Direct message").to_owned(),
                     self.picture(&room.avatar, 32),
                     None,
                 ),
-                _ => ("Rooms".to_owned(), self.picture(&room.avatar, 32), None),
+                _ => (ts("Rooms").to_owned(), self.picture(&room.avatar, 32), None),
             }
         })
     }

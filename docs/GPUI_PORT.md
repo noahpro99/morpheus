@@ -149,3 +149,12 @@ copied report and bug reports stay English): they are listed in
 right-to-left language or mirrored layout exists yet. After editing `locales/*.json`,
 touch `crates/view-model/src/i18n.rs` (the catalogue is compiled in and cargo does not
 watch it).
+Where a `&str` or `&'static str` is wanted (a button label, a menu title) `ts("Literal")`
+gives the translation as text kept for the run; `t` gives a `String`. A test
+(`i18n/hardcoded.rs`) scans `apps/desktop/src` for text-like string literals that are not
+given to `t`/`ts`/`tf`/`tn` or a translating helper and fails on a new one: translate it,
+or add it to `ALLOWED`/`ALLOWED_IN` there with the reason (a brand, a key name, text only
+the test bridge reads). Strings that were hardcoded when the check came are listed in
+`i18n/known_gaps.txt`, a to-do list that only shrinks (`I18N_PRUNE_GAPS=1 cargo test -p
+morpheus-view-model i18n` drops the ones translated since). Entries marked in
+`_machine_translated` of a locale file are machine quality until a speaker reviews them.

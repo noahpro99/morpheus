@@ -8,6 +8,7 @@
 //! verification started here keeps running (and is still there) after the
 //! window closes and opens again.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::time::Duration;
 
@@ -1385,18 +1386,18 @@ impl SettingsView {
         if let Some(state) = self.private_state {
             let (headline, about) = if state.sealed && state.unlocked {
                 (
-                    "Friends, nicknames and notes are encrypted",
-                    "Only your devices with the recovery key can read them.",
+                    ts("Friends, nicknames and notes are encrypted"),
+                    ts("Only your devices with the recovery key can read them."),
                 )
             } else if state.sealed {
                 (
-                    "Friends, nicknames and notes are encrypted",
-                    "This device does not have the key yet: type your recovery key above and press Restore from backup to read and change them here.",
+                    ts("Friends, nicknames and notes are encrypted"),
+                    ts("This device does not have the key yet: type your recovery key above and press Restore from backup to read and change them here."),
                 )
             } else {
                 (
-                    "Friends, nicknames and notes are not encrypted yet",
-                    "They are encrypted by themselves once this device has your recovery key: set up recovery above, or type your recovery key above and press Restore from backup.",
+                    ts("Friends, nicknames and notes are not encrypted yet"),
+                    ts("They are encrypted by themselves once this device has your recovery key: set up recovery above, or type your recovery key above and press Restore from backup."),
                 )
             };
             let block = div()

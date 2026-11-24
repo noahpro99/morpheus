@@ -5,6 +5,7 @@
 //! what Enter sends) is in `view_model::composer`; this draws it and wires
 //! the text box's events to the room's timeline handle.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
@@ -619,7 +620,7 @@ impl Composer {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Attach a file".into()),
+            prompt: Some(ts("Attach a file").into()),
             filters: Vec::new(),
         });
         cx.spawn(async move |_, _| {
@@ -1119,7 +1120,7 @@ impl Render for Composer {
         let attach = tool_button(
             "attach",
             "attach-button",
-            "Attach a file (Ctrl+Shift+U)",
+            ts("Attach a file (Ctrl+Shift+U)"),
             icon("plus", 18.0).into_any_element(),
             ready,
             cx.listener(|this, _, _, cx| this.pick_file(cx)),
@@ -1131,7 +1132,7 @@ impl Render for Composer {
             } else {
                 "emoji-button"
             },
-            "Emoji",
+            ts("Emoji"),
             icon("smile", 20.0).into_any_element(),
             ready,
             cx.listener(|this, _, _, cx| {
@@ -1321,7 +1322,7 @@ mod tests {
         assert_eq!(query(".composer .attach-button[disabled]").len(), 1);
         let _ = cx;
         let placeholder = e2e::query_attr(".composer .composer-input", "placeholder");
-        assert_eq!(placeholder.as_deref(), Some("Message #general"));
+        assert_eq!(placeholder.as_deref(), Some(ts("Message #general")));
     }
 
     #[gpui::test]

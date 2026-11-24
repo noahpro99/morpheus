@@ -4,6 +4,7 @@
 //! let the camera go. With a call's camera on it shows that feed instead
 //! (the call crate sees to the device: see `morpheus_call::preview`).
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::time::Duration;
 
@@ -22,9 +23,9 @@ impl SettingsView {
         let running = self.preview.is_some();
         let busy = self.preview_starting;
         let (label, class, bg) = if running {
-            ("Stop", "camera-stop", theme::danger())
+            (ts("Stop"), "camera-stop", theme::danger())
         } else {
-            ("Test Video", "camera-test", theme::accent_solid())
+            (ts("Test Video"), "camera-test", theme::accent_solid())
         };
         let button = div()
             .id(class)
@@ -168,7 +169,7 @@ impl SettingsView {
                         (None, Some(_)) => {
                             this.preview = None;
                             this.preview_message =
-                                Some("The camera was turned off in the call.".to_owned());
+                                Some(ts("The camera was turned off in the call.").to_owned());
                         }
                         _ => return this.preview.is_some(),
                     }

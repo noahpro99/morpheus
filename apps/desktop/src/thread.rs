@@ -3,6 +3,7 @@
 //! how many replies it has, the replies themselves (a timeline of their
 //! own) and a message box that posts back into the thread.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Arc};
 
@@ -72,7 +73,7 @@ impl ThreadPanel {
             cx.new(|cx| TimelineView::new_thread(session.clone(), room_id.clone(), root_id, cx));
         let composer = cx.new(|cx| {
             Composer::new(session.clone(), room_id.clone(), String::new(), false, cx)
-                .with_placeholder("Reply in thread", cx)
+                .with_placeholder(ts("Reply in thread"), cx)
         });
         {
             let timeline = timeline.clone();

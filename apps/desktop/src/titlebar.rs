@@ -3,6 +3,7 @@
 //! with its count of rooms with something unread, and the window's buttons.
 //! Anywhere on it that is not a button drags the window.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{Context, FontWeight, IntoElement, div, prelude::*, px, rgb, rgba};
 
@@ -288,7 +289,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         cx,
                         "nav-back",
                         "chevron-left",
-                        "Back (Alt+←)",
+                        ts("Back (Alt+←)"),
                         shell.nav.can_go_back() || shell.discover.is_some(),
                         -1,
                     ))
@@ -296,7 +297,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         cx,
                         "nav-forward",
                         "chevron-right",
-                        "Forward (Alt+→)",
+                        ts("Forward (Alt+→)"),
                         shell.nav.can_go_forward(),
                         1,
                     ))
@@ -412,8 +413,8 @@ fn alpha_pill() -> impl IntoElement {
         .text_size(px(0.65 * theme::REM))
         .line_height(px(0.9 * theme::REM))
         .font_weight(FontWeight::BOLD)
-        .child("Alpha")
-        .tip("Morpheus is in alpha: expect rough edges")
+        .child(t("Alpha"))
+        .tip(t("Morpheus is in alpha: expect rough edges"))
         .e2e("span", "alpha-badge")
         .text("Alpha")
 }

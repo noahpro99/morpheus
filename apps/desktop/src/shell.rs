@@ -1,6 +1,7 @@
 //! The signed-in shell (`crates/ui/src/components/shell.rs`): the rail, the
 //! sidebar with its footer, and the chat area, over the rooms the core syncs.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{
     collections::{HashMap, HashSet},
@@ -1623,7 +1624,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                         .justify_end()
                         .mt(px(6.0))
                         .child(
-                            action("backup-later", "Later", false)
+                            action("backup-later", ts("Later"), false)
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.backup_later = true;
                                     cx.notify();
@@ -1632,7 +1633,7 @@ fn backup_prompt(cx: &mut Context<Shell>) -> impl IntoElement {
                                 .text(t("Later")),
                         )
                         .child(
-                            action("backup-set-up", "Set up", true)
+                            action("backup-set-up", ts("Set up"), true)
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.open_settings(SettingsFocus::SetUpBackup, cx)
                                 }))
@@ -1907,7 +1908,7 @@ impl Render for Shell {
                         let line = if crate::locks::is_locked(&notice.room_id) {
                             crate::view_model::locks::NOTIFICATION.to_owned()
                         } else if crate::streamer::notifications_hidden() {
-                            "Someone sent a message".to_owned()
+                            ts("Someone sent a message").to_owned()
                         } else {
                             crate::view_model::notices::log_line(notice)
                         };

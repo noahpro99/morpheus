@@ -4,6 +4,7 @@
 //! server's channel you are not in, and the inbox panel from the title bar.
 //! What they say is in `view_model::invites`.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, ElementId, FontWeight, IntoElement, MouseButton, SharedString, Window,
@@ -226,7 +227,7 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
         .child(
             round_button(
                 format!("invite-accept-{}", room.id),
-                "Accept",
+                ts("Accept"),
                 "check",
                 true,
             )
@@ -238,7 +239,7 @@ pub fn invite_row(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) ->
             .attr("title", "Accept"),
         )
         .child(
-            round_button(format!("invite-decline-{}", room.id), "Decline", "x", false)
+            round_button(format!("invite-decline-{}", room.id), ts("Decline"), "x", false)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     this.decline_invite(decline.clone(), cx)
@@ -347,12 +348,12 @@ pub fn invite_card(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
         invites::card_line(room),
         room.topic.as_deref(),
         vec![
-            card_button("card-accept", "Accept", true)
+            card_button("card-accept", ts("Accept"), true)
                 .on_click(cx.listener(move |this, _, _, cx| this.accept_invite(accept.clone(), cx)))
                 .e2e("button", "primary invite-accept")
                 .text(t("Accept"))
                 .into_any_element(),
-            card_button("card-decline", "Decline", false)
+            card_button("card-decline", ts("Decline"), false)
                 .on_click(
                     cx.listener(move |this, _, _, cx| this.decline_invite(decline.clone(), cx)),
                 )
@@ -369,7 +370,7 @@ pub fn invite_card(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
 pub fn join_card(shell: &Shell, cx: &mut Context<Shell>, room: &SpaceRoom) -> AnyElement {
     let joining = shell.joining;
     let target = room.clone();
-    let label = if joining { "Joining…" } else { "Join" };
+    let label = if joining { ts("Joining…") } else { ts("Join") };
     let mut button = card_button("card-join", label, true);
     button = if joining {
         button.opacity(0.5)
@@ -522,9 +523,9 @@ pub fn inbox(
                                     .child(
                                         div()
                                             .text_color(rgb(theme::text_muted()))
-                                            .child(format!("from {}", invites::inviter(room)))
+                                            .child(crate::view_model::i18n::tf("from %{who}", &[("who", &invites::inviter(room))]))
                                             .e2e("span", "muted")
-                                            .text(format!("from {}", invites::inviter(room))),
+                                            .text(crate::view_model::i18n::tf("from %{who}", &[("who", &invites::inviter(room))])),
                                     ),
                             )
                             .on_click(
@@ -534,7 +535,7 @@ pub fn inbox(
                             .text(name_line),
                     )
                     .child(
-                        round_button(format!("inbox-accept-{}", room.id), "Accept", "check", true)
+                        round_button(format!("inbox-accept-{}", room.id), ts("Accept"), "check", true)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.accept_invite(accept.clone(), cx)
                             }))
@@ -542,7 +543,7 @@ pub fn inbox(
                             .attr("title", "Accept"),
                     )
                     .child(
-                        round_button(format!("inbox-decline-{}", room.id), "Decline", "x", false)
+                        round_button(format!("inbox-decline-{}", room.id), ts("Decline"), "x", false)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.decline_invite(decline.clone(), cx)
                             }))

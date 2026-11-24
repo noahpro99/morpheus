@@ -10,6 +10,7 @@
 //! own, or in e2e builds a test's (MORPHEUS_E2E_SCREEN_SOURCES, see
 //! [`TestSources`]), so the dialog can be tested anywhere.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -286,9 +287,9 @@ impl Render for ScreenPicker {
             .collect();
         let cards: Vec<AnyElement> = shown.iter().map(|s| self.card(s, cx)).collect();
         let empty = match self.tab {
-            _ if !self.listed => "Looking for what you can share…",
-            ScreenSourceKind::Screen => "No screens to share",
-            ScreenSourceKind::Window => "No windows to share",
+            _ if !self.listed => ts("Looking for what you can share…"),
+            ScreenSourceKind::Screen => ts("No screens to share"),
+            ScreenSourceKind::Window => ts("No windows to share"),
         };
         let quality = self.quality;
         let sound = crate::screen_quality::sound_switch(
@@ -309,7 +310,7 @@ impl Render for ScreenPicker {
             .collect();
         let resolution_row = crate::screen_quality::row(
             cx,
-            "Resolution",
+            ts("Resolution"),
             "screen-res",
             resolutions,
             |this: &mut Self, resolution, cx| {
@@ -319,7 +320,7 @@ impl Render for ScreenPicker {
         );
         let fps_row = crate::screen_quality::row(
             cx,
-            "Frame rate",
+            ts("Frame rate"),
             "screen-fps",
             rates,
             |this: &mut Self, fps, cx| {
@@ -348,13 +349,13 @@ impl Render for ScreenPicker {
                 }
             }))
             .w(px(640.0))
-            .child(heading("Choose what to share"))
+            .child(heading(ts("Choose what to share")))
             .child(
                 div()
                     .flex()
                     .gap(px(4.0))
-                    .child(self.tab_el(ScreenSourceKind::Screen, "Screens", cx))
-                    .child(self.tab_el(ScreenSourceKind::Window, "Windows", cx)),
+                    .child(self.tab_el(ScreenSourceKind::Screen, ts("Screens"), cx))
+                    .child(self.tab_el(ScreenSourceKind::Window, ts("Windows"), cx)),
             )
             .child(
                 div()

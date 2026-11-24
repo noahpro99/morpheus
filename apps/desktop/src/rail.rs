@@ -5,6 +5,7 @@
 //! another makes a folder of the two, onto a folder goes into it
 //! (`view_model::rail_drag`, `Prefs::drop_badge`).
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{rc::Rc, sync::Arc};
 
@@ -236,9 +237,9 @@ impl Badge {
                     .attr(
                         "title",
                         if self.in_call {
-                            "In this call"
+                            ts("In this call")
                         } else {
-                            "In a call"
+                            ts("In a call")
                         },
                     ),
             );

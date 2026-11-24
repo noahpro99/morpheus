@@ -4,6 +4,7 @@
 //! item does (`Shell::run_menu_action`), the undo of a deletion and the
 //! pinned list's upkeep are here too, since they are what these serve.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::rc::Rc;
 use std::time::Duration;
@@ -299,7 +300,7 @@ impl Shell {
             }
             MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
-                self.toast("Copied", cx);
+                self.toast(t("Copied"), cx);
             }
             MenuAction::SelectText(_) => {}
             MenuAction::Report => {
@@ -385,7 +386,7 @@ impl Shell {
         };
         timeline.update(cx, |timeline, _| timeline.hide(&message.unique_id));
         self.undoable(
-            "Message deleted",
+            ts("Message deleted"),
             PendingUndo::Delete {
                 timeline: timeline.downgrade(),
                 handle,
@@ -770,7 +771,7 @@ pub fn render_dialog(
                 .child(heading(&confirm.title))
                 .child(muted(&confirm.body, "muted"))
                 .child(actions(vec![
-                    dialog_button("confirm-cancel", "Cancel", false)
+                    dialog_button("confirm-cancel", ts("Cancel"), false)
                         .text_color(rgb(theme::text()))
                         .on_click(cx.listener(|this, _, _, cx| this.dialog_close(cx)))
                         .e2e("button", "secondary confirm-cancel")
@@ -832,7 +833,7 @@ pub fn render_dialog(
                                 .child(row.time.clone()),
                         )
                         .child(
-                            dialog_button("long-message-copy", "Copy", false)
+                            dialog_button("long-message-copy", ts("Copy"), false)
                                 .text_color(rgb(theme::text_muted()))
                                 .on_click(cx.listener(move |_, _, _, cx| {
                                     cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
@@ -865,7 +866,7 @@ pub fn render_dialog(
                         this.dialog_close(cx);
                     }
                 }))
-                .child(heading("Reactions"))
+                .child(heading(ts("Reactions")))
                 .when(message.reactions.is_empty(), |d| {
                     d.child(muted("No reactions yet.", "muted"))
                 })
@@ -945,7 +946,7 @@ pub fn render_dialog(
                 .max_h(px(680.0_f32.min(
                     f32::from(window.viewport_size().height) - modal_top(window) - MODAL_MARGIN,
                 )))
-                .child(heading("Keyboard shortcuts"))
+                .child(heading(ts("Keyboard shortcuts")))
                 .child(actions(vec![
                     crate::settings::button("help-report-bug", "Report a bug", crate::view_model::verification::Kind::Primary, "report-bug")
                         .child(icon("bug", 16.0).text_color(rgb(theme::on_accent_solid())))
@@ -1006,7 +1007,7 @@ pub fn render_dialog(
                             "help-vim-mode".into(),
                             "help-vim-mode",
                             "",
-                            "Vim mode",
+                            ts("Vim mode"),
                             crate::vim::enabled(),
                             true,
                             false,
@@ -1180,7 +1181,7 @@ impl ReportDialog {
             this.update(cx, |this, cx| {
                 this.busy = false;
                 this.result = Some(match result {
-                    Ok(()) => Ok("Reported to the server admins."),
+                    Ok(()) => Ok(ts("Reported to the server admins.")),
                     Err(err) => Err(err.to_string()),
                 });
                 cx.notify();
@@ -1201,7 +1202,7 @@ impl Render for ReportDialog {
         let mut buttons = Vec::new();
         if !reported {
             buttons.push(
-                dialog_button("report-send", "Report", true)
+                dialog_button("report-send", ts("Report"), true)
                     .when(self.busy, |d| d.opacity(0.6))
                     .on_click(cx.listener(|this, _, _, cx| this.submit(cx)))
                     .e2e("button", "danger")
@@ -1211,7 +1212,7 @@ impl Render for ReportDialog {
             );
         }
         buttons.push(
-            dialog_button("report-close", "Close", false)
+            dialog_button("report-close", ts("Close"), false)
                 .text_color(rgb(theme::text()))
                 .on_click(cx.listener(|_, _, _, cx| cx.emit(Closed)))
                 .e2e("button", "secondary")
@@ -1227,7 +1228,7 @@ impl Render for ReportDialog {
                     cx.emit(Closed);
                 }
             }))
-            .child(heading("Report message"))
+            .child(heading(ts("Report message")))
             .child(muted(
                 "Tell the homeserver admins what is wrong with this message.",
                 "muted",
@@ -1388,7 +1389,7 @@ impl Render for PinnedDialog {
                     cx.emit(Closed);
                 }
             }))
-            .child(heading("Pinned messages"));
+            .child(heading(ts("Pinned messages")));
         match &self.list {
             None => {}
             Some(Err(err)) => {
@@ -1748,7 +1749,7 @@ fn with_selection(mut items: Vec<crate::view_model::menu::MenuItem>, selected: O
     if let Some(text) = selected {
         let at = items
             .iter()
-            .position(|i| i.label == "Copy text")
+            .position(|i| i.label == ts("Copy text"))
             .unwrap_or(items.len());
         items.insert(at, crate::view_model::menu::MenuItem::new("Copy selection", MenuAction::CopyText(text)));
     }

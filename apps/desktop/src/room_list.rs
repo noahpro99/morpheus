@@ -6,6 +6,7 @@
 //! closed DMs, the room and server menus, drag to reorder, the create-room
 //! dialog.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::rail_drag;
 use crate::view_model::i18n::t;
 use std::collections::HashSet;
@@ -167,9 +168,9 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         && found.categories.iter().all(|c| c.2.is_empty())
     {
         let text = if *scope == Scope::Dms {
-            "No direct messages yet."
+            ts("No direct messages yet.")
         } else {
-            "No rooms here."
+            ts("No rooms here.")
         };
         list = list.child(
             div()
@@ -492,7 +493,7 @@ fn rooms_heading(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 .text_size(px(0.7 * theme::REM))
                 .font_weight(FontWeight::BOLD)
                 .text_color(rgb(theme::text_faint()))
-                .child("ROOMS")
+                .child(t("Rooms").to_uppercase())
                 .e2e("h4", "section")
                 .text("Rooms"),
         )

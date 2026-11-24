@@ -1,6 +1,7 @@
 //! The Acknowledgements dialog (`crates/ui/src/components/about.rs`),
 //! opened from the tray menu.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{
     AnyElement, Context, FocusHandle, FontWeight, SharedString, Window, div, prelude::*, px, rgb,
@@ -31,7 +32,7 @@ pub fn render(
             }
         }))
         .w(px(560.0))
-        .child(heading("Acknowledgements"))
+        .child(heading(ts("Acknowledgements")))
         .child(
             div()
                 .flex()

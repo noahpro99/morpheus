@@ -3,6 +3,7 @@
 //! (task 5) and composer (task 6) come later. With no room open, the
 //! "Pick a room" placeholder.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{Context, ExternalPaths, FontWeight, IntoElement, div, prelude::*, px, rgb};
 
@@ -209,9 +210,9 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .attr(
                         "title",
                         if room.is_encrypted {
-                            "End-to-end encrypted"
+                            ts("End-to-end encrypted")
                         } else {
-                            "Not encrypted"
+                            ts("Not encrypted")
                         },
                     )
                     .attr("data-color", format!("{lock_colour:06x}"))

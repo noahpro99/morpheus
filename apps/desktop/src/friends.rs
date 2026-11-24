@@ -3,6 +3,7 @@
 //! (the whole row opens the DM), and New Message, which opens a DM with
 //! anyone by username. What it decides is in `view_model::friends`.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{collections::HashMap, sync::Arc};
 
@@ -198,7 +199,7 @@ impl FriendsPage {
             return;
         };
         let Some(session) = self.session.clone() else {
-            self.form.finish(Err("Not signed in.".into()));
+            self.form.finish(Err(ts("Not signed in.").into()));
             return;
         };
         let finding = session.find_user(text);
@@ -367,9 +368,9 @@ impl FriendsPage {
             .child(form)
             .child({
                 let label = if self.copied {
-                    "Copied"
+                    ts("Copied")
                 } else {
-                    "Copy link to your profile"
+                    ts("Copy link to your profile")
                 };
                 div().flex().child(
                     div()

@@ -4,6 +4,7 @@
 //! notifier, the inbox and the room list treat it as hidden through
 //! `is_locked`.
 
+use crate::view_model::i18n::ts;
 use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
@@ -262,7 +263,7 @@ impl Shell {
                     this.lock_error = None;
                     this.open_room_now(room, cx);
                 } else {
-                    this.lock_error = Some("That is not the password.".into());
+                    this.lock_error = Some(ts("That is not the password.").into());
                     input.update(cx, |input, cx| input.set_value("", cx));
                     this.lock_take_focus = true;
                 }
@@ -402,4 +403,6 @@ pub fn lock_screen(shell: &Shell, cx: &mut Context<Shell>, room: &RoomSummary) -
 }
 
 /// What a ring in a locked chat says instead of who is calling.
-pub const LOCKED_CALL: &str = "Incoming call in a locked chat";
+pub fn locked_call() -> String {
+    crate::view_model::i18n::t("Incoming call in a locked chat")
+}

@@ -3,6 +3,7 @@
 //! (also in a text box, as in the Dioxus app); which combo is which action
 //! is `view_model::hotkeys`.
 
+use crate::view_model::i18n::t;
 use gpui::{Context, KeyDownEvent, Window};
 use morpheus_core::MessageId;
 
@@ -187,7 +188,7 @@ impl Shell {
                     .filter(|t| !t.is_empty())
                 {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_owned()));
-                    self.toast("Copied", cx);
+                    self.toast(t("Copied"), cx);
                 }
             }
             (_, 'o' | '\n') => {
@@ -235,7 +236,7 @@ impl Shell {
             && let Some(text) = self.selection_copy(cx)
         {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
-            self.toast("Copied", cx);
+            self.toast(t("Copied"), cx);
             return true;
         }
         let ringing = !self.ringing(crate::call::now_ms()).is_empty();
@@ -745,7 +746,7 @@ impl Shell {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
                 "https://matrix.to/#/{room}"
             )));
-            self.toast("Link copied", cx);
+            self.toast(t("Link copied"), cx);
         }
     }
 }

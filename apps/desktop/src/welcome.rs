@@ -5,6 +5,7 @@
 //! Which servers have been welcomed is kept in `welcomed_servers.json` in the
 //! data directory (`view_model::last_place`).
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use gpui::{AnyElement, Context, FontWeight, IntoElement, div, prelude::*, px, rgb};
 use morpheus_core::{OwnedRoomId, RoomSummary, SpaceRoom};
@@ -159,7 +160,7 @@ fn row(
         .child(crate::room_list::channel_glyph(voice))
         .child(div().flex_1().min_w_0().child(label))
         .children(has_topic.then(|| {
-            let tip = if open { "Collapse the description" } else { "Show the full description" };
+            let tip = if open { ts("Collapse the description") } else { ts("Show the full description") };
             let toggled = key.clone();
             div()
                 .id(gpui::SharedString::from(format!("welcome-topic-toggle-{key}")))
@@ -207,7 +208,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         .cloned()
         .collect();
     if pending.len() >= 2 {
-        let all = card_button("welcome-join-all", "Join all", false)
+        let all = card_button("welcome-join-all", ts("Join all"), false)
             .on_click(cx.listener(move |this, _, _, cx| {
                 for room in pending.clone() {
                     this.join_from_welcome(room, cx);
@@ -245,7 +246,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
                 let join_target = target.clone();
                 let button = card_button(
                     gpui::SharedString::from(format!("welcome-join-{}", room.id)),
-                    "Join",
+                    ts("Join"),
                     true,
                 )
                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -271,7 +272,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>, space: &RoomSummary) -> An
         ));
     }
     let id = space.id.clone();
-    let start = card_button("welcome-start", "Start chatting", true)
+    let start = card_button("welcome-start", ts("Start chatting"), true)
         .on_click(cx.listener(move |this, _, _, cx| this.start_chatting(id.clone(), cx)))
         .e2e("button", "primary welcome-start")
         .text(t("Start chatting"));

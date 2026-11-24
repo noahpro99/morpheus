@@ -9,6 +9,7 @@
 //! Decoding and timing are `morpheus_video`'s (its own thread per video);
 //! this polls it for the newest picture and draws it as an image.
 
+use crate::view_model::i18n::ts;
 use crate::view_model::i18n::t;
 use std::{
     cell::Cell,
@@ -216,7 +217,7 @@ impl VideoPlayer {
                         Load::Probed(bytes, info)
                     }
                     Err(Unsupported::Format(_)) => {
-                        Load::Unsupported("Can't play this format".into())
+                        Load::Unsupported(ts("Can't play this format").into())
                     }
                     Err(err) => Load::Failed(err.to_string()),
                 };
@@ -434,7 +435,7 @@ impl VideoPlayer {
         let Some(session) = self.session.clone() else {
             return;
         };
-        self.download = Some("Downloading".into());
+        self.download = Some(ts("Downloading").into());
         let saving = session.download(self.media.clone(), self.body.clone());
         cx.spawn(async move |this, cx| {
             let state = match saving.await {
@@ -748,9 +749,9 @@ impl VideoPlayer {
         );
         let playing = self.status.playing;
         let (mute_glyph, mute_title) = if self.muted || self.volume <= 0.0 {
-            ("volume-x", "Unmute")
+            ("volume-x", ts("Unmute"))
         } else {
-            ("volume-2", "Mute")
+            ("volume-2", ts("Mute"))
         };
         let volume = self
             .slider(
@@ -775,7 +776,7 @@ impl VideoPlayer {
             .child(self.button(
                 "video-toggle",
                 "video-toggle",
-                if playing { "Pause" } else { "Play" },
+                if playing { ts("Pause") } else { ts("Play") },
                 if playing { "pause" } else { "play" },
                 cx,
                 |this, _, cx| this.toggle(cx),
