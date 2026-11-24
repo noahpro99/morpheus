@@ -232,12 +232,14 @@ impl Composer {
     }
 
     /// The text box in the row: with a known row width, exactly what the buttons leave it.
-    fn input_box(&self) -> AnyElement {
+    /// `label` is the width of the vim mode label beside it (with its gap), which the
+    /// buttons' share does not include (#366).
+    fn input_box(&self, label: f32) -> AnyElement {
         match self.row_width {
             Some(row) => div()
                 .flex_shrink()
                 .min_w_0()
-                .w(px((row - 94.0).max(40.0)))
+                .w(px((row - 94.0 - label).max(40.0)))
                 .child(self.input.clone())
                 .into_any_element(),
             None => self.input.clone().into_any_element(),
@@ -1138,6 +1140,32 @@ impl Render for Composer {
             }),
         );
 
+        // The vim label's own width, measured as it is drawn (0.7 rem, semibold): the box
+        // gets the row less this, and the label itself is held to what the box's least
+        // width leaves, so the emoji button is never pushed out (#366).
+        let vim_label = self.input.read(cx).vim_label();
+        let label_w = match (&vim_label, self.row_width) {
+            (Some(label), row) => {
+                let mut font = window.text_style().font();
+                font.weight = gpui::FontWeight::SEMIBOLD;
+                let run = gpui::TextRun {
+                    len: label.len(),
+                    font,
+                    color: gpui::hsla(0.0, 0.0, 0.0, 1.0),
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let size = window.rem_size() * 0.7;
+                let width = window
+                    .text_system()
+                    .shape_line(gpui::SharedString::from(label.clone()), size, &[run], None)
+                    .width;
+                let width = f32::from(width).ceil() + 1.0;
+                Some(row.map_or(width, |row| width.min((row - 94.0 - 6.0 - 40.0).max(0.0))))
+            }
+            _ => None,
+        };
         let mut row = div()
             .flex()
             .gap(px(6.0))
@@ -1148,10 +1176,11 @@ impl Render for Composer {
             .text_size(rem(1.0))
             .line_height(relative(theme::LINE_HEIGHT))
             .child(slot(attach))
-            .child(self.input_box())
-            .children(self.input.read(cx).vim_label().map(|label| {
+            .child(self.input_box(label_w.map_or(0.0, |w| w + 6.0)))
+            .children(vim_label.map(|label| {
                 slot(div()
                     .flex_none()
+                    .when_some(label_w.filter(|_| self.row_width.is_some()), |d, w| d.w(px(w)).overflow_hidden())
                     .text_size(rem(0.7))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text_faint()))
