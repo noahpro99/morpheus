@@ -223,6 +223,8 @@ class TestBridge(private val app: Application) {
                 .put("image_fetches", AppState.imageFetches)
                 .put("ime_shown", AppState.imeShown)
                 .put("ime_hidden", AppState.imeHidden)
+                .put("room_page", AppState.roomPage)
+                .put("room_pages", org.json.JSONArray(AppState.roomPages.toList()))
                 .put("ime_show_lag_ms", AppState.imeShownAt - AppState.imeLiftAt)
                 .put("ime_hide_lag_ms", AppState.imeHiddenAt - AppState.imeLiftAt)
                 .put("ime_visible", root()?.let { androidx.core.view.ViewCompat.getRootWindowInsets(it)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) } ?: false)

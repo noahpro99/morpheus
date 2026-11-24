@@ -57,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -610,12 +611,37 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
     }
     // A room picked from the channels pane is the chat to show now.
     androidx.compose.runtime.LaunchedEffect(room.id) { if (pager.currentPage != 1) pager.scrollToPage(1) }
-    // Quick to settle (a stiff spring, about 200 ms) and quick to switch: a third of the width, or a flick, is enough.
-    val fling = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(
-        state = pager,
-        snapAnimationSpec = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 2500f),
-        snapPositionalThreshold = 0.2f,
-    )
+    // Quick to settle (a stiff spring, about 200 ms) and quick to switch. One page per gesture, counted from the page the finger went
+    // down on, as Discord does (a drag counted from the page nearest at release went two pages, over the chat: #388).
+    var startPage by remember { mutableIntStateOf(1) }
+    androidx.compose.runtime.LaunchedEffect(pager) {
+        pager.interactionSource.interactions.collect {
+            if (it is androidx.compose.foundation.interaction.DragInteraction.Start) startPage = pager.currentPage
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(pager) {
+        androidx.compose.runtime.snapshotFlow { pager.currentPage }.collect { dev.morpheus.app.AppState.roomPage = it; dev.morpheus.app.AppState.roomPages.add(it) }
+    }
+    // The library's own snap ignored a drag of a third of the width and a quick flick of a fifth (it sprang back to the chat), so
+    // where the pager goes on release is decided here: one page from where the finger went down, if it moved a fifth of a page, or
+    // went a little way at a flick's speed (#318, #388).
+    val fling = object : androidx.compose.foundation.gestures.TargetedFlingBehavior {
+        override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float, onRemainingDistanceUpdated: (Float) -> Unit): Float {
+            val pageSize = pager.layoutInfo.pageSize.coerceAtLeast(1)
+            val moved = (pager.currentPage + pager.currentPageOffsetFraction) - startPage
+            val pagesPerSecond = initialVelocity / pageSize
+            val flicked = kotlin.math.abs(pagesPerSecond) >= 0.25f && pagesPerSecond * moved > 0f && kotlin.math.abs(moved) >= 0.04f
+            val target = if (kotlin.math.abs(moved) >= 0.2f || flicked) startPage + (if (moved > 0f) 1 else -1) else startPage
+            val distance = (target.coerceIn(0, pager.pageCount - 1) - (pager.currentPage + pager.currentPageOffsetFraction)) * pageSize
+            var last = 0f
+            androidx.compose.animation.core.animate(0f, distance, 0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 2500f)) { value, _ ->
+                scrollBy(value - last)
+                last = value
+                onRemainingDistanceUpdated(distance - value)
+            }
+            return 0f
+        }
+    }
     HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager").pointerInput(Unit) {
         // The finger leaving the pager: what the keyboard's lags are measured from (the debug bridge reports them, #379).
         awaitPointerEventScope {

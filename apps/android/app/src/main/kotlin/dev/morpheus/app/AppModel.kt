@@ -715,6 +715,12 @@ object AppState {
     @Volatile
     var imeHidden: Int = 0
 
+    /** The room pager's page now (0 channels, 1 chat, 2 members) and every page it passed through, in order (the debug bridge reports them; #388). */
+    @Volatile
+    var roomPage: Int = 1
+
+    val roomPages = java.util.concurrent.CopyOnWriteArrayList<Int>()
+
     /** When (uptime ms) the finger last left the room pager, and when the keyboard was last asked for and put away: the debug bridge reports the lags (#379). */
     @Volatile
     var imeLiftAt: Long = 0
