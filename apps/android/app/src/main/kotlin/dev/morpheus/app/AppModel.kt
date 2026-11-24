@@ -706,6 +706,16 @@ object AppState {
     @Volatile
     var imeHidden: Int = 0
 
+    /** When (uptime ms) the finger last left the room pager, and when the keyboard was last asked for and put away: the debug bridge reports the lags (#379). */
+    @Volatile
+    var imeLiftAt: Long = 0
+
+    @Volatile
+    var imeShownAt: Long = 0
+
+    @Volatile
+    var imeHiddenAt: Long = 0
+
     /** Where the room pane (1) and the lists pane (0) were at each layout while they slid (the debug bridge reports it; #333). */
     val slideLog = java.util.concurrent.ConcurrentLinkedQueue<Pair<Int, Float>>()
 

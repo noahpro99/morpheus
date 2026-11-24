@@ -124,19 +124,23 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val openedBySwipe = remember { app.takeSwipeOpened() }
+    // Driven by where the pager is heading, not where it has settled: the keyboard is asked for (or put away) as soon as the
+    // swipe is committed, not after the pane has stopped moving, and a swipe that springs back brings it back (#379).
     LaunchedEffect(pager, threadRoot) {
         if (threadRoot != null) return@LaunchedEffect
         var first = true
-        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page ->
+        androidx.compose.runtime.snapshotFlow { pager.targetPage }.collect { page ->
             if (page == 1) {
                 if (!first || openedBySwipe) {
                     try { composerFocus.requestFocus() } catch (_: Exception) {}
                     keyboard?.show()
+                    dev.morpheus.app.AppState.imeShownAt = android.os.SystemClock.uptimeMillis()
                     dev.morpheus.app.AppState.imeShown++
                 }
             } else {
                 focusManager.clearFocus()
                 keyboard?.hide()
+                dev.morpheus.app.AppState.imeHiddenAt = android.os.SystemClock.uptimeMillis()
                 dev.morpheus.app.AppState.imeHidden++
             }
             first = false
@@ -612,7 +616,15 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
         snapAnimationSpec = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 2500f),
         snapPositionalThreshold = 0.2f,
     )
-    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager"), flingBehavior = fling, key = { it }) { page ->
+    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager").pointerInput(Unit) {
+        // The finger leaving the pager: what the keyboard's lags are measured from (the debug bridge reports them, #379).
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (event.changes.none { it.pressed }) dev.morpheus.app.AppState.imeLiftAt = android.os.SystemClock.uptimeMillis()
+            }
+        }
+    }, flingBehavior = fling, key = { it }) { page ->
         when (page) {
             // The Servers tab as it is outside a room: its bar is here, the chat has none.
             0 -> Column(Modifier.fillMaxSize().testTag("pane-channels")) {
