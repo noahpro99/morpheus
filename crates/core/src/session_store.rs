@@ -47,6 +47,10 @@ const VAULT_ACCOUNT: &str = "vault";
 /// Written in the data dir's root when the keychain refused (macOS).
 #[cfg(not(target_arch = "wasm32"))]
 const DENIED_FILE: &str = "keychain-denied";
+/// Written in an account folder once its old per-account keychain item was
+/// looked for and was not there, so later launches do not ask again.
+#[cfg(not(target_arch = "wasm32"))]
+const LEGACY_CHECKED_FILE: &str = "keychain-old-entry-checked";
 
 /// Directory holding the local sqlite caches, relative to the data dir.
 pub(crate) const STORE_DIR: &str = "store";
@@ -338,20 +342,34 @@ impl Vault {
         if !state.legacy_checked.insert(account.to_owned()) {
             return Ok(None);
         }
+        // Looked for in an earlier launch and not there: no keychain call.
+        let checked_file = Path::new(account).join(LEGACY_CHECKED_FILE);
+        if checked_file.exists() {
+            return Ok(None);
+        }
         Self::count("read old entry", &self.counts.reads);
         let old = match self.keychain.get(account) {
             Ok(old) => old,
             Err(why) => return Err(self.fail(state, why)),
         };
+        let absent = old.is_none();
         let Some(stored) = old.and_then(|json| serde_json::from_str::<StoredSession>(&json).ok())
         else {
+            // Only a clean "nothing there" is remembered (an error returned
+            // above, and an unreadable item is looked at again).
+            if absent {
+                let _ = std::fs::write(&checked_file, "");
+            }
             return Ok(None);
         };
         Self::accounts(state).insert(account.to_owned(), stored.clone());
         self.write(state)?;
         Self::count("delete old entry", &self.counts.deletes);
-        if let Err(err) = self.keychain.delete(account) {
-            warn!(error = %err, "could not delete an old keyring entry");
+        match self.keychain.delete(account) {
+            Ok(()) => {
+                let _ = std::fs::write(&checked_file, "");
+            }
+            Err(err) => warn!(error = %err, "could not delete an old keyring entry"),
         }
         info!("moved an account's session into the single keyring item");
         Ok(Some(stored))
@@ -987,6 +1005,76 @@ mod tests {
             assert_eq!(launch.load(account, true).expect("load"), Some(session_for(n)));
         }
         assert_eq!(launch.counts.get(), (1, 0, 0));
+    }
+
+    /// Three real folders (the account string is the folder's path).
+    fn folders() -> (tempfile::TempDir, Vec<String>) {
+        let dir = tempfile::tempdir().expect("dir");
+        let paths = (0..3)
+            .map(|n| {
+                let path = dir.path().join(format!("slot{n}"));
+                std::fs::create_dir_all(&path).expect("slot");
+                path.display().to_string()
+            })
+            .collect();
+        (dir, paths)
+    }
+
+    #[test]
+    fn a_folder_with_no_old_item_is_looked_for_once_ever() {
+        let (_dir, folders) = folders();
+        let fake = Arc::new(FakeKeychain::default());
+        // An unrelated session keeps the vault item alive.
+        let setup = Vault::new(Box::new(fake.clone()), None);
+        setup.save("/elsewhere", &session_for(9), true).expect("save");
+
+        let first = Vault::new(Box::new(fake.clone()), None);
+        for folder in &folders {
+            assert_eq!(first.load(folder, true).expect("load"), None);
+        }
+        assert_eq!(first.counts.get(), (4, 0, 0), "first launch: the vault and each old item");
+
+        let second = Vault::new(Box::new(fake.clone()), None);
+        for _ in 0..3 {
+            for folder in &folders {
+                assert_eq!(second.load(folder, true).expect("load"), None);
+            }
+        }
+        assert_eq!(second.counts.get(), (1, 0, 0), "second launch: the vault only");
+    }
+
+    #[test]
+    fn a_refused_look_for_the_old_item_is_not_remembered_as_nothing_there() {
+        let (_dir, folders) = folders();
+        let fake = Arc::new(FakeKeychain::default());
+        fake.put(&folders[0], serde_json::to_string(&session_for(0)).expect("json"));
+        let setup = Vault::new(Box::new(fake.clone()), None);
+        setup.save("/elsewhere", &session_for(9), true).expect("save");
+
+        // The vault reads fine, then the keychain refuses the old item.
+        let vault = Vault::new(Box::new(fake.clone()), None);
+        assert_eq!(vault.load("/elsewhere", true).expect("load"), Some(session_for(9)));
+        fake.deny.store(true, Relaxed);
+        assert!(vault.load(&folders[0], true).is_err());
+        fake.deny.store(false, Relaxed);
+
+        let next = Vault::new(Box::new(fake.clone()), None);
+        assert_eq!(next.load(&folders[0], true).expect("load"), Some(session_for(0)));
+        assert!(!fake.has(&folders[0]), "moved in and deleted");
+    }
+
+    #[test]
+    fn signing_in_to_a_checked_folder_still_works() {
+        let (_dir, folders) = folders();
+        let fake = Arc::new(FakeKeychain::default());
+        let first = Vault::new(Box::new(fake.clone()), None);
+        assert_eq!(first.load(&folders[0], true).expect("load"), None);
+        first.save(&folders[0], &session_for(1), true).expect("save");
+        let next = Vault::new(Box::new(fake.clone()), None);
+        assert_eq!(next.load(&folders[0], true).expect("load"), Some(session_for(1)));
+        next.clear(&folders[0], true).expect("clear");
+        let last = Vault::new(Box::new(fake.clone()), None);
+        assert_eq!(last.load(&folders[0], true).expect("load"), None);
     }
 
     #[test]
