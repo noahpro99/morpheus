@@ -24,7 +24,7 @@ use crate::{
     view_model::{
         calls::{
             CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_width, default_stage_height, focus_layout, focused_card,
-            is_unwatched, listed, marks, media_of, tiles, toggled_focus,
+            Mark, is_unwatched, listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
     },
@@ -938,13 +938,15 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
         .into_any_element()
 }
 
-/// The name label at a card's bottom left.
-fn name_label(text: String, screen: bool) -> AnyElement {
-    div()
-        .absolute()
-        .left(px(8.0))
-        .bottom(px(8.0))
-        .max_w(px(1000.0))
+/// The name label at a card's bottom left: the person's one mic-state icon (when
+/// muted or deafened) before the name, then the name, which is what truncates (#387).
+fn name_label(text: String, screen: bool, mic: Option<Mark>, corner: bool) -> AnyElement {
+    // The bubble is dark whatever is behind it: the icon takes the colour that
+    // reads on its fill.
+    let on_bubble = theme::on(0x000000);
+    let bubble = div()
+        .min_w_0()
+        .flex_shrink()
         .px(px(8.0))
         .py(px(2.0))
         .rounded_full()
@@ -954,20 +956,45 @@ fn name_label(text: String, screen: bool) -> AnyElement {
         .flex()
         .items_center()
         .gap(px(4.0))
-        .truncate()
+        .overflow_hidden()
+        // The mic state first, the size of the text beside it; it never shrinks.
+        .when_some(mic, |d, mark| {
+            d.child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .child(icon(mark.glyph.unwrap_or("mic-off"), 13.0).text_color(rgb(on_bubble)))
+                    .e2e("span", mark.class)
+                    .attr("title", mark.title),
+            )
+        })
         // A share: its screen icon, then the name.
         .when(screen, |d| d.child(icon("screen-share", 13.0).text_color(rgb(theme::OVERLAY_TEXT))))
-        .child(text.clone())
+        .child(div().min_w_0().truncate().child(text.clone()))
         .e2e("span", "video-name")
-        .text(text)
+        .text(text);
+    div()
+        .absolute()
+        .left(px(8.0))
+        // Room kept at the right for the camera mark, which stays there.
+        .right(px(if corner { 8.0 + 26.0 + 4.0 } else { 8.0 }))
+        .bottom(px(8.0))
+        .flex()
+        .child(bubble)
         .into_any_element()
+}
+
+/// The one mic-state mark a person's card shows (muted or deafened), if any.
+fn mic_mark(media: morpheus_core::CallMedia) -> Option<Mark> {
+    marks(media, false).into_iter().find(|m| m.class.starts_with("voice-state"))
 }
 
 fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyElement> {
     // No LIVE badge on a card (the channel list keeps its own): only icons.
     let items: Vec<_> = marks(media, with_video)
         .into_iter()
-        .filter(|m| m.class != "media-live")
+        .filter(|m| m.class != "media-live" && !m.class.starts_with("voice-state"))
         .collect();
     if items.is_empty() {
         return None;
@@ -981,11 +1008,7 @@ fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyEl
             .justify_center()
             .rounded_full()
             .bg(black(0.6))
-            .child(icon(glyph, 14.0).text_color(rgb(if mark.class.starts_with("voice-state") {
-                theme::danger()
-            } else {
-                theme::text()
-            })))
+            .child(icon(glyph, 14.0).text_color(rgb(theme::on(0x000000))))
             .e2e("span", mark.class)
             .attr("title", mark.title)
     });
@@ -1064,7 +1087,7 @@ fn person_card(
     })
     // The ring is the card's; the picture inside has none of its own.
     .child(avatar(picture_of(shell, user, 72), &name, size, None))
-    .child(name_label(name, false));
+    .child(name_label(name, false, mic_mark(flags), flags.camera));
     if let Some(marks) = card_marks(flags, true) {
         tile = tile.child(marks);
     }
@@ -1261,7 +1284,7 @@ fn video_card(
         );
     }
     tile = tile
-        .child(name_label(label, feed.screen));
+        .child(name_label(label, feed.screen, if feed.screen { None } else { mic_mark(flags) }, false));
     // Someone else's screen with sound: how it sounds here, and its volume.
     let heard = (feed.screen && !own)
         .then(|| shell.calls.screen_audio.get(&feed.user))
@@ -1623,7 +1646,7 @@ fn cards(
                                     .items_center()
                                     .justify_center()
                                     .child(icon("screen-share", 28.0).text_color(rgb(theme::on(bg))))
-                                    .child(name_label(name, true))
+                                    .child(name_label(name, true, None, false))
                                     .e2e("div", "call-tile share-placeholder")
                                     .attr("data-bg", format!("{bg:06x}"))
                                     .attr("data-user", feed.user.to_string())
