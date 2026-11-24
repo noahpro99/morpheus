@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 
 use morpheus_core::NotifyMode;
 
+use super::activity::{EXTERNAL_LABEL, STEAM_LABEL};
 use super::keys::SettingsFocus;
+use super::presence;
 
 /// The settings pages, in the side list's order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,6 +219,24 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "streamer ask prompt open channel server again remembered stream sharing",
         SettingsPage::StreamerMode,
         "streamer",
+    ),
+    entry(
+        STEAM_LABEL,
+        "steam game games playing status activity account",
+        SettingsPage::Account,
+        "activity-status",
+    ),
+    entry(
+        EXTERNAL_LABEL,
+        "music extension browser socket ipc programs apps status activity listening account",
+        SettingsPage::Account,
+        "activity-status",
+    ),
+    entry(
+        presence::SETTING_LABEL,
+        "discord rich presence activity chatting button link account",
+        SettingsPage::Account,
+        "discord-presence",
     ),
     entry(
         "Bridges",
@@ -849,6 +869,41 @@ mod tests {
         assert_eq!(both[0].anchor, "device-notifications");
         assert!(find_settings("autostart", false).is_empty());
         assert_eq!(find_settings("AUTOSTART", true)[0].page, SettingsPage::Startup);
+    }
+
+    #[test]
+    fn the_activity_settings_are_found_by_their_words() {
+        let found = |q: &str| {
+            find_settings(q, true)
+                .into_iter()
+                .map(|s| (s.label, s.page, s.anchor))
+                .collect::<Vec<_>>()
+        };
+        for q in ["steam", "game", "playing", "status", "activity"] {
+            assert!(found(q).contains(&(STEAM_LABEL, SettingsPage::Account, "activity-status")), "{q}");
+        }
+        for q in ["music", "extension", "browser", "socket", "ipc"] {
+            assert!(found(q).contains(&(EXTERNAL_LABEL, SettingsPage::Account, "activity-status")), "{q}");
+        }
+        let presence = (crate::presence::SETTING_LABEL, SettingsPage::Account, "discord-presence");
+        for q in ["discord", "rich presence"] {
+            assert!(found(q).contains(&presence), "{q}");
+        }
+        // Discord still finds screen share and bridges too.
+        assert!(found("discord").iter().any(|e| e.2 == "screen-share-sound"));
+        assert!(found("discord").iter().any(|e| e.2 == "bridges"));
+    }
+
+    /// Every section the Activity settings draw is searchable (the anchors of
+    /// apps/desktop/src/settings/activity.rs).
+    #[test]
+    fn every_activity_section_is_indexed() {
+        for anchor in ["activity-status", "discord-presence"] {
+            assert!(
+                SETTINGS_INDEX.iter().any(|e| e.anchor == anchor && e.page == SettingsPage::Account),
+                "{anchor} has no search entry"
+            );
+        }
     }
 
     #[test]
