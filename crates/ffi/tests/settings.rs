@@ -78,3 +78,31 @@ async fn notification_defaults_are_read_and_changed() {
     app.set_notify_default(false, before.rooms.clone()).await.expect("put back");
     assert_eq!(app.notify_defaults().await.expect("defaults").rooms, before.rooms);
 }
+
+#[tokio::test]
+async fn times_are_12_hour_until_the_setting_is_on_and_roll_over_with_the_clock() {
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.start_clock();
+    assert!(!app.clock_24_hour(), "12-hour is the default");
+
+    // 3:07 PM local on some day, seen the same day, the next day and a week on.
+    let day = 1_773_100_800_000_u64;
+    let sent = day + 15 * 3_600_000 + 7 * 60_000;
+    let next = day + 86_400_000 + 20 * 3_600_000;
+    let hour = |text: &str| text.rsplit(" at ").next().unwrap_or_default().to_owned();
+    let twelve = hour(&app.message_time(sent, next));
+    assert!(twelve.ends_with("AM") || twelve.ends_with("PM"), "{twelve}");
+    assert_eq!(app.day_label(sent, sent + 60_000), "Today");
+    assert_eq!(app.day_label(sent, next), "Yesterday");
+    assert_ne!(app.day_label(sent, next + 3 * 86_400_000), "Yesterday");
+
+    app.set_clock_24_hour(true).expect("kept");
+    let twenty_four = hour(&app.message_time(sent, next));
+    assert!(!twenty_four.contains('M'), "{twenty_four}");
+    assert!(app.message_time(sent, next).starts_with("Yesterday at "));
+    let again = Morpheus::new(dir.path().display().to_string()).expect("app");
+    again.start_clock();
+    assert!(again.clock_24_hour(), "the choice is kept");
+    app.set_clock_24_hour(false).expect("kept");
+}

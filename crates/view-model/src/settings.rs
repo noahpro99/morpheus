@@ -179,6 +179,12 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "zoom",
     ),
     entry(
+        "24-hour time",
+        "appearance time format clock 24 hour military 12 am pm timestamps",
+        SettingsPage::Appearance,
+        "clock",
+    ),
+    entry(
         "Language",
         "appearance language translation locale english spanish espanol idioma",
         SettingsPage::Appearance,

@@ -32,7 +32,70 @@ pub fn human_duration(duration: Duration) -> String {
     format!("{}:{:02}", total_secs / 60, total_secs % 60)
 }
 
-/// `HH:MM` in the device's time zone for a Unix timestamp in milliseconds.
+/// 12-hour unless the setting is turned on.
+const DEFAULT_24_HOUR: bool = false;
+static HOUR_24: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(DEFAULT_24_HOUR);
+
+#[cfg(test)]
+thread_local! {
+    /// Unit tests of the wording keep the 24-hour clock their expectations were written with.
+    static TEST_HOUR_24: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+const HOUR_24_FILE: &str = "clock_24_hour";
+
+/// Whether times show on a 24-hour clock ("15:07"); the default is 12-hour ("3:07 PM").
+pub fn use_24_hour() -> bool {
+    #[cfg(test)]
+    return TEST_HOUR_24.with(std::cell::Cell::get);
+    #[cfg(not(test))]
+    HOUR_24.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Shows times on a 24-hour clock (or the 12-hour one) from now on.
+pub fn set_24_hour(on: bool) {
+    HOUR_24.store(on, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(test)]
+    TEST_HOUR_24.with(|c| c.set(on));
+}
+
+/// What this device kept (12-hour when nothing is kept).
+pub fn load_24_hour(dir: &std::path::Path) -> bool {
+    std::fs::read_to_string(dir.join(HOUR_24_FILE)).is_ok_and(|text| text.trim() == "1")
+}
+
+/// Keeps the choice (12-hour is kept as no file).
+pub fn save_24_hour(dir: &std::path::Path, on: bool) -> std::io::Result<()> {
+    let path = dir.join(HOUR_24_FILE);
+    if !on {
+        return match std::fs::remove_file(path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
+            _ => Ok(()),
+        };
+    }
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(path, "1")
+}
+
+/// Reads the kept choice; call once at start, before anything is drawn.
+pub fn init_clock(dir: &std::path::Path) {
+    set_24_hour(load_24_hour(dir));
+}
+
+/// A time of day as `15:07`, or as `3:07 PM` (12:00 AM is midnight, 12:00 PM noon).
+pub(crate) fn clock_text(at: &jiff::Zoned, hour_24: bool) -> String {
+    let (hour, minute) = (at.hour(), at.minute());
+    if hour_24 {
+        return format!("{hour:02}:{minute:02}");
+    }
+    let shown = match hour % 12 {
+        0 => 12,
+        h => h,
+    };
+    format!("{shown}:{minute:02} {}", if hour < 12 { "AM" } else { "PM" })
+}
+
+/// The time of day (`3:07 PM`, or `15:07` on the 24-hour clock) in the device's time zone.
 pub fn clock_time(timestamp_ms: u64) -> String {
     clock_time_in(timestamp_ms, &TimeZone::system())
 }
@@ -48,7 +111,11 @@ pub(crate) fn zoned(timestamp_ms: u64, zone: &TimeZone) -> Option<jiff::Zoned> {
 }
 
 pub(crate) fn clock_time_in(timestamp_ms: u64, zone: &TimeZone) -> String {
-    zoned(timestamp_ms, zone).map_or_else(String::new, |at| at.strftime("%H:%M").to_string())
+    clock_time_with(timestamp_ms, zone, use_24_hour())
+}
+
+pub(crate) fn clock_time_with(timestamp_ms: u64, zone: &TimeZone, hour_24: bool) -> String {
+    zoned(timestamp_ms, zone).map_or_else(String::new, |at| clock_text(&at, hour_24))
 }
 
 pub(crate) fn calendar_date_in(timestamp_ms: u64, zone: &TimeZone) -> String {
@@ -115,7 +182,7 @@ pub(crate) fn message_time_lang(code: &str, timestamp_ms: u64, now_ms: u64, zone
     let (Some(at), Some(now)) = (zoned(timestamp_ms, zone), zoned(now_ms, zone)) else {
         return String::new();
     };
-    let clock = at.strftime("%H:%M").to_string();
+    let clock = clock_text(&at, use_24_hour());
     tf("%{day} at %{clock}", &[("day", &day_phrase(code, &at, &now)), ("clock", &clock)])
 }
 
@@ -129,7 +196,7 @@ pub(crate) fn full_time_lang(code: &str, timestamp_ms: u64, zone: &TimeZone) -> 
                 ("month", &month_name(code, &at, true)),
                 ("day", &at.day().to_string()),
                 ("year", &at.year().to_string()),
-                ("clock", &at.strftime("%H:%M").to_string()),
+                ("clock", &clock_text(&at, use_24_hour())),
             ],
         )
     })
@@ -145,6 +212,56 @@ pub(crate) fn day_label_lang(code: &str, timestamp_ms: u64, now_ms: u64, zone: &
 #[cfg(test)]
 mod tests {
     use super::*;
+    const MIDNIGHT_2026_03_10: u64 = 1_773_100_800_000;
+
+    fn at_hm(h: u64, m: u64) -> u64 {
+        MIDNIGHT_2026_03_10 + h * 3_600_000 + m * 60_000
+    }
+
+    #[test]
+    fn twelve_hour_is_the_default_and_reads_like_3_07_pm() {
+        assert!(!DEFAULT_24_HOUR && !load_24_hour(std::path::Path::new("/nonexistent-morpheus")));
+        let utc = &TimeZone::UTC;
+        assert_eq!(clock_time_with(at_hm(0, 0), utc, false), "12:00 AM");
+        assert_eq!(clock_time_with(at_hm(0, 5), utc, false), "12:05 AM");
+        assert_eq!(clock_time_with(at_hm(3, 7), utc, false), "3:07 AM");
+        assert_eq!(clock_time_with(at_hm(11, 59), utc, false), "11:59 AM");
+        assert_eq!(clock_time_with(at_hm(12, 0), utc, false), "12:00 PM");
+        assert_eq!(clock_time_with(at_hm(15, 7), utc, false), "3:07 PM");
+        assert_eq!(clock_time_with(at_hm(23, 59), utc, false), "11:59 PM");
+    }
+
+    #[test]
+    fn twenty_four_hour_pads_and_has_no_suffix() {
+        let utc = &TimeZone::UTC;
+        assert_eq!(clock_time_with(at_hm(0, 0), utc, true), "00:00");
+        assert_eq!(clock_time_with(at_hm(3, 7), utc, true), "03:07");
+        assert_eq!(clock_time_with(at_hm(12, 0), utc, true), "12:00");
+        assert_eq!(clock_time_with(at_hm(15, 7), utc, true), "15:07");
+        assert_eq!(clock_time_with(at_hm(23, 59), utc, true), "23:59");
+    }
+
+    #[test]
+    fn the_setting_changes_every_wording_and_is_kept() {
+        let utc = &TimeZone::UTC;
+        let t = at_hm(15, 7);
+        let now = t + 30 * 3_600_000;
+        set_24_hour(false);
+        assert_eq!(clock_time_in(t, utc), "3:07 PM");
+        assert_eq!(message_time_lang("en", t, now, utc), "Yesterday at 3:07 PM");
+        assert!(full_time_lang("en", t, utc).ends_with("at 3:07 PM"));
+        set_24_hour(true);
+        assert_eq!(message_time_lang("en", t, now, utc), "Yesterday at 15:07");
+        assert!(full_time_lang("en", t, utc).ends_with("at 15:07"));
+        let dir = std::env::temp_dir().join(format!("morpheus-clock-{}", std::process::id()));
+        assert!(!load_24_hour(&dir));
+        save_24_hour(&dir, true).unwrap();
+        assert!(load_24_hour(&dir));
+        save_24_hour(&dir, false).unwrap();
+        assert!(!load_24_hour(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
 
     #[test]
     fn dates_round_trip_known_values() {

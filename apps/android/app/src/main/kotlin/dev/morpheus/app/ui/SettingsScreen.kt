@@ -115,6 +115,12 @@ fun SettingsScreen(app: AppModel) {
                 Button({ attempt { app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }
             }
 
+            Heading(t("Time format"))
+            var clock24 by remember { mutableStateOf(app.morpheus.clock24Hour()) }
+            Choice(t("24-hour time"), clock24, "clock-24-hour") {
+                attempt { app.morpheus.setClock24Hour(!clock24); clock24 = app.morpheus.clock24Hour(); dev.morpheus.app.ui.Words.changed() }
+            }
+
             Heading(t("Language"))
             for (choice in app.morpheus.languages()) {
                 Choice(choice.name, app.morpheus.languageChoice() == choice.code, "language-${choice.code}") {

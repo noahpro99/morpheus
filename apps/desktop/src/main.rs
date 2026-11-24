@@ -924,6 +924,7 @@ fn main() {
     // The language (this device's choice, else the system's) before anything is drawn.
     view_model::i18n::init(&data_dir());
     ui_zoom::init(&data_dir());
+    view_model::format::init_clock(&data_dir());
     // CI's check that an update installs and the new version starts: no window.
     if update_self_test::requested() {
         update_self_test::run(data_dir());

@@ -544,6 +544,7 @@ impl SettingsView {
             .into_any_element(),
             self.custom_colour_section(cx).into_any_element(),
             self.zoom_section(cx).into_any_element(),
+            self.clock_section(cx).into_any_element(),
             self.language_section(cx).into_any_element(),
             self.glass_section(cx).into_any_element(),
             self.share_section(cx).into_any_element(),
@@ -1954,6 +1955,43 @@ impl SettingsView {
                     .into_any_element(),
             ],
             self.hl("language"),
+        )
+    }
+
+    /// Appearance's 24-hour time: times read "3:07 PM" unless this is on ("15:07"); kept.
+    fn clock_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::view_model::format;
+        let on = format::use_24_hour();
+        let toggle = choice(
+            "clock-24-hour".into(),
+            "clock",
+            "24-hour",
+            "24-hour time",
+            on,
+            true,
+            false,
+            cx.listener(move |this, _, window, cx| {
+                let now = !format::use_24_hour();
+                format::set_24_hour(now);
+                if let Err(err) = format::save_24_hour(&this.data_dir, now) {
+                    eprintln!("morpheus-desktop: saving the clock: {err}");
+                }
+                window.refresh();
+                cx.notify();
+            }),
+        );
+        section(
+            "Time format",
+            "clock",
+            vec![
+                muted(
+                    "Times show as 3:07 PM. Turn this on for 24-hour (military) time, 15:07, everywhere a time is shown.",
+                    "muted",
+                )
+                .into_any_element(),
+                toggle,
+            ],
+            self.hl("clock"),
         )
     }
 

@@ -164,6 +164,7 @@ class TestBridge(private val app: Application) {
             out
         }
         "slide_reset" -> { AppState.slideLog.clear(); true }
+        "clock_offset" -> { AppState.clockOffsetMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
         "click" -> onMain { click(find(request)) }
         "type" -> onMain {
@@ -213,6 +214,13 @@ class TestBridge(private val app: Application) {
                 .put("gain", morpheus.personGain(request.getString("user")).toDouble())
                 .put("input", volumes.input.toDouble())
                 .put("output", volumes.output.toDouble())
+        }
+        // The input type the focused field asks the keyboard for (EditorInfo.inputType): what an IME would see.
+        "input_type" -> onMain {
+            val view = root()?.findFocus() ?: error("nothing is focused")
+            val info = android.view.inputmethod.EditorInfo()
+            view.onCreateInputConnection(info)
+            JSONObject().put("input_type", info.inputType).put("caps_sentences", info.inputType and android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0)
         }
         "state" -> onMain {
             JSONObject()
@@ -279,6 +287,7 @@ class TestBridge(private val app: Application) {
             .put("tag", config.getOrNull(SemanticsProperties.TestTag))
             .put("text", textOf(node))
             .put("description", config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString(" "))
+            .put("state", config.getOrNull(SemanticsProperties.StateDescription))
             .put("x", box.left).put("y", box.top)
             .put("width", box.width).put("height", box.height)
             .put("clickable", config.contains(SemanticsActions.OnClick))

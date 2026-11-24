@@ -68,6 +68,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -558,6 +560,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.co
             Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).focusRequester(focus).testTag("composer"),
             placeholder = { Text(t("Message"), color = Palette.Muted) },
             maxLines = 5,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             shape = RoundedCornerShape(24.dp),
             textStyle = Type.body,
             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(

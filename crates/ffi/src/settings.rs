@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use morpheus_core::NotifyMode;
 use morpheus_view_model::{
+    format,
     i18n,
     settings::{Theme, notify_default_kind},
     theme::{self, Palette},
@@ -201,6 +202,35 @@ impl Morpheus {
     /// Use the saved language (at start).
     pub fn start_language(&self) {
         i18n::init(&self.dir);
+    }
+
+    /// Whether times show on a 24-hour clock (12-hour, "3:07 PM", is the default).
+    pub fn clock_24_hour(&self) -> bool {
+        format::use_24_hour()
+    }
+
+    /// Show times on a 24-hour clock or the 12-hour one; kept.
+    pub fn set_clock_24_hour(&self, on: bool) -> Result<(), FfiError> {
+        format::save_24_hour(&self.dir, on)
+            .map_err(|err| FfiError::Failed { reason: format!("could not save the clock: {err}") })?;
+        format::set_24_hour(on);
+        Ok(())
+    }
+
+    /// Use the saved clock (at start).
+    pub fn start_clock(&self) {
+        format::init_clock(&self.dir);
+    }
+
+    /// When a message was sent, as people say it ("just now", "5 min ago", "Yesterday at 3:07 PM"),
+    /// seen at `now_ms`; drawn at draw time so it rolls over at midnight.
+    pub fn message_time(&self, timestamp_ms: u64, now_ms: u64) -> String {
+        format::message_time(timestamp_ms, now_ms)
+    }
+
+    /// A date divider's label: "Today", "Yesterday", "Nov 8" or "Nov 8, 2025", seen at `now_ms`.
+    pub fn day_label(&self, timestamp_ms: u64, now_ms: u64) -> String {
+        format::day_label(timestamp_ms, now_ms)
     }
 
     /// The words for `key` in the language in use.
