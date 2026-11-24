@@ -242,7 +242,13 @@ pub fn scope_call_badge(
     let with_calls = rooms_with_calls(rooms, scope, has_call);
     if with_calls.is_empty() {
         CallBadge::None
-    } else if with_calls.iter().any(|r| r.call_media.iter().any(|(_, media)| media.screen)) {
+    } else if with_calls.iter().any(|r| {
+        // Only people still in the call: a membership that ran out keeps its
+        // last media state, and would hold the screen icon up (#376).
+        r.call_media
+            .iter()
+            .any(|(user, media)| media.screen && r.call_participants.contains(user))
+    }) {
         CallBadge::Screen
     } else {
         CallBadge::Voice
@@ -603,5 +609,25 @@ mod call_badge_tests {
         // No one in the call any more (just hung up): neither badge.
         let scope = Scope::Space(space.id.clone());
         assert_eq!(scope_call_badge(&[space, channel], &scope, |r| !r.call_participants.is_empty()), CallBadge::None);
+    }
+
+    #[test]
+    fn a_share_from_someone_no_longer_in_the_call_does_not_count() {
+        let (space, mut channel) = setup();
+        let id = |s: &str| morpheus_core::OwnedUserId::try_from(s).expect("id");
+        let (alice, bob) = (id("@alice:x"), id("@bob:x"));
+        let scope = Scope::Space(space.id.clone());
+        let in_call = |r: &RoomSummary| !r.call_participants.is_empty();
+        // Bob's membership ran out (or he left) with a share on it; alice is
+        // still in the call and shares nothing.
+        channel.call_participants = vec![alice.clone()];
+        channel.call_media = vec![
+            (alice, morpheus_core::CallMedia::default()),
+            (bob.clone(), morpheus_core::CallMedia { screen: true, ..Default::default() }),
+        ];
+        assert_eq!(scope_call_badge(&[space.clone(), channel.clone()], &scope, in_call), CallBadge::Voice);
+        // Back in the call, his share counts.
+        channel.call_participants.push(bob);
+        assert_eq!(scope_call_badge(&[space, channel], &scope, in_call), CallBadge::Screen);
     }
 }
