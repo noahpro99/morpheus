@@ -221,6 +221,14 @@ impl Tracker {
     /// that is not the one set here was typed by hand and is left alone, now and
     /// when the activity ends.
     pub fn step(&mut self, wanted: Option<&str>, current: Option<&str>) -> Option<Change> {
+        self.step_read(wanted, Some(current))
+    }
+
+    /// Like [`Tracker::step`], but `current` is None when the status could not be
+    /// read: a status typed by hand cannot then be ruled out, so nothing is set and
+    /// nothing is remembered, and the same wish is tried again at the next look.
+    pub fn step_read(&mut self, wanted: Option<&str>, current: Option<Option<&str>>) -> Option<Change> {
+        let current = current?;
         self.wanted = wanted.map(str::to_owned);
         let current = current.map(str::trim).filter(|s| !s.is_empty());
         match wanted {
@@ -446,6 +454,20 @@ mod tests {
 
     fn always(_: &str) -> bool {
         true
+    }
+
+    #[test]
+    fn an_unreadable_status_sets_nothing_and_is_tried_again() {
+        let mut t = Tracker::default();
+        assert!(t.changed(Some("Playing Hades")));
+        assert_eq!(t.step_read(Some("Playing Hades"), None), None);
+        assert!(t.changed(Some("Playing Hades")), "not marked as acted on");
+        assert_eq!(t.marker("@me:x"), None);
+        assert_eq!(
+            t.step_read(Some("Playing Hades"), Some(Some("my own words"))),
+            Some(Change(Some("Playing Hades".into())))
+        );
+        assert!(!t.changed(Some("Playing Hades")));
     }
 
     #[test]

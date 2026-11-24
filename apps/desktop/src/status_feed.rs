@@ -121,10 +121,19 @@ fn steam_dirs() -> (steam::SteamDirs, Option<u32>) {
 
 fn poll_steam() {
     let every = env_ms("MORPHEUS_STEAM_POLL_MS", 12_000);
+    let mut logged: Option<(u32, String)> = None;
     loop {
         if activity::group_enabled(&crate::data_dir(), steam::SOURCE) {
             let (dirs, app_id) = steam_dirs();
             let game = steam::detect(&dirs, app_id);
+            let now = game.as_ref().map(|g| (g.id, g.name.clone()));
+            if now != logged {
+                match &now {
+                    Some((id, name)) => tracing::info!(app_id = id, name = name.as_str(), "activity status: Steam game detected"),
+                    None => tracing::info!("activity status: Steam game gone"),
+                }
+                logged = now;
+            }
             if let Ok(mut sources) = sources().lock() {
                 match game {
                     Some(game) => {
@@ -301,16 +310,21 @@ impl crate::shell::Shell {
             if let Some(marker) = activity::Marker::load(&crate::data_dir())
                 && marker.user == own
             {
-                if let Ok(profile) = session.own_profile().await
-                    && let Some(activity::Change(text)) = marker.recover(&own, profile.status.as_deref())
+                if let Some(Ok(status)) = within(cx, STATUS_CALL_LIMIT, session.own_status()).await
+                    && let Some(activity::Change(text)) = marker.recover(&own, status.as_deref())
                 {
-                    session.set_status(text).await.ok();
+                    if let Some(Err(err)) = within(cx, STATUS_CALL_LIMIT, session.set_status(text)).await {
+                        tracing::warn!(error = %err, "activity status: putting the old status back failed");
+                    }
                     this.update(cx, |this, cx| this.reload_own_profile(cx)).ok();
                 }
                 activity::Marker::store(&crate::data_dir(), None);
             }
             // The room whose public link is known, and that link.
             let mut linked: (Option<morpheus_core::OwnedRoomId>, Option<String>) = (None, None);
+            let mut announced: Option<String> = None;
+            let mut last_failure: Option<String> = None;
+            tracing::info!("activity status: watching for activities");
             loop {
                 cx.background_executor().timer(tick).await;
                 // The shell is gone (another account opened): so is this, with its session.
@@ -319,17 +333,40 @@ impl crate::shell::Shell {
                 }
                 let wanted = shown_text();
                 if tracker.changed(wanted.as_deref()) {
-                    let current = match session.own_profile().await {
-                        Ok(profile) => profile.status,
-                        Err(_) => continue,
+                    // Each change of wish is logged once; a read that keeps failing, once per kind of failure.
+                    if announced.as_deref() != Some(wanted.as_deref().unwrap_or("")) {
+                        tracing::info!(wanted = wanted.as_deref().unwrap_or("(nothing)"), "activity status: wanted status changed");
+                        announced = Some(wanted.clone().unwrap_or_default());
+                    }
+                    let current = match within(cx, STATUS_CALL_LIMIT, session.own_status()).await {
+                        Some(Ok(status)) => Some(status),
+                        Some(Err(err)) => {
+                            warn_once(&mut last_failure, format!("reading the status failed: {err}"));
+                            None
+                        }
+                        None => {
+                            warn_once(&mut last_failure, "reading the status timed out".into());
+                            None
+                        }
                     };
-                    let change = tracker.step(wanted.as_deref(), current.as_deref());
-                    activity::Marker::store(&crate::data_dir(), tracker.marker(&own).as_ref());
+                    let change = tracker.step_read(wanted.as_deref(), current.as_ref().map(|c| c.as_deref()));
+                    if current.is_some() {
+                        last_failure = None;
+                        activity::Marker::store(&crate::data_dir(), tracker.marker(&own).as_ref());
+                    }
                     if let Some(activity::Change(text)) = change {
-                        if session.set_status(text).await.is_ok()
-                            && this.update(cx, |this, cx| this.reload_own_profile(cx)).is_err()
-                        {
-                            return;
+                        match within(cx, STATUS_CALL_LIMIT, session.set_status(text.clone())).await {
+                            Some(Ok(())) => {
+                                tracing::info!(set = text.is_some(), "activity status: status set");
+                                if this.update(cx, |this, cx| this.reload_own_profile(cx)).is_err() {
+                                    return;
+                                }
+                            }
+                            Some(Err(err)) => {
+                                let refused = format!("{err}");
+                                tracing::warn!(error = %refused, "activity status: the server did not take the status (presence refused or failing)");
+                            }
+                            None => tracing::warn!("activity status: setting the status timed out"),
                         }
                     }
                 }
@@ -472,5 +509,30 @@ mod tests {
         assert_eq!(replies[0]["op"], "hello");
         assert_eq!(replies[1]["ok"], false);
         assert_eq!(replies[2]["ok"], true);
+    }
+}
+
+/// How long one read or set of the status may take before it is given up on.
+const STATUS_CALL_LIMIT: Duration = Duration::from_secs(30);
+
+/// `fut`'s result, or None when it takes longer than `limit`.
+async fn within<T>(
+    cx: &mut gpui::AsyncApp,
+    limit: Duration,
+    fut: impl std::future::Future<Output = T>,
+) -> Option<T> {
+    use futures::future::{Either, select};
+    let timer = cx.background_executor().timer(limit);
+    match select(Box::pin(fut), Box::pin(timer)).await {
+        Either::Left((value, _)) => Some(value),
+        Either::Right(_) => None,
+    }
+}
+
+/// Logs `message` as a warning unless it is the one logged last.
+fn warn_once(last: &mut Option<String>, message: String) {
+    if last.as_deref() != Some(message.as_str()) {
+        tracing::warn!("activity status: {message}");
+        *last = Some(message);
     }
 }

@@ -189,6 +189,29 @@ impl Session {
         })
     }
 
+    /// Only the signed-in user's presence status message: what the status feed
+    /// needs, so a failing profile request cannot stop it. A server that answers
+    /// "not found" or "forbidden" has no readable status (`None`); any other
+    /// failure (network, rate limit, server error) is an error, because then a
+    /// status typed by hand cannot be ruled out.
+    pub fn own_status(&self) -> CoreFuture<Option<String>> {
+        let client = self.client.clone();
+        self.core.run(async move {
+            let user_id = client.user_id().ok_or(Error::NoSession)?.to_owned();
+            match client.send(get_presence::v3::Request::new(user_id)).await {
+                Ok(presence) => Ok(presence.status_msg.filter(|s| !s.trim().is_empty())),
+                Err(err)
+                    if err
+                        .as_client_api_error()
+                        .is_some_and(|e| presence_unreadable(e.status_code.as_u16())) =>
+                {
+                    Ok(None)
+                }
+                Err(err) => Err(err.into()),
+            }
+        })
+    }
+
     /// Set (or clear, with `None`) the presence status message other users
     /// see next to this account. Presence is set to online alongside it.
     pub fn set_status(&self, status: Option<String>) -> CoreFuture<()> {
@@ -203,5 +226,25 @@ impl Session {
             forget_own_profile(&client);
             Ok(())
         })
+    }
+}
+
+/// The answers with which a server says presence is not there to read (not found:
+/// never set; forbidden: switched off).
+pub fn presence_unreadable(status: u16) -> bool {
+    matches!(status, 403 | 404)
+}
+
+#[cfg(test)]
+mod presence_tests {
+    use super::presence_unreadable;
+
+    #[test]
+    fn only_not_found_and_forbidden_mean_no_status() {
+        assert!(presence_unreadable(404));
+        assert!(presence_unreadable(403));
+        assert!(!presence_unreadable(429));
+        assert!(!presence_unreadable(500));
+        assert!(!presence_unreadable(502));
     }
 }
