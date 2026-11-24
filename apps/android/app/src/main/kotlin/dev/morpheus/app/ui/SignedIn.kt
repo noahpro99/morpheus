@@ -44,10 +44,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -233,27 +236,43 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
         items(scopes, key = { it.key }) { scope ->
             val on = scope.key == selected
             val dragged = dragging == scope.key
-            val index = scopes.indexOf(scope)
+            // A press that became a long press is not also a tap when the finger lifts.
+            val held = remember { booleanArrayOf(false) }
+            // The gesture outlives list updates (a sync mid-press must not restart it and lose the press),
+            // so it reads the current list and server when it ends.
+            val currentScopes by androidx.compose.runtime.rememberUpdatedState(scopes)
+            val currentScope by androidx.compose.runtime.rememberUpdatedState(scope)
+            val manage by androidx.compose.runtime.rememberUpdatedState(onManage)
+            val reorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
             Box(
                 Modifier.size(Size.rail, Size.row)
                     .zIndex(if (dragged) 1f else 0f)
                     .graphicsLayer { translationY = if (dragged) shift else 0f; alpha = if (dragged) 0.85f else 1f }
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            held[0] = false
+                        }
+                    }
                     .then(
-                        if (scope.kind != ScopeKind.SERVER) Modifier else Modifier.pointerInput(scopes.map { it.key }) {
+                        if (scope.kind != ScopeKind.SERVER) Modifier else Modifier.pointerInput(scope.key) {
                             detectDragGesturesAfterLongPress(
-                                onDragStart = { dragging = scope.key; shift = 0f },
+                                onDragStart = { held[0] = true; dragging = currentScope.key; shift = 0f },
                                 onDrag = { change, amount -> change.consume(); shift += amount.y },
                                 onDragEnd = {
                                     val by = Math.round(shift / step)
                                     dragging = null; shift = 0f
-                                    if (by == 0) onManage(scope) else {
-                                        val order = scopes.toMutableList()
-                                        order.add((index + by).coerceIn(0, order.lastIndex), order.removeAt(index))
-                                        onReorder(order.filter { it.kind == ScopeKind.SERVER }.map { it.key.removePrefix("space:") })
+                                    if (by == 0) manage(currentScope) else {
+                                        val order = currentScopes.toMutableList()
+                                        val index = order.indexOfFirst { it.key == currentScope.key }
+                                        if (index >= 0) {
+                                            order.add((index + by).coerceIn(0, order.lastIndex), order.removeAt(index))
+                                            reorder(order.filter { it.kind == ScopeKind.SERVER }.map { it.key.removePrefix("space:") })
+                                        }
                                     }
                                 },
                                 // A press let go without a move ends as a cancel.
-                                onDragCancel = { val still = dragging == scope.key && shift == 0f; dragging = null; shift = 0f; if (still) onManage(scope) },
+                                onDragCancel = { val still = dragging == currentScope.key && shift == 0f; dragging = null; shift = 0f; if (still) manage(currentScope) },
                             )
                         },
                     ),
@@ -267,7 +286,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                         .size(48.dp)
                         .clip(shape)
                         .background(if (on) Palette.Accent else Palette.Raised)
-                        .clickable { onSelect(scope) }
+                        .clickable { if (!held[0]) onSelect(scope) }
                         .semantics { contentDescription = scope.title }
                         .testTag("scope-${scope.title}"),
                     contentAlignment = Alignment.Center,
