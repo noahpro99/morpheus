@@ -1510,9 +1510,19 @@ fn help_group(group: &str, rows: &[(&str, &str)]) -> impl IntoElement {
 }
 
 /// A shortcut as a small key cap (the Jump to present pill's, the open
-/// prompt's): on a coloured fill (`Some(fill)`) the cap is a wash of the
-/// foreground that reads on it, else of the theme's edge and hover tokens.
+/// prompt's): on a coloured fill (`Some(fill)`) the cap's text and edge are
+/// the colour that reads on it, over a wash of the opposite one; else the theme's edge and hover tokens.
 pub(crate) fn key_cap(label: impl Into<SharedString>, on_fill: Option<u32>) -> impl IntoElement {
+    key_cap_in(label, on_fill, None)
+}
+
+/// A key cap on `fill` in a pill whose fill is `hover_fill` while the pointer is over
+/// `group` (the pill): the cap follows it, so it reads in both states.
+pub(crate) fn key_cap_hover(label: impl Into<SharedString>, fill: u32, hover_fill: u32, group: &'static str) -> impl IntoElement {
+    key_cap_in(label, Some(fill), Some((hover_fill, group)))
+}
+
+fn key_cap_in(label: impl Into<SharedString>, on_fill: Option<u32>, hover: Option<(u32, &'static str)>) -> impl IntoElement {
     let label: SharedString = label.into();
     let cap = div()
         .px(px(5.0))
@@ -1523,13 +1533,23 @@ pub(crate) fn key_cap(label: impl Into<SharedString>, on_fill: Option<u32>) -> i
         .child(label.clone());
     let cap = match on_fill {
         Some(fill) => {
-            let fg = theme::on(fill);
-            cap.border_color(rgba((fg << 8) | 0x66))
-                .bg(rgba((fg << 8) | 0x26))
+            let c = crate::view_model::theme::cap_on(fill);
+            cap.text_color(rgb(c.text))
+                .border_color(rgba(c.border))
+                .bg(rgba(c.bg))
         }
         None => cap
             .border_color(rgba(theme::edge()))
             .bg(rgba(theme::bg_hover())),
+    };
+    let cap = match hover {
+        Some((hover_fill, group)) => {
+            let h = crate::view_model::theme::cap_on(hover_fill);
+            cap.group_hover(group, move |s| {
+                s.text_color(rgb(h.text)).border_color(rgba(h.border)).bg(rgba(h.bg))
+            })
+        }
+        None => cap,
     };
     cap.e2e("kbd", "key-cap").text(label.to_string())
 }

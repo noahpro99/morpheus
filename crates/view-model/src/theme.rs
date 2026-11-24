@@ -294,7 +294,35 @@ impl Palette {
     }
 }
 
+/// A key cap drawn on a coloured fill: the text colour, and the border and
+/// background washes (0xRRGGBBAA).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CapColours {
+    pub text: u32,
+    pub border: u32,
+    pub bg: u32,
+}
+
+/// The cap on `fill`: text black or white by contrast, with a wash of the
+/// opposite colour behind it (so the wash only raises the contrast) and an
+/// edge of the text colour.
+pub fn cap_on(fill: u32) -> CapColours {
+    let text = on_colour(fill);
+    let opposite = text ^ 0xffffff;
+    CapColours { text, border: (text << 8) | 0x66, bg: (opposite << 8) | 0x26 }
+}
+
 impl Palette {
+    /// The Jump to present pill's (fill, text) at rest and hovered: each state's
+    /// text is picked against that state's own fill.
+    pub fn jump_pill(&self, hovered: bool) -> (u32, u32) {
+        if hovered {
+            (self.accent, self.on_accent())
+        } else {
+            (self.accent_strong, self.on_accent_strong())
+        }
+    }
+
     /// Every coloured fill that carries text or an icon, as (name, fill,
     /// foreground drawn on it).
     pub fn fills(&self) -> Vec<(&'static str, u32, u32)> {
@@ -638,6 +666,25 @@ mod tests {
         assert_eq!(on_colour(0xffff00), 0x000000);
         assert_eq!(on_colour(0x000080), 0xffffff);
     }
+    #[test]
+    fn the_jump_pill_and_its_key_cap_read_at_rest_and_hovered_in_every_palette() {
+        let mut palettes = every_palette();
+        for base in sweep() {
+            palettes.push((format!("sweep {base:06x}"), derive(base)));
+        }
+        for (name, p) in palettes {
+            for hovered in [false, true] {
+                let (fill, text) = p.jump_pill(hovered);
+                let ratio = contrast(text, fill);
+                assert!(ratio >= 4.5, "{name} hovered={hovered}: label {text:06x} on {fill:06x} is {ratio:.2}");
+                let cap = cap_on(fill);
+                let flat = over(cap.bg, fill);
+                let ratio = contrast(cap.text, flat);
+                assert!(ratio >= 4.5, "{name} hovered={hovered}: key {:06x} on {flat:06x} is {ratio:.2}", cap.text);
+            }
+        }
+    }
+
     #[test]
     fn the_accent_fill_always_holds_white_text() {
         for c in [0x000000, 0xffffff, 0xffff00, 0x00ff00, 0x2a4d8f, 0xf2e9c9, 0x808080] {
