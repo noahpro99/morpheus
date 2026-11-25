@@ -672,6 +672,13 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
         .cursor_pointer()
         .on_click(cx.listener(move |this, _, _, cx| this.open_room(room_id.clone(), cx)))
         .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .min_w_0()
+                .children(call.connected.then(signal_icon))
+                .child(
             crate::hover_underline::as_wide_as_its_text(div())
                 .max_w_full()
                 .relative()
@@ -699,6 +706,7 @@ pub fn voice_panel(shell: &Shell, cx: &mut Context<Shell>) -> Option<AnyElement>
                 } else {
                     ts("Connecting…")
                 }),
+                ),
         )
         .child(
             crate::hover_underline::as_wide_as_its_text(div())
@@ -2999,4 +3007,51 @@ pub fn set_background(background: bool) -> bool {
 
 pub fn in_background() -> bool {
     BACKGROUND.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Three bars lit by how good the call's connection is (green, yellow, red from the theme's
+/// status colours), left of "Voice connected"; hovering shows the round-trip delay (#403).
+/// The call stack measures it about once a second.
+fn signal_icon() -> AnyElement {
+    use crate::view_model::connection_quality::{Quality, quality, tooltip};
+    let diag = morpheus_call::call_diag();
+    let rtt = diag.as_ref().and_then(|d| d.rtt_ms);
+    let loss = diag.as_ref().and_then(|d| d.loss_percent);
+    let q = quality(rtt, loss);
+    let lit = match q {
+        Quality::Good => theme::green(),
+        Quality::Fair => theme::warn(),
+        Quality::Poor => theme::danger(),
+        Quality::Unknown => theme::text_muted(),
+    };
+    let tip = tooltip(rtt, loss);
+    let mut bars = div()
+        .id("connection-quality")
+        .flex_none()
+        .flex()
+        .items_end()
+        .gap(px(2.0))
+        .h(px(11.0))
+        .tip(tip.clone());
+    for i in 0..3usize {
+        let on = i < q.bars();
+        bars = bars.child(
+            div()
+                .w(px(3.0))
+                .h(px(4.0 + 3.5 * i as f32))
+                .rounded(px(1.0))
+                .bg(if on { rgb(lit) } else { rgba(theme::bg_hover()) }),
+        );
+    }
+    bars.e2e(
+        "div",
+        match q {
+            Quality::Unknown => "connection-quality unknown",
+            Quality::Good => "connection-quality good",
+            Quality::Fair => "connection-quality fair",
+            Quality::Poor => "connection-quality poor",
+        },
+    )
+    .attr("title", tip)
+    .into_any_element()
 }

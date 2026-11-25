@@ -1470,8 +1470,10 @@ async fn run_call(
             // A screen's sound: its figures on its card, once a second.
             Next::Tick => {
                 this.update(cx, |this, cx| {
-                    if !this.calls.screen_audio.is_empty() {
-                        cx.notify();
+                    if !this.calls.screen_audio.is_empty()
+                        || this.calls.state.as_ref().is_some_and(|c| c.connected)
+                        {
+                            cx.notify();
                     }
                 })
                 .ok();
