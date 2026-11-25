@@ -192,6 +192,16 @@ class TestBridge(private val app: Application) {
                 ?: error("${request.opt("tag") ?: request.opt("text")} is not an editable field")
             action(AnnotatedString(request.getString("text")))
         }
+        // The text selection (start, end; equal for a cursor) of the editable field with this tag, and a way to set it.
+        "selection" -> onMain {
+            val range = find(request).config.getOrNull(SemanticsProperties.TextSelectionRange) ?: error("no selection")
+            JSONArray().put(range.start).put(range.end)
+        }
+        "select" -> onMain {
+            val node = find(request)
+            val action = node.config.getOrNull(SemanticsActions.SetSelection)?.action ?: error("not a field with a selection")
+            action(request.getInt("start"), request.getInt("end"), true)
+        }
         "key" -> onMain {
             val view = root() ?: error("no window")
             val code = request.getInt("code")

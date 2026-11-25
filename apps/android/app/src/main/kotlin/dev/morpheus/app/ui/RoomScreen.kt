@@ -268,7 +268,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = Type.secondary)
             }
-            Composer(model, editing, composerFocus, onAttach = { picker.launch("*/*") }) { model.send(it) }
+            Composer(model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, onAttach = { picker.launch("*/*") }) { model.send(it) }
         } } }
         viewing?.let { ImageViewer(it) { viewing = null } }
         thread?.let { root ->
@@ -577,17 +577,22 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit,
 }
 
 @Composable
-private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester, onAttach: () -> Unit, onSend: (String) -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
+private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester, onAttach: () -> Unit, onSend: (String) -> Unit) {
+    // What is typed is kept with its cursor or selected range for this chat or thread (#460), and comes back when it is opened again.
+    var field by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
+    val current by androidx.compose.runtime.rememberUpdatedState(field)
+    DisposableEffect(draftKey) { onDispose { Drafts.put(draftKey, current) } }
+    val text = field.text
+    fun setText(value: String) { field = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length)) }
     var panel by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     LaunchedEffect(text) { suggestions = model.suggest(text) }
     LaunchedEffect(text) { if (text.isNotBlank()) model.typing() }
     LaunchedEffect(editing?.key) {
-        if (editing != null) text = (editing.body as? MessageBody.Text)?.text.orEmpty()
+        if (editing != null) setText((editing.body as? MessageBody.Text)?.text.orEmpty())
     }
     Column(Modifier.background(Palette.Background)) {
-    SuggestionStrip(suggestions) { text = it.draftAfter; suggestions = emptyList() }
+    SuggestionStrip(suggestions) { setText(it.draftAfter); suggestions = emptyList() }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.sm),
         verticalAlignment = Alignment.Bottom,
@@ -595,7 +600,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.co
     ) {
         IconAction(dev.morpheus.app.R.drawable.ic_lucide_paperclip, t("Attach a file"), "attach", onAttach, tint = Palette.Muted)
         OutlinedTextField(
-            text, { text = it },
+            field, { field = it },
             Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).focusRequester(focus).testTag("composer"),
             placeholder = { Text(t("Message"), color = Palette.Muted) },
             maxLines = 5,
@@ -613,7 +618,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.co
         )
         val canSend = text.isNotBlank()
         androidx.compose.material3.FilledIconButton(
-            { onSend(text.trim()); text = ""; model.stopTyping() },
+            { onSend(text.trim()); setText(""); model.stopTyping() },
             Modifier.size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
             enabled = canSend,
             colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
@@ -622,7 +627,7 @@ private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.co
             ),
         ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
     }
-    if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
+    if (panel) EmojiPanel(model) { setText(withEmoji(text, it)) }
     }
 }
 
@@ -711,4 +716,11 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
             else -> MembersPane(app, model)
         }
     }
+}
+
+/** The unsent text of each chat and thread, with the cursor or selection it was left with (kept while the app runs). */
+private object Drafts {
+    private val kept = HashMap<String, androidx.compose.ui.text.input.TextFieldValue>()
+    fun get(key: String) = kept[key] ?: androidx.compose.ui.text.input.TextFieldValue("")
+    fun put(key: String, value: androidx.compose.ui.text.input.TextFieldValue) { if (value.text.isEmpty()) kept.remove(key) else kept[key] = value }
 }
