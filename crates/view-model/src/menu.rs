@@ -462,6 +462,12 @@ const TABLE: &[(&str, &str)] = &[
         ("Copy message ID", "hash"),
         ("Copy room ID", "hash"),
         ("Copy user ID", "hash"),
+        ("Copy user info", "copy"),
+        ("Copy profile link", "link"),
+        ("View full profile", "user"),
+        ("Share profile", "share-2"),
+        ("Invite to server", "user-plus"),
+        ("Report user profile", "flag"),
         ("Forward to", "forward"),
         ("Unpin message", "pin-off"),
         ("Pin message", "pin"),
@@ -727,6 +733,14 @@ mod tests {
             ]
         );
         assert!(items.iter().find(|i| i.label == "Delete message").is_some_and(|i| i.danger));
+    }
+
+    #[test]
+    fn the_cards_more_menu_labels_have_spanish() {
+        for item in crate::profile::more_menu(&OwnedUserId::try_from("@bob:x").expect("id"), false, false, &[(OwnedRoomId::try_from("!s:x").expect("id"), "Eng".into())]) {
+            assert_ne!(translated_label_in("es", &item.label), item.label, "{} is not translated", item.label);
+        }
+        assert_eq!(translated_label_in("es", "Share profile"), "Compartir perfil");
     }
 
     #[test]

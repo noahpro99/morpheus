@@ -75,6 +75,8 @@ fun RoomPageHost(app: AppModel) {
             "status" -> StatusPage(app)
             "nickname" -> NicknamePage(app, page)
             "profile" -> ProfilePage(app, page)
+            "full-profile" -> FullProfilePage(app, page)
+            "report-user" -> ReportUserPage(app, page)
         }
     }
 }
@@ -472,6 +474,50 @@ private fun NicknamePage(app: AppModel, page: PageRequest) {
             scope.launch { try { app.morpheus.setNickname(page.roomId, text); app.nicknamesChanged(); app.closePage() } catch (e: Exception) { error = e.sentence(); busy = false } }
         }, Modifier.testTag("nickname-save"), enabled = !busy) { Text(t("Save")) }
         Note(null, error)
+    }
+}
+
+@Composable
+private fun FullProfilePage(app: AppModel, page: PageRequest) {
+    var found by remember { mutableStateOf<uniffi.morpheus_ffi.FullProfile?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(page.roomId) { try { found = app.morpheus.fullProfile(page.roomId) } catch (e: Exception) { error = e.sentence() } }
+    PageFrame(app, "Profile", "page-full-profile") {
+        val profile = found
+        if (profile != null) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Avatar(profile.avatar, profile.name, Size.avatarXl)
+                Text(profile.name, Modifier.testTag("full-profile-name"), style = Type.title)
+                Text(profile.userId, Modifier.testTag("full-profile-id"), color = Palette.Muted, style = Type.secondary)
+                profile.status?.let { Text(it, Modifier.testTag("full-profile-status")) }
+                if (profile.isMe) Text(t("This is you"), Modifier.testTag("full-profile-me"), color = Palette.Muted)
+            }
+            if (!profile.isMe) {
+                SectionHeader(profile.mutualHeading, Modifier.testTag("full-profile-mutual"))
+                for (server in profile.servers) Text(server, Modifier.testTag("full-profile-server-$server"))
+                Button({
+                    scope.launch { try { app.closePage(); app.openNewRoom(app.morpheus.startDm(profile.userId)) } catch (e: Exception) { error = e.sentence() } }
+                }, Modifier.fillMaxWidth().testTag("full-profile-message")) { Text(t("Message")) }
+            }
+        }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun ReportUserPage(app: AppModel, page: PageRequest) {
+    var reason by remember { mutableStateOf("") }
+    var ok by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    PageFrame(app, "Report user profile", "page-report-user") {
+        Text(t("Tell the admins of the server what is wrong with this person's profile."), color = Palette.Muted, style = Type.secondary)
+        OutlinedTextField(reason, { reason = it }, Modifier.fillMaxWidth().testTag("report-user-reason"), label = { Text(t("Reason")) })
+        Button({
+            scope.launch { try { ok = app.morpheus.reportUser(page.roomId, reason); error = null } catch (e: Exception) { error = e.sentence(); ok = null } }
+        }, Modifier.testTag("report-user-send")) { Text(t("Report")) }
+        Note(ok, error)
     }
 }
 

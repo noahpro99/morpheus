@@ -31,6 +31,7 @@ mod locks;
 mod media;
 mod menus;
 mod nicknames;
+mod profiles;
 mod people;
 mod push;
 mod rings;

@@ -394,6 +394,9 @@ impl Morpheus {
             }
             MenuAction::AddAccount => MenuOutcome::AddAccount,
             MenuAction::SignOut => MenuOutcome::SignOut,
+            MenuAction::FullProfile(user) | MenuAction::Profile(user) => MenuOutcome::Page { kind: "full-profile".into(), room_id: user.to_string(), extra: String::new() },
+            MenuAction::ShareProfile(link) => MenuOutcome::Copy { text: link },
+            MenuAction::ReportUser(user) => MenuOutcome::Page { kind: "report-user".into(), room_id: user.to_string(), extra: String::new() },
             MenuAction::ViewReactions => MenuOutcome::ViewReactions,
             MenuAction::Report => MenuOutcome::Report,
             MenuAction::ServerOverview(space) => MenuOutcome::Page { kind: "overview".into(), room_id: space.to_string(), extra: String::new() },

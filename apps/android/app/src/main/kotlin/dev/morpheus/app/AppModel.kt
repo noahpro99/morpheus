@@ -640,6 +640,13 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     private val _status = MutableStateFlow("")
 
+    /** Keep a note about someone (also when the card that held it has gone). */
+    fun saveNote(userId: String, note: String) {
+        viewModelScope.launch {
+            try { morpheus.setNote(userId, note) } catch (e: Exception) { _error.value = e.sentence() }
+        }
+    }
+
     private val _nicknameVersion = MutableStateFlow(0)
 
     /** Counts the nickname changes made here: lists read once (the members) read again on it. */

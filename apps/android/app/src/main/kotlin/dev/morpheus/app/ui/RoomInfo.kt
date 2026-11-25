@@ -135,6 +135,27 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
     var friend by remember(card.userId) { mutableStateOf(card.isFriend) }
     var problem by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    // A note only I can see: loaded, then kept a moment after the last key (and when the card goes away).
+    var note by remember(card.userId) { mutableStateOf("") }
+    var kept by remember(card.userId) { mutableStateOf<String?>(null) }
+    val latestNote by androidx.compose.runtime.rememberUpdatedState(note)
+    val latestKept by androidx.compose.runtime.rememberUpdatedState(kept)
+    LaunchedEffect(card.userId) {
+        if (!card.isMe) try { app.morpheus.noteOf(card.userId).let { note = it; kept = it } } catch (_: Exception) {}
+    }
+    LaunchedEffect(note) {
+        if (kept != null && note != kept) {
+            kotlinx.coroutines.delay(600)
+            app.saveNote(card.userId, note)
+            kept = note
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(card.userId) {
+        onDispose { latestKept?.let { if (latestNote != it) app.saveNote(card.userId, latestNote) } }
+    }
+    // A page opened from the card's menu covers it: the card goes.
+    val page by app.page.collectAsState()
+    LaunchedEffect(page) { if (page != null) onClose() }
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onClose,
         modifier = Modifier.testTag("profile-card"),
@@ -152,6 +173,7 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
                     Text(card.userId, Modifier.testTag("card-id"), color = Palette.Muted, fontSize = 13.sp)
                 }
             }
+            if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_lucide_ellipsis, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
             card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, fontSize = 13.sp) }
             card.status?.let { Text(it, color = Palette.Muted) }
             Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, fontSize = 12.sp)
@@ -182,6 +204,12 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
                         Text(if (card.userId in ignored) t("Unignore") else t("Ignore"))
                     }
                 }
+            }
+            if (!card.isMe && kept != null) {
+                androidx.compose.material3.OutlinedTextField(
+                    note, { note = it }, Modifier.fillMaxWidth().testTag("card-note"),
+                    label = { Text(t("Note")) }, placeholder = { Text(t("Only you can see this")) },
+                )
             }
             problem?.let { Text(it, color = Palette.Danger, fontSize = 13.sp) }
         }
