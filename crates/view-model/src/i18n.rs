@@ -251,6 +251,8 @@ pub fn dynamic_keys() -> Vec<&'static str> {
     keys.push(crate::release_notes::UNAVAILABLE);
     keys.extend(crate::diagnostics::translatable_labels());
     keys.extend(crate::toast::WHATS);
+    // The transcript (transcript.rs) gives these to `tf_in` with a language code.
+    keys.extend(["replying to %{name}", "[image: %{name}]", "[file: %{name}]", "[video: %{name}]", "[audio: %{name}]"]);
     keys
 }
 
@@ -361,12 +363,21 @@ mod tests {
         for file in files {
             let text = std::fs::read_to_string(&file).unwrap_or_default();
             // Test code names keys that are missing on purpose; comments show examples.
-            let code: String = text
-                .split("#[cfg(test)]")
-                .next()
-                .unwrap_or_default()
-                .lines()
+            // Only the test module ends the scan: a lone `#[cfg(test)]` on a helper does not.
+            let all: Vec<&str> = text.lines().collect();
+            let end = (0..all.len())
+                .find(|&n| {
+                    all[n].trim() == "#[cfg(test)]"
+                        && all[n + 1..]
+                            .iter()
+                            .find(|l| !l.trim_start().starts_with("#["))
+                            .is_some_and(|l| l.trim_start().starts_with("mod "))
+                })
+                .unwrap_or(all.len());
+            let code: String = all[..end]
+                .iter()
                 .filter(|l| !l.trim_start().starts_with("//"))
+                .copied()
                 .collect::<Vec<_>>()
                 .join("\n");
             let bytes = code.as_bytes();
