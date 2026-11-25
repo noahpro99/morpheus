@@ -708,6 +708,13 @@ object AppState {
     @Volatile
     var screen: String = "loading"
 
+    /** The Material 3 colour scheme in use as (role, fill, foreground) ARGB, and where it came from (`palette` or `dynamic`): the debug bridge reports them. */
+    @Volatile
+    var colourPairs: List<Triple<String, Int, Int>> = emptyList()
+
+    @Volatile
+    var colourSource: String = "palette"
+
     /** The last web link opened from a message (the debug bridge reports it). */
     @Volatile
     var lastLink: String = ""

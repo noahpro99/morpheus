@@ -15,13 +15,24 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,21 +74,17 @@ private fun Pill(text: String, fill: Color, content: Color, tag: String, modifie
 }
 
 
-/** An icon that is a button: a 48 dp target, described for screen readers (and the tests, by `tag`). */
+/** An icon that is a button: a Material 3 IconButton (a 48 dp target with a ripple), described for screen readers (and the tests, by `tag`). */
 @Composable
-fun IconAction(@androidx.annotation.DrawableRes icon: Int, description: String, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Palette.Text) {
-    Box(
-        modifier
-            .size(Size.target)
-            .clip(CircleShape)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = description; role = Role.Button }
-            .testTag(tag),
-        contentAlignment = Alignment.Center,
+fun IconAction(@androidx.annotation.DrawableRes icon: Int, description: String, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = Color.Unspecified) {
+    IconButton(
+        onClick,
+        modifier.size(Size.target).semantics { contentDescription = description }.testTag(tag),
     ) { GlyphIcon(icon, tint = tint) }
 }
 
-/** The bar on top of a screen: back, a title, actions; the colour of the rail, a hairline below. */
+/** The bar on top of a screen: a Material 3 TopAppBar (back, a title, actions) in the colour of the rail, a hairline below. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopBar(
     title: String,
@@ -86,30 +93,43 @@ fun TopBar(
     onBack: (() -> Unit)? = null,
     titleTag: String? = null,
     onTitle: (() -> Unit)? = null,
+    titleStyle: androidx.compose.ui.text.TextStyle? = null,
+    container: Color = Color.Unspecified,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Column(modifier.fillMaxWidth().background(Palette.Background)) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = Size.topBar).padding(horizontal = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), backTag ?: "back", onBack)
-            else Box(Modifier.width(Space.md))
-            Text(
-                title,
-                Modifier
-                    .weight(1f)
-                    .padding(horizontal = Space.xs)
-                    .then(if (onTitle != null) Modifier.clickable(onClick = onTitle) else Modifier)
-                    .then(if (titleTag != null) Modifier.testTag(titleTag) else Modifier),
-                style = Type.heading,
-                color = Palette.Text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            actions()
+    val fill = if (container == Color.Unspecified) MaterialTheme.colorScheme.background else container
+    Column(modifier.fillMaxWidth()) {
+        // The bar is 56 dp tall here (a Material bar is 64): centred in a box that cuts the difference off, so every screen keeps its height.
+        Box(Modifier.fillMaxWidth().height(Size.topBar).clipToBounds()) {
+        TopAppBar(
+            modifier = Modifier.wrapContentHeight(unbounded = true),
+            title = {
+                Text(
+                    title,
+                    Modifier
+                        .then(if (onTitle != null) Modifier.clickable(onClick = onTitle) else Modifier)
+                        .then(if (titleTag != null) Modifier.testTag(titleTag) else Modifier),
+                    style = titleStyle ?: MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            navigationIcon = {
+                if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), backTag ?: "back", onBack)
+                else Box(Modifier.width(Space.md))
+            },
+            actions = actions,
+            windowInsets = WindowInsets(0),
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = fill,
+                scrolledContainerColor = fill,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                actionIconContentColor = MaterialTheme.colorScheme.onBackground,
+            ),
+        )
         }
-        Box(Modifier.fillMaxWidth().size(width = 0.dp, height = 1.dp).background(Palette.Divider))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -172,6 +192,6 @@ fun SkeletonRows(count: Int = 6, avatars: Boolean = true, modifier: Modifier = M
 
 /** One of the desktop's icons (Lucide, generated into res/drawable by scripts/android-icons.sh), tinted. */
 @Composable
-fun GlyphIcon(@androidx.annotation.DrawableRes id: Int, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp, tint: Color = Palette.Text) {
-    Icon(androidx.compose.ui.res.painterResource(id), null, modifier.size(size), tint = tint)
+fun GlyphIcon(@androidx.annotation.DrawableRes id: Int, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp, tint: Color = Color.Unspecified) {
+    Icon(androidx.compose.ui.res.painterResource(id), null, modifier.size(size), tint = if (tint == Color.Unspecified) LocalContentColor.current else tint)
 }

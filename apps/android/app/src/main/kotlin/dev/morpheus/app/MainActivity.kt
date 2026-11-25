@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Nothing here waits for the Rust core (it starts on a thread of its own, see MorpheusApp): the model is
         // made when the first frame composes, by when the core is usually up (#317).
+        dev.morpheus.app.ui.MaterialYou.refresh(this)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
