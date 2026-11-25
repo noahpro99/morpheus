@@ -72,6 +72,7 @@ fun RoomPageHost(app: AppModel) {
             "leave" -> LeavePage(app, page)
             "category" -> CategoryPage(app, page)
             "create-server" -> CreateServerPage(app)
+            "status" -> StatusPage(app)
             "profile" -> ProfilePage(app, page)
         }
     }
@@ -430,6 +431,27 @@ private fun CreateServerPage(app: AppModel) {
             busy = true
             scope.launch { try { app.morpheus.createServer(name); app.closePage() } catch (e: Exception) { error = e.sentence(); busy = false } }
         }, Modifier.testTag("server-submit"), enabled = name.isNotBlank() && !busy) { Text(t("Create server")) }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun StatusPage(app: AppModel) {
+    var text by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { try { text = app.morpheus.ownStatus() } catch (_: Exception) {} }
+    fun save(to: String) {
+        busy = true
+        scope.launch { try { app.morpheus.setStatus(to); app.refreshStatus(); app.closePage() } catch (e: Exception) { error = e.sentence(); busy = false } }
+    }
+    PageFrame(app, "Set status", "page-status") {
+        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().testTag("status-input"), singleLine = true, label = { Text(t("What are you up to?")) })
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Button({ save(text) }, Modifier.testTag("status-save"), enabled = !busy) { Text(t("Save")) }
+            TextButton({ save("") }, Modifier.testTag("status-clear"), enabled = !busy) { Text(t("Clear status")) }
+        }
         Note(null, error)
     }
 }

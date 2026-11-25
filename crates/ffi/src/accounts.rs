@@ -41,6 +41,16 @@ impl Morpheus {
         })
     }
 
+    /// My status message (empty for none).
+    pub async fn own_status(&self) -> Result<String, FfiError> {
+        Ok(self.session()?.own_status().await?.unwrap_or_default())
+    }
+
+    /// Set my status message; empty clears it.
+    pub async fn set_status(&self, text: String) -> Result<(), FfiError> {
+        Ok(self.session()?.set_status(morpheus_view_model::room_dialogs::status_to_save(&text)).await?)
+    }
+
     /// Every account with a session on this device.
     pub async fn saved_accounts(&self) -> Result<Vec<AccountItem>, FfiError> {
         Ok(self

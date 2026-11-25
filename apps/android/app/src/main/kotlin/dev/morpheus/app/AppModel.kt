@@ -638,6 +638,17 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     /** The key of my picture, kept: it is drawn from the disk at once at the next launch. */
     val ownAvatarKey: StateFlow<String?> = _ownKey.asStateFlow()
 
+    private val _status = MutableStateFlow("")
+
+    /** My status message (empty for none). */
+    val ownStatus: StateFlow<String> = _status.asStateFlow()
+
+    fun refreshStatus() {
+        viewModelScope.launch {
+            try { _status.value = morpheus.ownStatus() } catch (_: Exception) {}
+        }
+    }
+
     private fun loadOwnProfile() {
         viewModelScope.launch {
             try {

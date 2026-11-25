@@ -437,6 +437,8 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
     val own by model.ownProfile.collectAsState()
     val ownKey by model.ownAvatarKey.collectAsState()
     val name = own?.name ?: People.nameOf(state.account.userId, names)
+    val status by model.ownStatus.collectAsState()
+    LaunchedEffect(state.account.userId) { model.refreshStatus() }
     val sync by remember { model.morpheus.syncStates() }.collectAsState(initial = "")
     val online = sync == "running" || sync.isEmpty()
     Column(Modifier.fillMaxSize().background(Palette.Surface).verticalScroll(rememberScrollState()).testTag("profile-pane")) {
@@ -455,8 +457,10 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(if (online) Color(0xFF3BA55D) else Palette.Muted))
                 Text(if (online) t("Online") else t("Offline"), Modifier.testTag("profile-status"), style = Type.secondary)
             }
+            if (status.isNotBlank()) Text(status, Modifier.padding(top = Space.sm).testTag("profile-status-message"), style = Type.secondary, color = Palette.Muted)
         }
         SectionHeader(t("Account"))
+        ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_smile, t("Set status"), "status-button") { model.openPage(dev.morpheus.app.PageRequest("status", "")) }
         ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Settings"), "settings-button") { model.openSettings() }
         ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_lock, t("Security"), "security-button") { model.openSecurity() }
         Box(Modifier.padding(top = Space.lg)) { ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_log_out, t("Sign out"), "sign-out", danger = true) { model.signOut() } }

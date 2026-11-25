@@ -102,6 +102,11 @@ pub fn room_name(rooms: &[RoomSummary], id: &OwnedRoomId) -> Option<String> {
         .map(|room| room.name.clone())
 }
 
+/// What a status message is saved as: trimmed, and nothing at all when empty (that clears it).
+pub fn status_to_save(text: &str) -> Option<String> {
+    Some(text.trim().to_owned()).filter(|t| !t.is_empty())
+}
+
 /// What "Create room" is sent with: the name must have something in it.
 pub fn can_create(name: &str) -> bool {
     !name.trim().is_empty()
@@ -229,6 +234,13 @@ pub const JOIN_CHOICES: [(bool, &str); 2] = [(true, "Anyone with the link"), (fa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_status_is_trimmed_and_an_empty_one_clears() {
+        assert_eq!(status_to_save("  In a meeting "), Some("In a meeting".into()));
+        assert_eq!(status_to_save("   "), None);
+        assert_eq!(status_to_save(""), None);
+    }
 
     fn room(id: &str, name: &str, space: bool, dm: bool, parents: &[&str]) -> RoomSummary {
         let mut room = crate::test_room::room(id, name);
