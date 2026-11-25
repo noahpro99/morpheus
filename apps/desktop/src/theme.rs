@@ -349,6 +349,10 @@ macro_rules! on_fills {
 
 on_fills!(on_accent, on_accent_strong, on_accent_solid, on_danger, on_green);
 
+/// The dark of the see-through bubbles over a video (a name, a mute mark; black at 0.6 alpha):
+/// the same on every theme, so not a theme fill. Their glyphs take `on(OVER_VIDEO)`.
+pub const OVER_VIDEO: u32 = 0x000000; // fixed: over video, not a theme fill
+
 /// Black or white, whichever reads on any `fill` (a swatch, a user colour, a toggle's track).
 pub fn on(fill: u32) -> u32 {
     crate::view_model::theme::on_colour(fill)

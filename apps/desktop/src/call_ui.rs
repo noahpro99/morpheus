@@ -951,7 +951,7 @@ fn zoom_control(shell: &Shell, key: &str, zoom: f32) -> AnyElement {
 fn name_label(text: String, screen: bool, mic: Option<Mark>, corner: bool) -> AnyElement {
     // The bubble is dark whatever is behind it: the icon takes the colour that
     // reads on its fill.
-    let on_bubble = theme::on(0x000000);
+    let on_bubble = theme::on(theme::OVER_VIDEO);
     let bubble = div()
         .min_w_0()
         .flex_shrink()
@@ -1016,7 +1016,7 @@ fn card_marks(media: morpheus_core::CallMedia, with_video: bool) -> Option<AnyEl
             .justify_center()
             .rounded_full()
             .bg(black(0.6))
-            .child(icon(glyph, 14.0).text_color(rgb(theme::on(0x000000))))
+            .child(icon(glyph, 14.0).text_color(rgb(theme::on(theme::OVER_VIDEO))))
             .e2e("span", mark.class)
             .attr("title", mark.title)
     });
