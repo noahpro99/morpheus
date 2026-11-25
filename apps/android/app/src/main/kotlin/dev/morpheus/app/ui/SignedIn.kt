@@ -7,6 +7,11 @@ import androidx.compose.foundation.indication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -88,15 +93,60 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean =
     // Back from Direct messages or Profile goes to Servers, the home; only from there does it leave the app.
     androidx.activity.compose.BackHandler(enabled = tab != Tab.Servers) { model.selectTab(Tab.Servers) }
     Column(Modifier.fillMaxSize().testTag("signed-in")) {
-        Box(Modifier.weight(1f).fillMaxWidth().listSwipe(model, tab)) {
-            when (tab) {
-                Tab.Servers -> ServersPane(model, onOpenRoom)
-                Tab.Dms -> DmsPane(model, onOpenRoom)
-                Tab.Profile -> ProfilePane(model, state)
-            }
-        }
+        ListsPane(model, tab, state, onOpenRoom, Modifier.weight(1f).fillMaxWidth())
         if (tab != Tab.Profile) SecurityBanner(model)
         BottomBar(model, tab)
+    }
+}
+
+/**
+ * The place the bar names. DMs and Servers are two pages side by side (DMs on the left, as the bar has them): a drag moves them with
+ * the finger, a swipe past a sixth of the width commits (to the other list, or on to the last chat; which direction does what is in
+ * view-model list_swipes), a shorter one springs back, and a tap on the bar slides them the same way (#459). While they are at rest only
+ * the one shown is composed. The lists scroll vertically, so this takes only sideways drags. You is not one of the pages.
+ */
+@Composable
+private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier) {
+    // 0 is the DMs, 1 is Servers, and between is a slide.
+    val place = remember { androidx.compose.animation.core.Animatable(if (tab == Tab.Dms) 0f else 1f) }
+    var settle by remember { mutableStateOf(0) }
+    var dragging by remember { mutableStateOf(false) }
+    var before by remember { mutableStateOf(tab) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(tab, settle) {
+        if (tab == Tab.Profile) { before = tab; return@LaunchedEffect }
+        val goal = if (tab == Tab.Dms) 0f else 1f
+        // Coming from You there is nothing to slide from.
+        if (before == Tab.Profile) place.snapTo(goal)
+        else if (!dragging) place.animateTo(goal, androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+        before = tab
+    }
+    if (tab == Tab.Profile) {
+        ProfilePane(model, state)
+        return
+    }
+    BoxWithConstraints(modifier.clipToBounds().pointerInput(model, tab) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f; dragging = true },
+            onDragEnd = {
+                dragging = false
+                if (kotlin.math.abs(total) > size.width / 6f) {
+                    model.swipeList(if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS, fingerLeft = total < 0f)
+                }
+                settle++
+            },
+            onDragCancel = { dragging = false; total = 0f; settle++ },
+        ) { _, amount ->
+            total += amount
+            // The finger moves the lists (past the far edge of either there is nothing to show, so they stay).
+            scope.launch { place.snapTo((place.value - amount / size.width).coerceIn(0f, 1f)) }
+        }
+    }) {
+        val width = constraints.maxWidth
+        val at = place.value
+        if (at < 1f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset((-at * width).toInt(), 0) }.onGloballyPositioned { dev.morpheus.app.AppState.slide(2, it.positionInWindow().x) }) { DmsPane(model, onOpenRoom) }
+        if (at > 0f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(((1f - at) * width).toInt(), 0) }.onGloballyPositioned { dev.morpheus.app.AppState.slide(3, it.positionInWindow().x) }) { ServersPane(model, onOpenRoom) }
     }
 }
 
@@ -503,25 +553,6 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
         }
     }
 }
-
-
-/**
- * A swipe along Servers or DMs: to the other list, or on to the last chat of the far side (#389; which direction does what is in
- * view-model list_swipes). A drag of a sixth of the width commits; the lists scroll vertically, so this takes only sideways drags.
- */
-private fun Modifier.listSwipe(model: AppModel, tab: Tab): Modifier =
-    if (tab == Tab.Profile) this else pointerInput(model, tab) {
-        var total = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { total = 0f },
-            onDragEnd = {
-                if (kotlin.math.abs(total) > size.width / 6f) {
-                    model.swipeList(if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS, fingerLeft = total < 0f)
-                }
-            },
-            onDragCancel = { total = 0f },
-        ) { _, amount -> total += amount }
-    }
 
 
 /**

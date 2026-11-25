@@ -164,6 +164,10 @@ class TestBridge(private val app: Application) {
         "sample" -> {
             // A quick tap (when `x` and `y` are given), then every 10 ms for `ms` where these tags are: [x, width] or null.
             if (request.has("x")) tapAt(request.getDouble("x").toFloat(), request.getDouble("y").toFloat())
+            // Or a drag (`swipe`: x1, y1, x2, y2, ms) that runs while the samples are taken.
+            request.optJSONObject("swipe")?.let { s ->
+                Thread { swipe(s.getDouble("x1").toFloat(), s.getDouble("y1").toFloat(), s.getDouble("x2").toFloat(), s.getDouble("y2").toFloat(), s.getLong("ms"), false, 0) }.start()
+            }
             val tags = request.getJSONArray("tags")
             val until = SystemClock.uptimeMillis() + request.optLong("ms", 900)
             val out = JSONArray()
