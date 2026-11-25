@@ -136,7 +136,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
         androidx.activity.compose.BackHandler(enabled = live) { model.closeSheet() }
         androidx.compose.ui.viewinterop.AndroidView(factory = { c -> android.view.View(c).also { inSheet[0] = it } }, modifier = Modifier.size(0.dp))
         // What a tap on a message has always shown is tagged "actions" (the old tests look for it).
-        if (request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
+        if (live && request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
         var shown by remember { mutableStateOf<List<MenuRow>>(request.rows) }
         var trail by remember { mutableStateOf<List<MenuRow>>(emptyList()) }
         // Tall enough that half the screen is a stop and nearly all of it is the other.
