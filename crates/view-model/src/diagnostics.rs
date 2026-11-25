@@ -179,7 +179,7 @@ pub fn hardware_decoder_line(setting: bool, env_off: bool, found: &str) -> Strin
 /// whoever reads a bug report), and the fixed words their values are.
 pub fn translatable_labels() -> Vec<&'static str> {
     let mut labels = vec![
-        "App", "Atlas", "Audio capture", "Auto gain", "Backend", "Build", "Call", "Camera", "Commit", "Connection",
+        "App", "Atlas", "Audio capture", "Auto gain", "Backend", "Build", "Call", "Camera", "Camera health", "Commit", "Connection",
         "Cross-signing", "Data folder", "Decoded pictures (GPUI)", "Decoder", "DeepFilterNet latency", "Dedicated GPU setting",
         "Desktop", "Displays", "Driver", "Dropped as late", "Echo cancellation", "Encoder", "FPS (frames drawn)",
         "Frame time", "Frames without DeepFilterNet", "GPU", "GPU type", "GPU vendor", "GPUs found", "Graphics",
