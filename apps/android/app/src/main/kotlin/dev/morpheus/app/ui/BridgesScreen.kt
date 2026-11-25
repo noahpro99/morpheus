@@ -68,10 +68,10 @@ fun BridgesScreen(app: AppModel) {
     }
     LaunchedEffect(Unit) { find() }
 
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("bridges-screen")) {
-        TopBar(t("Bridges"), backTag = "bridges-back", onBack = { app.closeBridges() })
+    LaunchedEffect(note) { note?.let { Toasts.say(it, "bridges-note", long = true) } }
+    ScreenScaffold("bridges-screen", { TopBar(t("Bridges"), backTag = "bridges-back", onBack = { app.closeBridges() }) }) { inner ->
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
@@ -113,7 +113,6 @@ fun BridgesScreen(app: AppModel) {
                 )
                 Button({ add() }, Modifier.testTag("bridge-bot-add"), enabled = typed.isNotBlank()) { Text(t("Add")) }
             }
-            note?.let { Text(it, Modifier.testTag("bridges-note"), color = Palette.Danger, fontSize = 14.sp) }
         }
     }
 }
@@ -134,10 +133,11 @@ private fun BridgeRow(app: AppModel, bot: BridgeBot, language: String) {
     val connecting = phase == BridgePhase.STARTING || phase == BridgePhase.QR || phase == BridgePhase.PROMPT
     val status = t(snapshot.label) + if (phase == BridgePhase.LOGGED_IN && snapshot.detail != null) " " + t("as %{who}", "who" to snapshot.detail!!) else ""
 
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.Background).padding(12.dp).testTag("bridge-row-$id"),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    androidx.compose.material3.Card(
+        Modifier.fillMaxWidth().testTag("bridge-row-$id"),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
+    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(bot.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("bridge-name-$id"))
@@ -185,5 +185,6 @@ private fun BridgeRow(app: AppModel, bot: BridgeBot, language: String) {
             }
             if (!connecting) TextButton({ handle.check() }, Modifier.testTag("bridge-check-$id")) { Text(t("Check status")) }
         }
+    }
     }
 }

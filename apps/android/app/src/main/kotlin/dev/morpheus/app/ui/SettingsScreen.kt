@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -66,10 +68,11 @@ fun SettingsScreen(app: AppModel) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("settings-screen")) {
-        TopBar(t("Settings"), backTag = "settings-back", onBack = { app.closeSettings() }, titleTag = "settings-title")
-        if (page == null) SettingsGroups(app, t, Modifier.weight(1f)) else Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+    // What went wrong is said in a toast.
+    LaunchedEffect(problem) { problem?.let { Toasts.say(it, "settings-error", long = true) } }
+    ScreenScaffold("settings-screen", { TopBar(t("Settings"), backTag = "settings-back", onBack = { app.closeSettings() }, titleTag = "settings-title") }) { inner ->
+        if (page == null) SettingsGroups(app, t, Modifier.padding(inner)) else Column(
+            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (page == "Appearance") {
@@ -77,21 +80,22 @@ fun SettingsScreen(app: AppModel) {
             Row(Modifier.testTag("setting-theme"), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for (choice in app.morpheus.themes()) {
                     val chosen = look.theme == choice.key && look.colour == null
-                    Column(
-                        Modifier
-                            .border(2.dp, if (chosen) Palette.Accent else Color.Transparent, RoundedCornerShape(10.dp))
-                            .clickable { attempt { app.useAppearance(app.morpheus.setTheme(choice.key)) } }
-                            .padding(8.dp)
-                            .testTag("theme-${choice.key}"),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
+                    OutlinedCard(
+                        { attempt { app.useAppearance(app.morpheus.setTheme(choice.key)) } },
+                        Modifier.testTag("theme-${choice.key}"),
+                        border = BorderStroke(2.dp, if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                    ) { Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(Modifier.size(width = 64.dp, height = 36.dp)) {
                             Box(Modifier.weight(1f).fillMaxSize().background(argb(choice.sidebar)))
                             Box(Modifier.weight(2f).fillMaxSize().background(argb(choice.chat)))
                         }
-                        Text(t(choice.label), fontSize = 13.sp)
-                    }
+                        Text(t(choice.label), style = MaterialTheme.typography.bodySmall)
+                    } }
                 }
+            }
+            if (MaterialYou.offered()) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                ToggleRow(t("Material You"), MaterialYou.enabled, "theme-material-you", supporting = t("Use the colours of your wallpaper (Android 12 and up)")) { MaterialYou.set(context, it) }
             }
             var colour by remember { mutableStateOf("") }
             Text(
@@ -117,13 +121,13 @@ fun SettingsScreen(app: AppModel) {
 
             Heading(t("Time format"))
             var clock24 by remember { mutableStateOf(app.morpheus.clock24Hour()) }
-            Choice(t("24-hour time"), clock24, "clock-24-hour") {
+            ToggleRow(t("24-hour time"), clock24, "clock-24-hour") { _ ->
                 attempt { app.morpheus.setClock24Hour(!clock24); clock24 = app.morpheus.clock24Hour(); dev.morpheus.app.ui.Words.changed() }
             }
 
             Heading(t("Language"))
             for (choice in app.morpheus.languages()) {
-                Choice(choice.name, app.morpheus.languageChoice() == choice.code, "language-${choice.code}") {
+                ChoiceRow(choice.name, app.morpheus.languageChoice() == choice.code, "language-${choice.code}") {
                     attempt { app.useLanguage(choice.code) }
                 }
             }
@@ -139,7 +143,7 @@ fun SettingsScreen(app: AppModel) {
                 for ((dm, label, current) in listOf(Triple(true, "Direct messages", shown.dms), Triple(false, "Group rooms", shown.rooms))) {
                     Text(t(label), color = Palette.Muted, fontSize = 13.sp)
                     for ((mode, words) in listOf("all" to "All messages", "mentions" to "Only mentions")) {
-                        Choice(t(words), current == mode, "notify-${if (dm) "dms" else "rooms"}-$mode") {
+                        ChoiceRow(t(words), current == mode, "notify-${if (dm) "dms" else "rooms"}-$mode") {
                             scope.launch {
                                 try {
                                     app.morpheus.setNotifyDefault(dm, mode)
@@ -155,10 +159,10 @@ fun SettingsScreen(app: AppModel) {
 
             Heading(t("Link previews"))
             var previews by remember { mutableStateOf(app.morpheus.previewSettings()) }
-            Choice(t("Show a card under messages with a link"), previews.enabled, "previews-enabled") {
+            ToggleRow(t("Show a card under messages with a link"), previews.enabled, "previews-enabled") { _ ->
                 attempt { app.morpheus.setPreviewSettings(!previews.enabled, previews.inEncrypted); previews = app.morpheus.previewSettings() }
             }
-            Choice(t("Also in encrypted rooms (the homeserver is told the link)"), previews.inEncrypted, "previews-encrypted") {
+            ToggleRow(t("Also in encrypted rooms (the homeserver is told the link)"), previews.inEncrypted, "previews-encrypted") { _ ->
                 attempt { app.morpheus.setPreviewSettings(previews.enabled, !previews.inEncrypted); previews = app.morpheus.previewSettings() }
             }
             }
@@ -173,7 +177,6 @@ fun SettingsScreen(app: AppModel) {
             Text(account?.userId.orEmpty(), Modifier.testTag("settings-account"), color = Palette.Muted)
             Button({ app.signOut() }, Modifier.testTag("settings-sign-out")) { Text(t("Sign out")) }
             }
-            problem?.let { Text(it, Modifier.testTag("settings-error"), color = Palette.Danger, fontSize = 14.sp) }
         }
     }
 }
@@ -183,18 +186,6 @@ private fun argb(v: UInt) = Color(0xFF000000.toInt() or v.toInt())
 @Composable
 private fun Heading(text: String) {
     Text(text.uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
-}
-
-@Composable
-private fun Choice(label: String, chosen: Boolean, tag: String, onPick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = Size.target).clip(RoundedCornerShape(Radius.md)).clickable { onPick() }.padding(vertical = Space.sm).testTag(tag),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        Text(if (chosen) "●" else "○", Modifier.width(24.dp), color = if (chosen) Palette.Accent else Palette.Muted, style = Type.heading)
-        Text(label, style = Type.body)
-    }
 }
 
 /** What the phone has under each of the desktop's groups. */
@@ -209,24 +200,18 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
     Column(modifier.fillMaxWidth().testTag("settings-groups")) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             if (query.isNotBlank()) {
-                if (hits.isEmpty()) Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = Palette.Muted)
+                if (hits.isEmpty()) Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 for (hit in hits) {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = Size.row).clickable { app.openSettingsPage(hit.group, hit.anchor) }.padding(horizontal = Space.lg).testTag("settings-hit-${hit.anchor}"),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) { Text(t(hit.label), Modifier.weight(1f), style = Type.body); Text(t(groups.firstOrNull { it.key == hit.group }?.label ?: hit.group), color = Palette.Muted, style = Type.secondary) }
+                    ListRow(t(hit.label), "settings-hit-${hit.anchor}", trailing = { Text(t(groups.firstOrNull { it.key == hit.group }?.label ?: hit.group), style = MaterialTheme.typography.bodyMedium) }) { app.openSettingsPage(hit.group, hit.anchor) }
                 }
             } else {
                 for (group in groups) {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = Size.row).clickable { app.openSettingsPage(group.key) }.padding(horizontal = Space.lg).testTag("settings-group-${group.key.lowercase()}"),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.lg),
-                    ) {
-                        val icon = glyphDrawable(group.glyph)
-                        if (icon != null) GlyphIcon(icon, tint = Palette.Muted)
-                        Text(t(group.label), Modifier.weight(1f), style = Type.body)
-                        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
-                    }
+                    val icon = glyphDrawable(group.glyph)
+                    ListRow(
+                        t(group.label), "settings-group-${group.key.lowercase()}",
+                        leading = icon?.let { { GlyphIcon(it) } },
+                        trailing = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right) },
+                    ) { app.openSettingsPage(group.key) }
                 }
             }
         }

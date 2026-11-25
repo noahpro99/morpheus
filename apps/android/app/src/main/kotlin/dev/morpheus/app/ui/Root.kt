@@ -42,6 +42,12 @@ fun Root(model: AppModel) {
             // Test tags are resource ids to uiautomator as well.
             .semantics { testTagsAsResourceId = true },
     ) {
+        // The screen's Scaffold: it hosts the toasts (Snackbar) above everything.
+        androidx.compose.material3.Scaffold(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+            snackbarHost = { ToastHost() },
+        ) { _ -> Box(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         val rings by model.ringModel.rings.collectAsState()
             val sharing by ShareInbox.pending.collectAsState()
@@ -119,5 +125,6 @@ fun Root(model: AppModel) {
                 Box(Modifier.align(Alignment.TopCenter)) { RingCard(ring, { model.answerRing(ring) }, { model.declineRing(ring) }) }
             }
         }
+        } }
     }
 }

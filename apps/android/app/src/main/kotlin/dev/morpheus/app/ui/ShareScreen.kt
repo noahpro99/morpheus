@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,16 +75,19 @@ fun ShareScreen(model: AppModel, share: Share) {
             ShareInbox.cancel()
         }
     }
-    Column(Modifier.fillMaxSize().background(Palette.Background).testTag("share-screen")) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), "share-back", { if (chosen != null) picked = null else ShareInbox.cancel() })
-            Text(if (chosen == null) t("Share to") else t("Send to %{name}", "name" to chosen.name), style = Type.heading, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    ScreenScaffold("share-screen", {
+        TopBar(
+            if (chosen == null) t("Share to") else t("Send to %{name}", "name" to chosen.name),
+            backTag = "share-back", onBack = { if (chosen != null) picked = null else ShareInbox.cancel() },
+        )
+    }) { inner ->
+      Column(Modifier.fillMaxSize().padding(inner)) {
         if (chosen == null) {
             Pick(share, targets, query, { query = it }) { picked = it }
         } else {
             Confirm(model, share, chosen)
         }
+      }
     }
 }
 
@@ -103,17 +107,11 @@ private fun ColumnScope.Pick(share: Share, targets: List<ShareTarget>, query: St
     LaunchedEffect(query, targets.map { it.id }) { list.scrollToItem(0) }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("share-results"), state = list, reverseLayout = true) {
         items(targets, key = { it.id }) { target ->
-            Row(
-                Modifier.fillMaxWidth().clickable { onPick(target) }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("share-target-${target.name}"),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Avatar(target.avatar, target.name, 36.dp, square = !target.isDm && target.server == null)
-                Column(Modifier.weight(1f)) {
-                    Text(target.name, style = Type.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(target.server ?: if (target.isDm) t("Direct message") else t("Room"), color = Palette.Muted, style = Type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
+            ListRow(
+                target.name, "share-target-${target.name}",
+                supporting = target.server ?: if (target.isDm) t("Direct message") else t("Room"),
+                leading = { Avatar(target.avatar, target.name, 36.dp, square = !target.isDm && target.server == null) },
+            ) { onPick(target) }
         }
     }
     OutlinedTextField(
@@ -135,7 +133,7 @@ private fun Confirm(model: AppModel, share: Share, target: ShareTarget) {
     Column(Modifier.fillMaxSize().padding(16.dp).testTag("share-confirm"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f).fillMaxWidth().testTag("share-preview"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (share.files.isEmpty()) {
-                Text(share.text.orEmpty(), Modifier.clip(RoundedCornerShape(Radius.md)).background(Palette.Surface).padding(12.dp), maxLines = 8, overflow = TextOverflow.Ellipsis)
+                Text(share.text.orEmpty(), Modifier.clip(RoundedCornerShape(Radius.md)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(12.dp), maxLines = 8, overflow = TextOverflow.Ellipsis)
             } else {
                 share.files.take(4).forEach { Preview(it) }
                 if (share.files.size > 4) Text(t("and %{count} more", "count" to (share.files.size - 4).toString()), color = Palette.Muted)

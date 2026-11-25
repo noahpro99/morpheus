@@ -77,17 +77,17 @@ fun RoomPageHost(app: AppModel) {
 
 @Composable
 private fun PageFrame(app: AppModel, title: String, tag: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag(tag)) {
-        TopBar(t(title), backTag = "page-back", onBack = { app.closePage() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
+    ScreenScaffold(tag, { TopBar(t(title), backTag = "page-back", onBack = { app.closePage() }) }) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
     }
 }
 
 /** What a form says after it ran: a note that it worked, or why it did not. */
 @Composable
 private fun Note(ok: String?, error: String?) {
-    if (ok != null) Text(ok, Modifier.testTag("page-note"), color = Palette.Accent, style = Type.secondary)
-    if (error != null) Text(error, Modifier.testTag("page-error"), color = Palette.Danger, style = Type.secondary)
+    // Said in a toast: that it worked, or why it did not.
+    LaunchedEffect(ok) { ok?.let { Toasts.say(it, "page-note") } }
+    LaunchedEffect(error) { error?.let { Toasts.say(it, "page-error", long = true) } }
 }
 
 @Composable
@@ -169,17 +169,6 @@ private fun EditPage(app: AppModel, page: PageRequest) {
 }
 
 @Composable
-private fun ChoiceRow(label: String, selected: Boolean, tag: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = Size.target).clickable(onClick = onClick).testTag(tag),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        GlyphIcon(if (selected) dev.morpheus.app.R.drawable.ic_lucide_check else dev.morpheus.app.R.drawable.ic_lucide_minus, tint = if (selected) Palette.Accent else Palette.Muted)
-        Text(label, Modifier.weight(1f), style = Type.body)
-    }
-}
-
-@Composable
 private fun PrivacyPage(app: AppModel, page: PageRequest) {
     var info by remember { mutableStateOf<PrivacyInfo?>(null) }
     var join by remember { mutableStateOf("public") }
@@ -212,15 +201,18 @@ private fun PrivacyPage(app: AppModel, page: PageRequest) {
                     true -> Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = Type.body)
                     false -> {
                         Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = Type.body)
-                        if (!confirming) TextButton({ confirming = true }, Modifier.testTag("privacy-encrypt")) { Text(t("Turn on encryption")) }
-                        else {
-                            Text(i.encryptionWarning, Modifier.testTag("privacy-warning"), color = Palette.Danger, style = Type.secondary)
-                            Button({
+                        TextButton({ confirming = true }, Modifier.testTag("privacy-encrypt")) { Text(t("Turn on encryption")) }
+                        // Turning it on cannot be undone: a dialog says so first.
+                        if (confirming) ConfirmDialog(
+                            title = t("Turn on encryption"), text = i.encryptionWarning, textTag = "privacy-warning",
+                            confirm = t("Turn on encryption"), confirmTag = "privacy-encrypt-confirm", danger = true,
+                            onDismiss = { confirming = false },
+                            onConfirm = {
                                 scope.launch {
-                                    try { app.morpheus.turnOnEncryption(page.roomId); confirming = false; reload++ } catch (e: Exception) { error = e.message }
+                                    try { app.morpheus.turnOnEncryption(page.roomId); confirming = false; reload++ } catch (e: Exception) { error = e.message; confirming = false }
                                 }
-                            }, Modifier.testTag("privacy-encrypt-confirm")) { Text(t("Turn on encryption")) }
-                        }
+                            },
+                        )
                     }
                 }
             }
@@ -252,16 +244,16 @@ private fun OverviewPage(app: AppModel, page: PageRequest) {
             if (first != null) Button({ app.closePage(); app.open(first) }, Modifier.testTag("overview-start")) { Text(t("Start chatting")) }
             SectionHeader(t("Channels"))
             for (c in o.channels) {
-                Row(Modifier.fillMaxWidth().heightIn(min = Size.target).testTag("overview-channel-${c.name}"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                    GlyphIcon(if (c.voice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, tint = Palette.Muted)
-                    Column(Modifier.weight(1f)) {
-                        Text(c.name, style = Type.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        c.topic?.takeIf { it.isNotBlank() }?.let { Text(it, color = Palette.Muted, style = Type.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    }
-                    if (!c.joined) TextButton({
-                        scope.launch { try { app.morpheus.joinChannel(c.id, c.via); reload++ } catch (e: Exception) { error = e.message } }
-                    }, Modifier.testTag("overview-join-${c.name}")) { Text(t("Join")) }
-                }
+                ListRow(
+                    c.name, "overview-channel-${c.name}",
+                    supporting = c.topic?.takeIf { it.isNotBlank() },
+                    leading = { GlyphIcon(if (c.voice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash) },
+                    trailing = if (!c.joined) ({
+                        TextButton({
+                            scope.launch { try { app.morpheus.joinChannel(c.id, c.via); reload++ } catch (e: Exception) { error = e.message } }
+                        }, Modifier.testTag("overview-join-${c.name}")) { Text(t("Join")) }
+                    }) else null,
+                )
             }
         }
         Note(null, error)

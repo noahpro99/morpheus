@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,9 +59,8 @@ fun ReorderScreen(app: AppModel) {
         next.add(at + by, next.removeAt(at))
         app.setRailOrder(next)
     }
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("reorder-screen")) {
-        TopBar(t("Servers"), backTag = "reorder-back", onBack = { app.closeReorder() })
-        LazyColumn(Modifier.fillMaxSize()) {
+    ScreenScaffold("reorder-screen", { TopBar(t("Servers"), backTag = "reorder-back", onBack = { app.closeReorder() }) }) { inner ->
+        LazyColumn(Modifier.fillMaxSize().padding(inner)) {
             items(rows, key = { it.key }) { row ->
                 val at = rows.indexOf(row)
                 if (row.folderId == null) {
@@ -84,13 +84,14 @@ fun ReorderScreen(app: AppModel) {
                         TextButton({ move(at, 1) }, Modifier.testTag("folder-down-${row.name}"), enabled = at < rows.size - 1) { Text("▼") }
                     }
                     if (renaming?.key == row.key) {
-                        // In the tree, not a dialog window (the tests reach only the tree).
+                        // The name asked for in a dialog.
                         var name by remember(row.key) { mutableStateOf(row.name) }
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(name, { name = it }, Modifier.weight(1f).testTag("folder-name-input"), singleLine = true)
-                            TextButton({ app.renameFolder(row.folderId.orEmpty(), name); renaming = null }, Modifier.testTag("folder-name-save"), enabled = name.isNotBlank()) { Text(t("Save")) }
-                            TextButton({ renaming = null }) { Text(t("Cancel")) }
-                        }
+                        ConfirmDialog(
+                            title = t("Rename"), confirm = t("Save"), confirmTag = "folder-name-save", confirmEnabled = name.isNotBlank(),
+                            onConfirm = { app.renameFolder(row.folderId.orEmpty(), name); renaming = null },
+                            onDismiss = { renaming = null },
+                            content = { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("folder-name-input"), singleLine = true) },
+                        )
                     }
                     for (id in row.spaces) {
                         val item = server(id) ?: continue
@@ -119,14 +120,14 @@ private fun ServerLine(app: AppModel, server: ScopeItem, id: String, folders: Li
         } else {
             TextButton({ app.moveOutOfFolder(id) }, Modifier.testTag("server-out-${server.title}")) { Text(t("Take out")) }
         }
-        TextButton({ menu = true }, Modifier.testTag("server-folder-${server.title}")) { Text("📁") }
-    }
-    // In the tree, not a popup window (the tests reach only the tree).
-    if (menu) {
-        Column(Modifier.padding(start = indent + 48.dp).background(Palette.Raised)) {
-            TextButton({ menu = false; app.moveToFolder(id, null) }, Modifier.testTag("folder-new")) { Text(t("New folder")) }
-            for (folder in folders) {
-                TextButton({ menu = false; app.moveToFolder(id, folder.folderId) }, Modifier.testTag("folder-into-${folder.name}")) { Text(folder.name) }
+        Box {
+            TextButton({ menu = true }, Modifier.testTag("server-folder-${server.title}")) { Text("📁") }
+            // Where the server goes: a dropdown menu.
+            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                androidx.compose.material3.DropdownMenuItem({ Text(t("New folder")) }, { menu = false; app.moveToFolder(id, null) }, Modifier.testTag("folder-new"))
+                for (folder in folders) {
+                    androidx.compose.material3.DropdownMenuItem({ Text(folder.name) }, { menu = false; app.moveToFolder(id, folder.folderId) }, Modifier.testTag("folder-into-${folder.name}"))
+                }
             }
         }
     }

@@ -1,67 +1,50 @@
 package dev.morpheus.app.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import dev.morpheus.app.AppModel
 import dev.morpheus.app.AppState
-import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.MenuRow
 
 /** The legacy test tags of a message's actions (what a tap on a message has offered since the first version). */
@@ -83,16 +66,15 @@ private fun rowIcon(name: String?): Int {
 }
 
 /**
- * The sheet every long press opens: the same list as the desktop's right-click menu for that thing. It opens at
- * half the height, a drag on its top (or on its list, from the top) takes it up to nearly the whole screen,
- * and a drag down (or back, or a tap outside) closes it.
+ * The sheet every long press opens: the same list as the desktop's right-click menu for that thing, a Material 3 ModalBottomSheet.
+ * It opens at half the height, a drag on its top (or on its list, from the top) takes it up to nearly the whole screen, and a drag
+ * down (or back, or a tap outside) closes it.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ActionSheetHost(model: AppModel) {
     val request by model.sheet.collectAsState()
-    // The sheet that was open stays drawn while it leaves (a spring out), but as a picture only: it takes no touch
-    // and has no place in the semantics tree, so the next touch goes to what is under it at once (#327).
+    // The sheet that was open stays up while it hides (the sheet's own animation), as a picture only: it takes no touch and has
+    // no place in the semantics tree, so the next touch goes to what is under it at once (#327).
     var last by remember { mutableStateOf<dev.morpheus.app.SheetRequest?>(null) }
     val current = request
     if (current != null && last?.id != current.id) last = current
@@ -103,95 +85,68 @@ fun ActionSheetHost(model: AppModel) {
             AppState.haptics++
         }
     }
-    if (current != null) androidx.activity.compose.BackHandler { model.closeSheet() }
     val shown = last ?: return
     androidx.compose.runtime.key(shown.id) {
         ActionSheet(model, shown, live = current?.id == shown.id) { if (last?.id == shown.id) last = null }
     }
 }
 
-/** A light spring: it settles with a small overshoot. */
-private fun <T> sheetSpring() = spring<T>(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow)
-
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest, live: Boolean, onGone: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    // Gone from the semantics tree and out of the touches the moment it is not live.
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    // Half the screen, or nearly all of it for a sheet that asks for that (the emoji picker).
+    LaunchedEffect(Unit) { if (request.startFull) state.expand() }
+    // Closed by the model (a row was chosen): it hides, then it is forgotten.
+    LaunchedEffect(live) {
+        if (!live) {
+            state.hide()
+            onGone()
+        }
+    }
+    // Once it is closing (closed by the model, or let go at the bottom) its window takes no touch: the next touch goes to what is under it
+    // at once, while it finishes hiding (#327).
+    // The sheet is a window of its own; its view is found from a view placed in it (LocalView is the activity's).
+    val inSheet = remember { arrayOfNulls<android.view.View>(1) }
+    fun untouchable() {
+        val view = inSheet[0] ?: return
+        val root = view.rootView
+        val params = root.layoutParams as? android.view.WindowManager.LayoutParams ?: return
+        if (params.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0) return
+        params.flags = params.flags or android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        try { view.context.getSystemService(android.view.WindowManager::class.java).updateViewLayout(root, params) } catch (_: Exception) {}
+    }
+    LaunchedEffect(live) { if (!live) untouchable() }
+    // (Not while a finger is still on it: the drag down passes through "hidden" on its way, and taking the touch away would cancel it.)
+    var fingerDown by remember { mutableStateOf(false) }
+    var seen by remember { mutableStateOf(false) }
+    val target = state.targetValue
+    LaunchedEffect(target) { if (target != SheetValue.Hidden) seen = true }
+    LaunchedEffect(target, fingerDown, seen) { if (target == SheetValue.Hidden && seen && !fingerDown) untouchable() }
+    // Gone from the semantics tree the moment it is not live.
     val inert = if (live) Modifier else Modifier.clearAndSetSemantics { }
-    BoxWithConstraints(Modifier.fillMaxSize().then(inert).testTag("sheet-layer")) {
-        val full = with(LocalDensity.current) { (maxHeight * 0.06f).toPx() }
-        val half = with(LocalDensity.current) { (maxHeight * 0.5f).toPx() }
-        val hidden = with(LocalDensity.current) { maxHeight.toPx() }
-        val top = remember { Animatable(hidden) }
-        val dismiss: () -> Unit = { model.closeSheet() }
-        LaunchedEffect(Unit) { top.animateTo(if (request.startFull) full else half, sheetSpring()) }
-        // Closed: it springs down out of view (as a picture), then it is forgotten.
-        LaunchedEffect(live) {
-            if (!live) {
-                // Out fast and without a bounce: about 100 ms, so the sheet is gone (and the colour with it) at once.
-                top.animateTo(hidden, spring(dampingRatio = 1f, stiffness = 1500f))
-                onGone()
+    ModalBottomSheet(
+        onDismissRequest = { model.closeSheet() },
+        sheetState = state,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        dragHandle = null,
+    ) {
+        // Back closes the sheet from wherever it is (Material's own goes from full to half first).
+        androidx.activity.compose.BackHandler(enabled = live) { model.closeSheet() }
+        androidx.compose.ui.viewinterop.AndroidView(factory = { c -> android.view.View(c).also { inSheet[0] = it } }, modifier = Modifier.size(0.dp))
+        // What a tap on a message has always shown is tagged "actions" (the old tests look for it).
+        if (request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
+        var shown by remember { mutableStateOf<List<MenuRow>>(request.rows) }
+        var trail by remember { mutableStateOf<List<MenuRow>>(emptyList()) }
+        // Tall enough that half the screen is a stop and nearly all of it is the other.
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) fingerDown = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.any { it.pressed }
             }
-        }
-        // Where a let-go sheet comes to rest: the nearest of full, half and gone, leaning the way it was thrown.
-        fun settle(velocity: Float) {
-            val aimed = top.value + velocity * 0.15f
-            val goal = listOf(full, half, hidden).minByOrNull { kotlin.math.abs(it - aimed) } ?: half
-            if (goal == hidden) dismiss() else scope.launch { top.animateTo(goal, sheetSpring()) }
-        }
-        val drag = rememberDraggableState { delta -> scope.launch { top.snapTo((top.value + delta).coerceIn(full, hidden)) } }
-        // The list gives its scroll to the sheet while the sheet is not all the way up, and when it is at its top.
-        val connection = remember {
-            object : NestedScrollConnection {
-                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    if (available.y < 0f && top.value > full) {
-                        val used = kotlin.math.max(available.y, full - top.value)
-                        scope.launch { top.snapTo(top.value + used) }
-                        return Offset(0f, used)
-                    }
-                    return Offset.Zero
-                }
-                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                    if (available.y > 0f) {
-                        scope.launch { top.snapTo((top.value + available.y).coerceIn(full, hidden)) }
-                        return Offset(0f, available.y)
-                    }
-                    return Offset.Zero
-                }
-                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                    settle(available.y)
-                    return available
-                }
-            }
-        }
-        val shade = ((hidden - top.value) / (hidden - half)).coerceIn(0f, 1f)
-        Box(
-            Modifier.fillMaxSize().background(Color(0x99000000).copy(alpha = 0.6f * shade)).then(if (live) Modifier.pointerInput(Unit) { detectTapGestures { dismiss() } } else Modifier).testTag("sheet-scrim"),
-        )
-        Column(
-            Modifier
-                .offset { androidx.compose.ui.unit.IntOffset(0, top.value.toInt()) }
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet))
-                .background(Palette.Raised)
-                .then(if (live) Modifier.pointerInput(Unit) { detectTapGestures { } } else Modifier)
-                .semantics { contentDescription = request.title }
-                .testTag("sheet"),
-        ) {
-            // What a tap on a message has always shown is tagged "actions" (the old tests look for it).
-            if (request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
-            var shown by remember { mutableStateOf<List<MenuRow>>(request.rows) }
-            var trail by remember { mutableStateOf<List<MenuRow>>(emptyList()) }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .then(if (live) Modifier.draggable(drag, Orientation.Vertical, onDragStopped = { settle(it) }) else Modifier)
-                    .testTag("sheet-handle"),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(Modifier.padding(top = Space.sm, bottom = Space.xs).size(width = 36.dp, height = 4.dp).clip(CircleShape).background(Palette.Muted.copy(alpha = 0.5f)))
+        }.then(inert).semantics { contentDescription = request.title }.testTag("sheet")) {
+            Column(Modifier.fillMaxWidth().testTag("sheet-handle"), horizontalAlignment = Alignment.CenterHorizontally) {
+                BottomSheetDefaults.DragHandle()
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.lg).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (trail.isNotEmpty()) {
                         IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), "sheet-back", {
@@ -199,23 +154,21 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
                             trail = trail.dropLast(1)
                         })
                     }
-                    Text(trail.lastOrNull()?.label ?: request.title, Modifier.weight(1f).testTag("sheet-title"), style = Type.heading, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(trail.lastOrNull()?.label ?: request.title, Modifier.weight(1f).testTag("sheet-title"), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             if (!live) {
                 // Leaving: the rows as a picture, nothing that could take a touch.
                 Column(Modifier.fillMaxWidth().weight(1f)) { for (row in shown.take(10)) SheetRow(row, interactive = false) { } }
-            } else LazyColumn(Modifier.fillMaxWidth().weight(1f).nestedScroll(connection).testTag("sheet-list")) {
+            } else LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("sheet-list")) {
                 if (trail.isEmpty() && request.quickReactions.isNotEmpty()) {
                     item(key = "quick") {
                         Row(Modifier.padding(horizontal = Space.lg, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                             for (emoji in request.quickReactions) {
-                                Box(
-                                    Modifier.size(48.dp).background(Palette.Surface, CircleShape)
-                                        .pointerInput(emoji) { detectTapGestures { model.chooseReaction(emoji) } }
-                                        .testTag("react-$emoji"),
-                                    contentAlignment = Alignment.Center,
-                                ) { Text(emoji, style = Type.heading) }
+                                Surface(
+                                    shape = CircleShape, color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.size(48.dp).pointerInput(emoji) { detectTapGestures { model.chooseReaction(emoji) } }.testTag("react-$emoji"),
+                                ) { Box(contentAlignment = Alignment.Center) { Text(emoji, style = MaterialTheme.typography.titleMedium) } }
                             }
                         }
                     }
@@ -225,12 +178,10 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
                     item(key = "grid") {
                         FlowRow(Modifier.padding(horizontal = Space.lg, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                             for (cell in shown) {
-                                Box(
-                                    Modifier.size(48.dp).background(Palette.Surface, CircleShape)
-                                        .pointerInput(cell.path) { detectTapGestures { model.chooseSheetItem(cell.path) } }
-                                        .testTag("sheet-item-${cell.id}"),
-                                    contentAlignment = Alignment.Center,
-                                ) { Text(cell.label, style = Type.heading) }
+                                Surface(
+                                    shape = CircleShape, color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.size(48.dp).pointerInput(cell.path) { detectTapGestures { model.chooseSheetItem(cell.path) } }.testTag("sheet-item-${cell.id}"),
+                                ) { Box(contentAlignment = Alignment.Center) { Text(cell.label, style = MaterialTheme.typography.titleMedium) } }
                             }
                         }
                     }
@@ -250,6 +201,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SheetRow(row: MenuRow, interactive: Boolean = true, onClick: () -> Unit) {
     var sure by remember { mutableStateOf(false) }
@@ -258,24 +210,23 @@ private fun SheetRow(row: MenuRow, interactive: Boolean = true, onClick: () -> U
     val tag = legacyTag(row.id) ?: "sheet-item-${row.id}"
     // A delete takes a second tap, as it always has on the phone.
     val needsSure = danger && row.id.startsWith("Delete")
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = Size.row)
-            .then(if (interactive) Modifier.clickable { if (needsSure && !sure) sure = true else onClick() }.semantics { role = Role.Button } else Modifier)
-            .padding(horizontal = Space.lg)
-            .testTag(tag),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.lg),
-    ) {
-        val tint = if (danger) Palette.Danger else Palette.Muted
-        if (row.avatar != null) Avatar(null, row.avatar!!, Size.avatarSm)
-        else if (icon != 0) GlyphIcon(icon, tint = tint) else Box(Modifier.size(24.dp))
-        Text(
-            if (sure) t("Tap again to delete") else row.label,
-            Modifier.weight(1f), style = Type.body, color = if (danger) Palette.Danger else Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
-        if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = Palette.Accent, modifier = Modifier.testTag("sheet-check-${row.id}"))
-        if (row.children.isNotEmpty()) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
-    }
+    ListRow(
+        if (sure) t("Tap again to delete") else row.label,
+        tag,
+        danger = danger,
+        leading = {
+            if (row.avatar != null) Avatar(null, row.avatar!!, Size.avatarSm)
+            else if (icon != 0) GlyphIcon(icon) else Box(Modifier.size(24.dp))
+        },
+        trailing = if (row.checked || row.children.isNotEmpty()) {
+            {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                    if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("sheet-check-${row.id}"))
+                    if (row.children.isNotEmpty()) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right)
+                }
+            }
+        } else null,
+        enabled = interactive,
+        onClick = if (interactive) ({ if (needsSure && !sure) sure = true else onClick() }) else null,
+    )
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,8 +45,8 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
         kotlinx.coroutines.delay(250)
         hits = model.search(query)
     }
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("search-panel")) {
-        Row(Modifier.fillMaxWidth().background(Palette.Background), verticalAlignment = Alignment.CenterVertically) {
+    ScreenScaffold("search-panel", {
+        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background), verticalAlignment = Alignment.CenterVertically) {
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), "search-back", { onPick("") })
             OutlinedTextField(
                 query, { query = it },
@@ -54,21 +55,21 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
                 singleLine = true,
             )
         }
+    }) { inner ->
+      Column(Modifier.fillMaxSize().padding(inner)) {
         Text(t("Searches the messages this device has loaded."), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = Palette.Muted, fontSize = 12.sp)
         val found = hits
         if (found != null && found.isEmpty()) Text(t("No messages found."), Modifier.padding(16.dp).testTag("search-none"), color = Palette.Muted)
         LazyColumn(Modifier.fillMaxSize().testTag("search-results"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(found.orEmpty(), key = { it.eventId }) { hit ->
-                Column(
-                    Modifier.fillMaxWidth().clickable { if (hit.eventId.isNotEmpty()) onPick(hit.eventId) }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("search-hit"),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(hit.sender, fontWeight = FontWeight.Bold)
-                        Text(hit.`when`, color = Palette.Muted, fontSize = 12.sp)
-                    }
-                    Text(hit.body, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                }
+                androidx.compose.material3.ListItem(
+                    headlineContent = { Text(hit.body, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+                    modifier = Modifier.fillMaxWidth().clickable { if (hit.eventId.isNotEmpty()) onPick(hit.eventId) }.testTag("search-hit"),
+                    overlineContent = { Text(hit.sender + "  " + hit.`when`, fontWeight = FontWeight.Bold, maxLines = 1) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                )
             }
         }
+      }
     }
 }

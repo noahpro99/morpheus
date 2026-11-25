@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,20 +70,18 @@ fun NewScreen(app: AppModel) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("new-screen")) {
-        TopBar(t("New"), backTag = "new-back", onBack = { app.closeNew() })
+    LaunchedEffect(problem) { problem?.let { Toasts.say(it, "new-error", long = true) } }
+    ScreenScaffold("new-screen", { TopBar(t("New"), backTag = "new-back", onBack = { app.closeNew() }) }) { inner ->
+      Column(Modifier.fillMaxSize().padding(inner)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             for (t in Tab.entries) {
-                val on = t == tab
-                Box(
-                    Modifier.weight(1f).heightIn(min = 40.dp).clip(CircleShape)
-                        .background(if (on) Palette.Accent else Palette.Raised)
-                        .clickable { tab = t; problem = null }
-                        .testTag("tab-${t.label}"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(t.label, style = Type.secondary, maxLines = 1, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) onColour(Palette.Accent) else Palette.Muted)
-                }
+                androidx.compose.material3.FilterChip(
+                    selected = t == tab,
+                    onClick = { tab = t; problem = null },
+                    label = { Text(t.label, maxLines = 1) },
+                    modifier = Modifier.weight(1f).testTag("tab-${t.label}"),
+                    shape = CircleShape,
+                )
             }
         }
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -101,8 +100,8 @@ fun NewScreen(app: AppModel) {
                 Tab.Browse -> Browse(app, busy) { id, via -> go { app.morpheus.joinPublic(id, via); id } }
                 Tab.Friends -> Friends(app) { user -> go { app.morpheus.startDm(user) } }
             }
-            problem?.let { Text(it, Modifier.testTag("new-error"), color = Palette.Danger, fontSize = 14.sp) }
         }
+      }
     }
 }
 
@@ -146,11 +145,13 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
     if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted)
     LazyColumn(Modifier.testTag("directory")) {
         items(listed.orEmpty(), key = { it.id }) { room ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(room.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("directory-name"))
-                    Text(listOfNotNull(room.members, room.topic).joinToString(" · "), color = Palette.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.ListItem(
+                    headlineContent = { Text(room.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("directory-name")) },
+                    modifier = Modifier.weight(1f),
+                    supportingContent = { Text(listOfNotNull(room.members, room.topic).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
                 TextButton({ onJoin(room.id, null) }, Modifier.testTag("join-${room.name}"), enabled = !busy) { Text(t("Join")) }
             }
         }
@@ -191,7 +192,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
             }
         }, Modifier.testTag("friend-add"), enabled = typed.isNotBlank()) { Text(t("Add")) }
     }
-    failure?.let { Text(it, Modifier.testTag("friend-error"), color = Palette.Danger, fontSize = 14.sp) }
+    LaunchedEffect(failure) { failure?.let { Toasts.say(it, "friend-error", long = true) } }
     val list = friends
     if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted)
     if (list != null && list.isNotEmpty()) Text(t("All friends — %{count}", "count" to list.size.toString()), color = Palette.Muted, fontSize = 12.sp)
@@ -199,12 +200,12 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
         items(list.orEmpty(), key = { it.userId }) { friend ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(friend.avatar, friend.name, 36.dp)
-                Column(
-                    Modifier.weight(1f).clickable { onMessage(friend.userId) }.padding(start = 10.dp).testTag("friend-${friend.name}"),
-                ) {
-                    Text(friend.name, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text(friend.subtitle, color = Palette.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+                androidx.compose.material3.ListItem(
+                    headlineContent = { Text(friend.name, fontWeight = FontWeight.Bold, maxLines = 1) },
+                    modifier = Modifier.weight(1f).clickable { onMessage(friend.userId) }.testTag("friend-${friend.name}"),
+                    supportingContent = { Text(friend.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
                 TextButton({
                     scope.launch {
                         try {

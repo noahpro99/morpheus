@@ -172,7 +172,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             if (id.isNotEmpty()) model.jumpTo(id)
         }
         else if (info) RoomInfo(app, model, room, title) { info = false }
-        else if (thread == null) RoomPages(app, model, room, pager, threadRoot == null) { Column(Modifier.fillMaxSize().background(Palette.Surface)) {
+        else if (thread == null) RoomPages(app, model, room, pager, threadRoot == null) { ScreenScaffold(if (threadRoot == null) "room-screen" else "thread-screen", {
             val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
             TopBar(
                 if (threadRoot == null) title else t("Thread"),
@@ -187,6 +187,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     IconAction(dev.morpheus.app.R.drawable.ic_lucide_info, t("Room details"), "room-info-button", { info = true })
                 }
             }
+        }) { inner -> Column(Modifier.fillMaxSize().padding(inner)) {
             Timeline(
                 model, rows, Modifier.weight(1f),
                 onActions = { message, held ->
@@ -252,11 +253,12 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 }
             }
             val problem by model.error.collectAsState()
+            // Over the composer, so it stays a line above it (a toast would cover the send button).
             problem?.let {
-                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = Palette.Danger, fontSize = 13.sp)
+                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = Type.secondary)
             }
             Composer(model, editing, composerFocus, onAttach = { picker.launch("*/*") }) { model.send(it) }
-        } }
+        } } }
         viewing?.let { ImageViewer(it) { viewing = null } }
         thread?.let { root ->
             Box(Modifier.fillMaxSize().testTag("thread-panel")) { RoomScreen(app, room, root) { thread = null } }
@@ -569,19 +571,19 @@ private fun Composer(model: RoomModel, editing: MessageItem?, focus: androidx.co
                 focusedTextColor = Palette.Text, unfocusedTextColor = Palette.Text, cursorColor = Palette.Accent,
             ),
             trailingIcon = {
-                Box(Modifier.size(40.dp).clip(CircleShape).clickable { panel = !panel }.semantics { contentDescription = t("Emoji"); role = Role.Button }.testTag("emoji-button"), contentAlignment = Alignment.Center) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = Palette.Muted) }
+                androidx.compose.material3.IconButton({ panel = !panel }, Modifier.size(40.dp).semantics { contentDescription = t("Emoji") }.testTag("emoji-button")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             },
         )
         val canSend = text.isNotBlank()
-        Box(
-            Modifier
-                .size(Size.target).clip(CircleShape)
-                .background(if (canSend) Palette.Accent else Palette.Raised)
-                .clickable(enabled = canSend) { onSend(text.trim()); text = ""; model.stopTyping() }
-                .semantics { contentDescription = t("Send") }
-                .testTag("send"),
-            contentAlignment = Alignment.Center,
-        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp, tint = if (canSend) onColour(Palette.Accent) else Palette.Muted) }
+        androidx.compose.material3.FilledIconButton(
+            { onSend(text.trim()); text = ""; model.stopTyping() },
+            Modifier.size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
+            enabled = canSend,
+            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh, disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
     }
     if (panel) EmojiPanel(model) { text = if (it.startsWith(":")) withEmoji(text, it) else withEmoji(text, it) }
     }

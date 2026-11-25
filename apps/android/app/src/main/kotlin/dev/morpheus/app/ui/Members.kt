@@ -40,9 +40,8 @@ fun MembersPane(app: AppModel, model: RoomModel) {
     var card by remember { mutableStateOf<ProfileCard?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(model) { members = try { model.members() } catch (_: Exception) { emptyList() } }
-    Box(Modifier.fillMaxSize().background(Palette.Surface).testTag("members-pane")) {
+    ScreenScaffold("members-pane", { TopBar(t("Members")) }) { inner -> Box(Modifier.fillMaxSize().padding(inner)) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(t("Members"))
             val rows = members
             when {
                 rows == null -> Column(Modifier.padding(top = Space.xl)) { SkeletonRows(7) }
@@ -51,24 +50,18 @@ fun MembersPane(app: AppModel, model: RoomModel) {
                     items(rows) { row ->
                         when (row) {
                             is MemberRow.Heading -> SectionHeader(row.title, Modifier.testTag("member-heading"))
-                            is MemberRow.Member -> Row(
-                                Modifier.fillMaxWidth().heightIn(min = 56.dp).combinedClickable(
-                                    onClick = { scope.launch { card = try { model.profile(row.member.userId) } catch (_: Exception) { null } } },
-                                    onLongClick = {
-                                        app.openSheet(row.member.name, onOutcome = { o -> if (o is uniffi.morpheus_ffi.MenuOutcome.OpenRoom) app.openRoomWhenKnown(o.roomId) }) { app.morpheus.memberMenuRows(model.room.id, row.member.userId) }
-                                    },
-                                ).padding(horizontal = Space.lg).testTag("member-${row.member.name}"),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Space.md),
-                            ) {
-                                Avatar(row.member.avatar, row.member.name, Size.avatar)
-                                Text(row.member.name, style = Type.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
+                            is MemberRow.Member -> ListRow(
+                                row.member.name, "member-${row.member.name}",
+                                leading = { Avatar(row.member.avatar, row.member.name, Size.avatar) },
+                                onLongClick = {
+                                    app.openSheet(row.member.name, onOutcome = { o -> if (o is uniffi.morpheus_ffi.MenuOutcome.OpenRoom) app.openRoomWhenKnown(o.roomId) }) { app.morpheus.memberMenuRows(model.room.id, row.member.userId) }
+                                },
+                            ) { scope.launch { card = try { model.profile(row.member.userId) } catch (_: Exception) { null } } }
                         }
                     }
                 }
             }
         }
         card?.let { ProfileSheet(app, it) { card = null } }
-    }
+    } }
 }

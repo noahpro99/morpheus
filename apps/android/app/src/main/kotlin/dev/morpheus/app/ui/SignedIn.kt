@@ -3,6 +3,7 @@ package dev.morpheus.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -147,14 +149,18 @@ fun BottomBar(model: AppModel, tab: Tab) {
     val serverUnread = scopes.any { it.kind != ScopeKind.DMS && it.hasUnread }
     val dmRooms = scopes.firstOrNull { it.kind == ScopeKind.DMS }?.sections?.flatMap { it.rooms }.orEmpty().filter { !it.muted }
     val dmUnread = dmRooms.sumOf { it.unread + it.highlights }
-    Column(Modifier.fillMaxWidth().background(Palette.Background)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-        Row(Modifier.fillMaxWidth().height(Size.tabBar).testTag("tab-bar")) {
+    // Material 3 NavigationBar for the bar and its colours; the items keep their own gestures (a long press, a double tap).
+    androidx.compose.material3.NavigationBar(
+        Modifier.fillMaxWidth().height(Size.tabBar).testTag("tab-bar"),
+        containerColor = MaterialTheme.colorScheme.background,
+        windowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+    ) {
+        run {
             TabItem(Tab.Dms, tab, t("DMs"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) Palette.Accent else Palette.Muted)
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TabItem(Tab.Servers, tab, t("Servers"), "tab-servers", mentions = serverNews, dot = serverUnread, onClick = { model.selectTab(Tab.Servers) }) { on ->
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) Palette.Accent else Palette.Muted)
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) },
                 onLong = { model.openSheet(t("You")) { model.morpheus.accountMenuRows() } },
@@ -187,13 +193,21 @@ private fun RowScope.TabItem(
 ) {
     var lastTap by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     val on = me == current
+    // A press shows the ripple (the state layer) though the tap is read by hand (a clickable would merge the icon into the item).
+    val presses = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Column(
         Modifier
             .weight(1f).fillMaxHeight()
+            .indication(presses, androidx.compose.material3.ripple())
             // Taps by pointerInput, not clickable: that would merge the icon and avatar into one node (the tests look inside).
             .pointerInput(onClick, onLong, onSecondTap) {
                 // A tap acts at once (no wait to see whether a second comes); a second one close behind it is the double tap.
                 detectTapGestures(
+                    onPress = { at ->
+                        val press = androidx.compose.foundation.interaction.PressInteraction.Press(at)
+                        presses.emit(press)
+                        presses.emit(if (tryAwaitRelease()) androidx.compose.foundation.interaction.PressInteraction.Release(press) else androidx.compose.foundation.interaction.PressInteraction.Cancel(press))
+                    },
                     onLongPress = onLong?.let { long -> { long() } },
                     onTap = {
                         val now = android.os.SystemClock.uptimeMillis()
@@ -209,13 +223,13 @@ private fun RowScope.TabItem(
     ) {
         Box(contentAlignment = Alignment.TopEnd) {
             Box(
-                Modifier.height(32.dp).width(60.dp).clip(CircleShape).background(if (on) Palette.Accent.copy(alpha = 0.22f) else Color.Transparent),
+                Modifier.height(32.dp).width(64.dp).clip(CircleShape).background(if (on) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) { icon(on) }
             if (mentions > 0UL) MentionPill(mentions, "$tag-badge", Modifier.padding(end = Space.xs))
-            else if (dot) Box(Modifier.padding(top = 4.dp, end = 14.dp).size(10.dp).clip(CircleShape).background(Palette.Text).testTag("$tag-dot"))
+            else if (dot) Box(Modifier.padding(top = 4.dp, end = 14.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).testTag("$tag-dot"))
         }
-        Text(label, Modifier.padding(top = 2.dp), style = Type.caption, color = if (on) Palette.Text else Palette.Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+        Text(label, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelMedium, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
@@ -327,19 +341,14 @@ private fun ChannelList(
     Column(
         modifier.then(if (rounded) Modifier.clip(RoundedCornerShape(topStart = Radius.lg)) else Modifier).background(Palette.Surface).testTag("channel-panel"),
     ) {
-        Row(Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.xs).height(Size.topBar), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (scope.kind == ScopeKind.DMS) t("DMs") else scope.title,
-                Modifier.weight(1f).testTag("scope-title"),
-                style = Type.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        TopBar(
+            if (scope.kind == ScopeKind.DMS) t("DMs") else scope.title,
+            backTag = null, titleTag = "scope-title", titleStyle = MaterialTheme.typography.titleLarge, container = MaterialTheme.colorScheme.surface,
+        ) {
             val unreadIds = scope.sections.flatMap { it.rooms }.filter { it.unread > 0UL || it.highlights > 0UL }.map { it.id }
-            if (unreadIds.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_lucide_check_check, t("Mark read"), "mark-read", { model.markRoomsRead(unreadIds) }, tint = Palette.Muted)
+            if (unreadIds.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_lucide_check_check, t("Mark read"), "mark-read", { model.markRoomsRead(unreadIds) }, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("New"), "new-button", { model.openNew() })
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
         if (scope.sections.all { it.rooms.isEmpty() } && invites.isEmpty()) {
             EmptyState(
                 if (scope.kind == ScopeKind.DMS) dev.morpheus.app.R.drawable.ic_lucide_messages_square else dev.morpheus.app.R.drawable.ic_lucide_hash,
@@ -375,32 +384,24 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
     Box(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = 1.dp).clip(RoundedCornerShape(Radius.md)).background(if (selected) Palette.Raised else Color.Transparent)) {
         Column {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = if (room.isDm) 60.dp else Size.row - 8.dp)
-                    .combinedClickable(onClick = { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }, onLongClick = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } })
-                    .padding(start = Space.sm, end = 96.dp)
-                    .testTag("room-${room.name}"),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.md),
-            ) {
-                if (room.isDm) {
-                    Avatar(room.avatar, room.name, Size.avatar, key = room.avatarKey)
-                } else {
-                    GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (unread) Palette.Text else Palette.Muted)
-                }
-                if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp, tint = Palette.Muted)
-                if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp, tint = Palette.Muted)
-                Text(
-                    room.name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Type.body,
-                    fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
-                    color = if (unread) Palette.Text else Palette.Muted,
-                )
-            }
+            ListRow(
+                room.name, "room-${room.name}",
+                // As tall as the rows always were: 60 dp for a person, 48 for a channel.
+                modifier = Modifier.height(if (room.isDm) 60.dp else Size.row - 8.dp).padding(end = 96.dp),
+                strong = unread, quiet = !unread,
+                leading = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                        if (room.isDm) {
+                            Avatar(room.avatar, room.name, Size.avatar, key = room.avatarKey)
+                        } else {
+                            GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp)
+                        if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
+                    }
+                },
+                onLongClick = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } },
+            ) { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }
             if (room.call.isNotEmpty()) {
                 val names by model.callNames.collectAsState()
                 Column(Modifier.padding(start = 44.dp, bottom = Space.sm)) {
@@ -464,13 +465,7 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
 
 @Composable
 private fun ProfileRow(@androidx.annotation.DrawableRes icon: Int, label: String, tag: String, danger: Boolean = false, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = Size.row).clickable(onClick = onClick).padding(horizontal = Space.lg).testTag(tag),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.lg),
-    ) {
-        GlyphIcon(icon, tint = if (danger) Palette.Danger else Palette.Muted)
-        Text(label, Modifier.weight(1f), style = Type.body, color = if (danger) Palette.Danger else Palette.Text)
-    }
+    ListRow(label, tag, danger = danger, leading = { GlyphIcon(icon) }, onClick = onClick)
 }
 
 /** Shown while this device is not verified or cannot read the key backup yet. */
@@ -479,29 +474,28 @@ private fun SecurityBanner(model: AppModel) {
     val security by model.security.collectAsState()
     val status = security?.status?.collectAsState()?.value ?: return
     if (status.deviceVerified && status.recovery != uniffi.morpheus_ffi.RecoveryKind.NEEDS_KEY) return
-    Row(
-        Modifier.fillMaxWidth().background(Palette.Raised).clickable { model.openSecurity() }.padding(Space.lg).testTag("verify-banner"),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, tint = Palette.Accent)
-        Text(t("Verify this device to read your encrypted messages"), Modifier.weight(1f), style = Type.secondary)
-        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right, tint = Palette.Muted)
-    }
+    ListRow(
+        t("Verify this device to read your encrypted messages"), "verify-banner",
+        selected = true,
+        leading = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, tint = MaterialTheme.colorScheme.primary) },
+        trailing = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right) },
+    ) { model.openSecurity() }
 }
 
 /** An invitation: who asked, to what, and the two answers. */
 @Composable
 private fun InviteCard(invite: InviteItem, model: AppModel) {
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)
-            .background(Palette.Raised, RoundedCornerShape(Radius.md)).padding(Space.md).testTag("invite-${invite.name}"),
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
+    androidx.compose.material3.Card(
+        Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs).testTag("invite-${invite.name}"),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Text(invite.name, style = Type.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(invite.line, color = Palette.Muted, style = Type.secondary, modifier = Modifier.testTag("invite-line"))
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text(t("Accept")) }
-            TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text(t("Decline")) }
+        Column(Modifier.padding(Space.md), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text(invite.name, style = Type.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(invite.line, color = MaterialTheme.colorScheme.onSurfaceVariant, style = Type.secondary, modifier = Modifier.testTag("invite-line"))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text(t("Accept")) }
+                TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text(t("Decline")) }
+            }
         }
     }
 }

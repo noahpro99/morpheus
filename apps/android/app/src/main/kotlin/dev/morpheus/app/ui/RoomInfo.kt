@@ -63,9 +63,9 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
     LaunchedEffect(Unit) { mode = model.notifyMode() }
 
     Box(Modifier.fillMaxSize().testTag("room-info")) {
-        Column(Modifier.fillMaxSize().background(Palette.Surface)) {
-            TopBar(t("Room details"), backTag = "info-back", onBack = { onClose() })
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LaunchedEffect(problem) { problem?.let { Toasts.say(it, "info-error", long = true) } }
+        ScreenScaffold("room-info-screen", { TopBar(t("Room details"), backTag = "info-back", onBack = { onClose() }) }) { inner ->
+            LazyColumn(Modifier.fillMaxSize().padding(inner).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 12.dp)) {
                         Text(title, Modifier.testTag("info-name"), style = Type.title)
@@ -76,15 +76,9 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                         )
                         Text(t("Notifications").uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
                         for ((key, words) in listOf("all" to "All messages", "mentions" to "Only mentions", "mute" to "Muted")) {
-                            Row(
-                                Modifier.fillMaxWidth().clickable {
-                                    mode = key
-                                    model.setNotifyMode(key)
-                                }.padding(vertical = 10.dp).testTag("room-notify-$key"),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Text(if (mode == key) "●" else "○", color = if (mode == key) Palette.Accent else Palette.Muted)
-                                Text(words)
+                            ChoiceRow(t(words), mode == key, "room-notify-$key") {
+                                mode = key
+                                model.setNotifyMode(key)
                             }
                         }
                         Text(t("Members").uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
@@ -94,27 +88,22 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                 items(members.orEmpty()) { row ->
                     when (row) {
                         is MemberRow.Heading -> Text(row.title, Modifier.padding(top = 8.dp).testTag("member-heading"), color = Palette.Muted, fontSize = 13.sp)
-                        is MemberRow.Member -> Row(
-                            Modifier.fillMaxWidth().clickable {
-                                scope.launch {
-                                    try {
-                                        card = model.profile(row.member.userId)
-                                    } catch (e: Exception) {
-                                        problem = e.sentence()
-                                    }
-                                }
-                            }.padding(vertical = 6.dp).testTag("member-${row.member.name}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        is MemberRow.Member -> ListRow(
+                            row.member.name, "member-${row.member.name}",
+                            leading = { Avatar(row.member.avatar, row.member.name, 36.dp) },
                         ) {
-                            Avatar(row.member.avatar, row.member.name, 36.dp)
-                            Text(row.member.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            scope.launch {
+                                try {
+                                    card = model.profile(row.member.userId)
+                                } catch (e: Exception) {
+                                    problem = e.sentence()
+                                }
+                            }
                         }
                     }
                 }
                 item {
                     Column(Modifier.padding(vertical = 20.dp)) {
-                        problem?.let { Text(it, Modifier.testTag("info-error"), color = Palette.Danger, fontSize = 14.sp) }
                         Button(
                             {
                                 if (!sure) {
@@ -140,22 +129,20 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit) {
     var friend by remember(card.userId) { mutableStateOf(card.isFriend) }
     var problem by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    Box(
-        Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0x99000000)).pointerInput(Unit) { detectTapGestures { onClose() } }.testTag("profile-scrim"),
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onClose,
+        modifier = Modifier.testTag("profile-card"),
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Palette.Raised, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .pointerInput(Unit) { detectTapGestures { } }
-                .padding(16.dp)
-                .testTag("profile-card"),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

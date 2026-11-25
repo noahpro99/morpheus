@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -208,20 +209,25 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
         if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_lucide_refresh_cw, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
         Control(if (speaker) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_phone, t("Speaker"), "call-speaker", speaker) { calls.toggleSpeaker() }
         Control(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Call settings"), "call-settings", false) { openSettings() }
-        Box(
-            Modifier.size(48.dp).clip(CircleShape).background(Palette.Danger).clickable { calls.hangUp() }.semantics { contentDescription = t("Hang up"); role = Role.Button }.testTag("call-hangup"),
-            contentAlignment = Alignment.Center,
-        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_phone_off, tint = Palette.OnDanger) }
+        androidx.compose.material3.FilledIconButton(
+            { calls.hangUp() },
+            Modifier.size(48.dp).semantics { contentDescription = t("Hang up") }.testTag("call-hangup"),
+            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_phone_off) }
     }
 }
 
 @Composable
 private fun Control(@androidx.annotation.DrawableRes icon: Int, description: String, tag: String, on: Boolean, onClick: () -> Unit) {
-    val fill = if (on) Palette.Accent else Palette.Raised
-    Box(
-        Modifier.size(48.dp).clip(CircleShape).background(fill).clickable { onClick() }.semantics { contentDescription = description; role = Role.Button }.testTag(tag),
-        contentAlignment = Alignment.Center,
-    ) { GlyphIcon(icon, tint = if (on) onColour(Palette.Accent) else Palette.Text) }
+    // On: the primary colour with its on-colour; off: the raised surface with the text colour.
+    androidx.compose.material3.FilledIconToggleButton(
+        on, { onClick() },
+        Modifier.size(48.dp).semantics { contentDescription = description }.testTag(tag),
+        colors = androidx.compose.material3.IconButtonDefaults.filledIconToggleButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface,
+            checkedContainerColor = MaterialTheme.colorScheme.primary, checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+    ) { GlyphIcon(icon) }
 }
 
 /** The call going, as a bar over the rest of the app: back to it, mute, hang up. */
@@ -290,9 +296,7 @@ private fun ColumnScope.CallSettings(calls: CallModel, close: () -> Unit) {
         Text(t("Sound goes to"), color = Palette.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
         tick
         for (route in calls.routes()) {
-            TextButton({ calls.chooseRoute(route.key); tick++ }, Modifier.testTag("route-${route.key}")) {
-                Text((if (route.on) "● " else "○ ") + route.label)
-            }
+            ChoiceRow(route.label, route.on, "route-${route.key}") { calls.chooseRoute(route.key); tick++ }
         }
         TextButton(close, Modifier.testTag("call-settings-close")) { Text(t("Close")) }
     }
