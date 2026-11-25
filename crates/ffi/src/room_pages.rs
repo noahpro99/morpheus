@@ -269,6 +269,19 @@ impl Morpheus {
         Ok(self.session()?.leave_space(id, children).await?)
     }
 
+    /// What a server is, in words.
+    pub fn create_server_blurb(&self) -> String {
+        i18n::t(room_dialogs::create_space_blurb(false))
+    }
+
+    /// Make a server (a space of its own, in no other) with this name. Gives its ID.
+    pub async fn create_server(&self, name: String) -> Result<String, FfiError> {
+        if !room_dialogs::can_create(&name) {
+            return Err(failed(i18n::t("A server needs a name.")));
+        }
+        Ok(self.session()?.create_space(name, None).await?.to_string())
+    }
+
     /// What a category is, in words.
     pub fn create_category_blurb(&self) -> String {
         i18n::t(room_dialogs::create_space_blurb(true))

@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.morpheus.app.AppModel
+import dev.morpheus.app.PageRequest
 import dev.morpheus.app.sentence
 import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.DirectoryItem
@@ -100,6 +101,8 @@ fun NewScreen(app: AppModel) {
                 Tab.Browse -> Browse(app, busy) { id, via -> go { app.morpheus.joinPublic(id, via); id } }
                 Tab.Friends -> Friends(app) { user -> go { app.morpheus.startDm(user) } }
             }
+            // (a server is a page of its own, as the desktop's dialog is)
+            if (tab == Tab.Create) TextButton({ app.closeNew(); app.openPage(PageRequest("create-server", "", "")) }, Modifier.testTag("create-server-button")) { Text(t("Create a server instead")) }
         }
       }
     }

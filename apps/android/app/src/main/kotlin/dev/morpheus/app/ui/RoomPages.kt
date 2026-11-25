@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import dev.morpheus.app.AppModel
 import dev.morpheus.app.PageRequest
+import dev.morpheus.app.sentence
 import dev.morpheus.app.People
 import dev.morpheus.app.read
 import kotlinx.coroutines.launch
@@ -70,6 +71,7 @@ fun RoomPageHost(app: AppModel) {
             "lock-remove" -> LockRemovePage(app, page)
             "leave" -> LeavePage(app, page)
             "category" -> CategoryPage(app, page)
+            "create-server" -> CreateServerPage(app)
             "profile" -> ProfilePage(app, page)
         }
     }
@@ -411,6 +413,23 @@ private fun CategoryPage(app: AppModel, page: PageRequest) {
         Button({
             scope.launch { try { app.morpheus.createCategory(page.roomId, name); app.closePage() } catch (e: Exception) { error = e.message } }
         }, Modifier.testTag("category-submit")) { Text(t("Create category")) }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun CreateServerPage(app: AppModel) {
+    var name by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    PageFrame(app, "Create server", "page-create-server") {
+        Text(app.morpheus.createServerBlurb(), color = Palette.Muted, style = Type.secondary)
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("server-name"), singleLine = true, label = { Text(t("Name")) })
+        Button({
+            busy = true
+            scope.launch { try { app.morpheus.createServer(name); app.closePage() } catch (e: Exception) { error = e.sentence(); busy = false } }
+        }, Modifier.testTag("server-submit"), enabled = name.isNotBlank() && !busy) { Text(t("Create server")) }
         Note(null, error)
     }
 }
