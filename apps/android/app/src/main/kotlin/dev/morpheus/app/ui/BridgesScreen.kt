@@ -89,7 +89,7 @@ fun BridgesScreen(app: AppModel) {
             }
             for (bot in shown.orEmpty()) BridgeRow(app, bot, language)
 
-            Text(t("Another bridge bot").uppercase(), Modifier.padding(top = 12.dp), color = Palette.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            SmallHeading(t("Another bridge bot"), Modifier.padding(top = 12.dp))
             Text(t("Bridges are run by your server's administrator. If the bot of yours has another name, type it here."), color = Palette.Muted, fontSize = 13.sp)
             var typed by remember { mutableStateOf("") }
             fun add() {

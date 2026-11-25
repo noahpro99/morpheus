@@ -67,10 +67,19 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
             } else if (current == null) {
                 Text(t("Loading…"), color = Palette.Muted)
             } else {
-                Text(
-                    if (current.deviceVerified) "This device is verified." else "This device is not verified: encrypted messages from before you signed in cannot be read yet.",
-                    Modifier.testTag("security-state"),
-                )
+                // The state of this device, as a Material 3 card with a shield.
+                androidx.compose.material3.Card(
+                    Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = ComposerColours.text(MaterialTheme.colorScheme)),
+                ) {
+                    Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, tint = ComposerColours.hint(MaterialTheme.colorScheme))
+                        Text(
+                            if (current.deviceVerified) "This device is verified." else "This device is not verified: encrypted messages from before you signed in cannot be read yet.",
+                            Modifier.testTag("security-state"),
+                        )
+                    }
+                }
                 if (current.recovery == RecoveryKind.NEEDS_KEY) {
                     Text(t("Enter your recovery key (or passphrase) to unlock your encrypted history."), color = Palette.Muted)
                     OutlinedTextField(

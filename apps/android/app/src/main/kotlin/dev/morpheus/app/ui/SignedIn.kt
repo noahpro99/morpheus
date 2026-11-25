@@ -122,7 +122,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
         before = tab
     }
     if (tab == Tab.Profile) {
-        ProfilePane(model, state)
+        Box(modifier) { ProfilePane(model, state) }
         return
     }
     BoxWithConstraints(modifier.clipToBounds().pointerInput(model, tab) {

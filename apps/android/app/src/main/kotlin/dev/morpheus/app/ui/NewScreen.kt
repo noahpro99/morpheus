@@ -74,14 +74,18 @@ fun NewScreen(app: AppModel) {
     LaunchedEffect(problem) { problem?.let { Toasts.say(it, "new-error", long = true) } }
     ScreenScaffold("new-screen", { TopBar(t("New"), backTag = "new-back", onBack = { app.closeNew() }) }) { inner ->
       Column(Modifier.fillMaxSize().padding(inner)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        // Material 3 tabs that scroll, so every label is whole.
+        androidx.compose.material3.ScrollableTabRow(
+            selectedTabIndex = Tab.entries.indexOf(tab), edgePadding = Space.sm,
+            containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary,
+        ) {
             for (t in Tab.entries) {
-                androidx.compose.material3.FilterChip(
+                androidx.compose.material3.Tab(
                     selected = t == tab,
                     onClick = { tab = t; problem = null },
-                    label = { Text(t.label, maxLines = 1) },
-                    modifier = Modifier.weight(1f).testTag("tab-${t.label}"),
-                    shape = CircleShape,
+                    text = { Text(t.label, maxLines = 1) },
+                    modifier = Modifier.testTag("tab-${t.label}"),
+                    selectedContentColor = MaterialTheme.colorScheme.primary, unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -137,12 +141,7 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
             failure = e.sentence()
         }
     }
-    OutlinedTextField(
-        term, { term = it },
-        Modifier.fillMaxWidth().testTag("directory-search"),
-        placeholder = { Text(t("Search public rooms")) },
-        singleLine = true,
-    )
+    SearchField(term, { term = it }, t("Search public rooms"), "directory-search")
     failure?.let { Text(it, color = Palette.Danger, fontSize = 14.sp) }
     val listed = rooms
     if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted)

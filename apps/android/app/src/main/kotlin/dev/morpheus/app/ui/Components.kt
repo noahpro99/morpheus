@@ -133,14 +133,20 @@ fun TopBar(
     }
 }
 
-/** A small-caps heading over a group of rows. */
+/** A Material 3 heading over a group inside a page: label-large in the primary colour (read against the page, #266). */
+@Composable
+fun SmallHeading(text: String, modifier: Modifier = Modifier) {
+    Text(text, modifier, style = MaterialTheme.typography.labelLarge, color = readable(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surface))
+}
+
+/** A Material 3 section heading over a group of rows: label-large, in the primary colour. */
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
-        text.uppercase(),
+        text,
         modifier.fillMaxWidth().padding(start = Space.lg, end = Space.lg, top = Space.lg, bottom = Space.xs),
-        style = Type.label,
-        color = Palette.Muted,
+        style = MaterialTheme.typography.labelLarge,
+        color = readable(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surface),
     )
 }
 

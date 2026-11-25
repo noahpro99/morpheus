@@ -188,7 +188,7 @@ private fun argb(v: UInt) = Color(0xFF000000.toInt() or v.toInt())
 
 @Composable
 private fun Heading(text: String) {
-    Text(text.uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
+    SmallHeading(text, Modifier.padding(top = Space.lg))
 }
 
 /** What the phone has under each of the desktop's groups. */
@@ -219,11 +219,7 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
-        androidx.compose.material3.OutlinedTextField(
-            query, { query = it }, Modifier.fillMaxWidth().padding(Space.md).testTag("settings-search"),
-            placeholder = { Text(t("Search settings")) }, singleLine = true,
-            leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, tint = Palette.Muted) },
-        )
+        SearchField(query, { query = it }, t("Search settings"), "settings-search", Modifier.padding(Space.md))
     }
 }
 

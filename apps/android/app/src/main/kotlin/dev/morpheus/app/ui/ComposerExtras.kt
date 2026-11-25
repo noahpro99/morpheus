@@ -91,12 +91,7 @@ fun EmojiPanel(model: RoomModel, onPick: (String) -> Unit) {
         custom = model.customEmoji(query)
     }
     androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().height(300.dp).background(Palette.Surface).testTag("emoji-panel")) {
-        OutlinedTextField(
-            query, { query = it },
-            Modifier.fillMaxWidth().padding(8.dp).testTag("emoji-search"),
-            placeholder = { Text(t("Search emoji")) },
-            singleLine = true,
-        )
+        SearchField(query, { query = it }, t("Search emoji"), "emoji-search", Modifier.padding(8.dp))
         LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.fillMaxWidth()) {
             for (pack in custom) {
                 item(span = { GridItemSpan(maxLineSpan) }) {

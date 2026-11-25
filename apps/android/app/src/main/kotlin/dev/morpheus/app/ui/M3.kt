@@ -27,6 +27,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -237,3 +239,44 @@ fun ScreenScaffold(tag: String, topBar: @Composable () -> Unit, modifier: Modifi
     )
 }
 
+
+/**
+ * A Material 3 search bar: the docked bar (a pill 56 dp tall in the surface container colour) with a search icon, a clear button
+ * while there is text, and a hint, its colours read against the bar's fill (#266). Used wherever the phone searches.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun SearchField(query: String, onQuery: (String) -> Unit, hint: String, tag: String, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val fill = ComposerColours.fill(scheme)
+    val ink = ComposerColours.text(scheme)
+    val muted = ComposerColours.hint(scheme)
+    val colours = androidx.compose.material3.SearchBarDefaults.colors(
+        containerColor = fill,
+        inputFieldColors = androidx.compose.material3.TextFieldDefaults.colors(
+            focusedTextColor = ink, unfocusedTextColor = ink, cursorColor = scheme.primary,
+            focusedPlaceholderColor = muted, unfocusedPlaceholderColor = muted,
+            focusedLeadingIconColor = muted, unfocusedLeadingIconColor = muted, focusedTrailingIconColor = muted, unfocusedTrailingIconColor = muted,
+            focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
+        ),
+    )
+    androidx.compose.material3.DockedSearchBar(
+        inputField = {
+            androidx.compose.material3.SearchBarDefaults.InputField(
+                query = query, onQueryChange = onQuery, onSearch = {}, expanded = false, onExpandedChange = {},
+                modifier = Modifier.testTag(tag),
+                placeholder = { Text(hint) },
+                leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, tint = muted) },
+                trailingIcon = if (query.isEmpty()) null else ({
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Clear"), "$tag-clear", { onQuery("") }, tint = muted)
+                }),
+                colors = colours.inputFieldColors,
+            )
+        },
+        expanded = false, onExpandedChange = {},
+        modifier = modifier.fillMaxWidth(),
+        shape = CircleShape,
+        colors = colours,
+        tonalElevation = 0.dp, shadowElevation = 0.dp,
+    ) {}
+}

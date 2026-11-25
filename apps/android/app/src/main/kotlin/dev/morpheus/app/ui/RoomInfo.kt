@@ -74,14 +74,14 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                             if (room.isEncrypted) "🔒 End-to-end encrypted" else "Not encrypted",
                             Modifier.testTag("info-encryption"), color = Palette.Muted, fontSize = 13.sp,
                         )
-                        Text(t("Notifications").uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
+                        SmallHeading(t("Notifications"), Modifier.padding(top = Space.lg))
                         for ((key, words) in listOf("all" to "All messages", "mentions" to "Only mentions", "mute" to "Muted")) {
                             ChoiceRow(t(words), mode == key, "room-notify-$key") {
                                 mode = key
                                 model.setNotifyMode(key)
                             }
                         }
-                        Text(t("Members").uppercase(), Modifier.padding(top = Space.lg), color = Palette.Muted, style = Type.label)
+                        SmallHeading(t("Members"), Modifier.padding(top = Space.lg))
                         if (members == null && problem == null) Text(t("Loading…"), color = Palette.Muted)
                     }
                 }
@@ -104,7 +104,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                 }
                 item {
                     Column(Modifier.padding(vertical = 20.dp)) {
-                        Button(
+                        androidx.compose.material3.FilledTonalButton(
                             {
                                 if (!sure) {
                                     sure = true
@@ -120,6 +120,8 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                                 }
                             },
                             Modifier.testTag("leave-room"),
+                            // A destructive action reads as one: the error container (the scheme's own pair), not the accent.
+                            colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
                         ) { Text(if (sure) "Tap again to leave" else "Leave room") }
                     }
                 }

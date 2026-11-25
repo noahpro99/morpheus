@@ -48,12 +48,7 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
     ScreenScaffold("search-panel", {
         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background), verticalAlignment = Alignment.CenterVertically) {
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), "search-back", { onPick("") })
-            OutlinedTextField(
-                query, { query = it },
-                Modifier.weight(1f).padding(end = 8.dp).testTag("search-input"),
-                placeholder = { Text(t("Search messages")) },
-                singleLine = true,
-            )
+            SearchField(query, { query = it }, t("Search messages"), "search-input", Modifier.weight(1f).padding(end = Space.sm, top = Space.sm, bottom = Space.sm))
         }
     }) { inner ->
       Column(Modifier.fillMaxSize().padding(inner)) {
