@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
@@ -163,6 +164,7 @@ class TestBridge(private val app: Application) {
             }
             out
         }
+        "windows" -> onMain { JSONArray(windows().map { JSONObject().put("view", it.view.javaClass.name).put("over", it.over).put("modal", it.modal).put("w", it.view.width).put("h", it.view.height).put("x", it.dx).put("y", it.dy) }) }
         "slide_reset" -> { AppState.slideLog.clear(); true }
         "clock_offset" -> { AppState.clockOffsetMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
@@ -180,6 +182,12 @@ class TestBridge(private val app: Application) {
             view.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
         }
         "back" -> onMain {
+            // A dialog (a sheet, an alert) over the activity takes the back key itself.
+            windows().lastOrNull { it.over && it.touchable }?.let { win ->
+                // The window's own back dispatcher (from API 33 a dialog gets no back key, the system calls its callback).
+                val dispatcher = win.view.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
+                if (dispatcher != null) { dispatcher.onBackPressed(); return@onMain }
+            }
             (activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed() ?: error("no window")
         }
         "attach" -> {
@@ -226,6 +234,9 @@ class TestBridge(private val app: Application) {
             JSONObject()
                 .put("screen", AppState.screen)
                 .put("last_link", AppState.lastLink)
+                .put("colour_source", AppState.colourSource)
+                .put("sdk", android.os.Build.VERSION.SDK_INT)
+                .put("colour_pairs", JSONArray(AppState.colourPairs.map { JSONArray().put(it.first).put(it.second.toLong() and 0xFFFFFF).put(it.third.toLong() and 0xFFFFFF) }))
                 .put("room", AppState.room)
                 .put("haptics", AppState.haptics)
                 .put("image_fetches", AppState.imageFetches)
@@ -261,15 +272,44 @@ class TestBridge(private val app: Application) {
         return null
     }
 
-    private fun nodes(): List<SemanticsNode> {
-        val root = composeRoot(root())?.semanticsOwner?.rootSemanticsNode ?: return emptyList()
-        val out = ArrayList<SemanticsNode>()
-        fun walk(node: SemanticsNode) {
-            out.add(node)
-            node.children.forEach(::walk)
+    /** A window of the app with Compose in it: the activity's, and the dialogs and popups over it (a sheet, an alert, a menu). */
+    private class Win(val view: View, val root: RootForTest, val dx: Int, val dy: Int, val over: Boolean, val modal: Boolean, val touchable: Boolean = true)
+
+    /** The app's windows with Compose in them, the one underneath first. */
+    private fun windows(): List<Win> {
+        val decor = root()
+        val views: List<View> = if (android.os.Build.VERSION.SDK_INT >= 29) android.view.inspector.WindowInspector.getGlobalWindowViews() else listOfNotNull(decor)
+        return views.filter { it.isShown }.mapNotNull { view ->
+            val compose = composeRoot(view) ?: return@mapNotNull null
+            val at = IntArray(2).also { view.getLocationOnScreen(it) }
+            val type = (view.layoutParams as? android.view.WindowManager.LayoutParams)?.type ?: 1
+            val over = view !== decor
+            // Modal: a dialog, or a window that covers the screen (a sheet). A small popup (a menu) is not.
+            val touchable = (view.layoutParams as? android.view.WindowManager.LayoutParams)?.flags?.and(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) == 0
+            val covers = decor != null && view.width >= decor.width * 0.9 && view.height >= decor.height * 0.8
+            Win(view, compose, at[0], at[1], over, modal = over && touchable && (type == android.view.WindowManager.LayoutParams.TYPE_APPLICATION || covers), touchable = touchable)
         }
-        walk(root)
+    }
+
+    /** Where each node's window is on the screen (the node's own bounds are in its window). */
+    private val offsets = java.util.IdentityHashMap<SemanticsNode, IntArray>()
+
+    private fun nodes(): List<SemanticsNode> {
+        val out = ArrayList<SemanticsNode>()
+        offsets.clear()
+        fun walk(node: SemanticsNode, at: IntArray) {
+            out.add(node)
+            offsets[node] = at
+            node.children.forEach { walk(it, at) }
+        }
+        for (win in windows()) win.root.semanticsOwner.rootSemanticsNode.let { walk(it, intArrayOf(win.dx, win.dy)) }
         return out
+    }
+
+    /** The node's box on the screen. */
+    private fun boxOf(node: SemanticsNode): androidx.compose.ui.geometry.Rect {
+        val at = offsets[node] ?: intArrayOf(0, 0)
+        return node.boundsInWindow.translate(at[0].toFloat(), at[1].toFloat())
     }
 
     private fun textOf(node: SemanticsNode): String {
@@ -281,13 +321,13 @@ class TestBridge(private val app: Application) {
     private fun describe(node: SemanticsNode): JSONObject {
         val config = node.config
         // What is visible of it: a row cut off by its list is reported (and tapped) where it can be seen.
-        val box = node.boundsInWindow
+        val box = boxOf(node)
         return JSONObject()
             .put("id", node.id)
-            .put("tag", config.getOrNull(SemanticsProperties.TestTag))
+            .put("tag", config.getOrNull(SemanticsProperties.TestTag) ?: if (config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() == "Close sheet") "sheet-scrim" else null)
             .put("text", textOf(node))
             .put("description", config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString(" "))
-            .put("state", config.getOrNull(SemanticsProperties.StateDescription))
+            .put("state", config.getOrNull(SemanticsProperties.StateDescription) ?: config.getOrNull(SemanticsProperties.ToggleableState)?.let { if (it == androidx.compose.ui.state.ToggleableState.On) "On" else "Off" } ?: config.getOrNull(SemanticsProperties.Selected)?.let { if (it) "On" else "Off" })
             .put("x", box.left).put("y", box.top)
             .put("width", box.width).put("height", box.height)
             .put("clickable", config.contains(SemanticsActions.OnClick))
@@ -310,15 +350,28 @@ class TestBridge(private val app: Application) {
     private fun click(node: SemanticsNode): Boolean {
         val action = node.config.getOrNull(SemanticsActions.OnClick)?.action
         if (action != null) return action() ?: true
-        val box = node.boundsInWindow
+        val box = boxOf(node)
         tap(box.center.x, box.center.y)
         return true
     }
 
     // ---- touches
 
+    /** The window a touch at (x, y) goes to: a dialog over the activity takes every touch (it is modal), a popup the ones on it. */
+    private fun windowAt(x: Float, y: Float): View {
+        val all = windows()
+        all.lastOrNull { it.modal }?.let { return it.view }
+        for (win in all.reversed()) {
+            if (win.view === root()) break
+            if (!win.touchable) continue
+            val hit = win.root.semanticsOwner.rootSemanticsNode.let { r -> r.children.any { c -> c.boundsInWindow.translate(win.dx.toFloat(), win.dy.toFloat()).contains(androidx.compose.ui.geometry.Offset(x, y)) } }
+            if (hit) return win.view
+        }
+        return root() ?: error("no window")
+    }
+
     private fun touch(action: Int, down: Long, x: Float, y: Float) = onMain {
-        val view = root() ?: error("no window")
+        val view = windowAt(x, y)
         val at = IntArray(2).also { view.getLocationOnScreen(it) }
         val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x - at[0], y - at[1], 0)
         event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
