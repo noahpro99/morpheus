@@ -174,11 +174,22 @@ class RoomModel(
     /** Delete with a few seconds to take it back: the message goes from the chat now and is deleted when the toast has gone. */
     fun deleteUndoable(eventId: String) {
         _hidden.value = _hidden.value + eventId
+        undoing++
         dev.morpheus.app.ui.Toasts.undoable(
             dev.morpheus.app.ui.t("Message deleted"),
-            onUndo = { _hidden.value = _hidden.value - eventId },
-            onCommit = { delete(eventId) },
+            onUndo = { _hidden.value = _hidden.value - eventId; undone() },
+            // The chat may have been left meanwhile: the delete still goes, and the room closes behind it.
+            onCommit = { delete(eventId); undone() },
         )
+    }
+
+    /** Deletes still waiting out their Undo moment, and whether the chat was closed meanwhile (it is then closed when the last is settled). */
+    private var undoing = 0
+    private var closing = false
+
+    private fun undone() {
+        undoing--
+        if (closing && undoing <= 0) finishClose()
     }
 
     fun send(text: String) {
@@ -295,6 +306,12 @@ class RoomModel(
     }
 
     fun close() {
+        // A delete in its Undo moment is still to be sent: the room closes after it.
+        closing = true
+        if (undoing <= 0) finishClose()
+    }
+
+    private fun finishClose() {
         // What was sent but is waiting still goes; the room closes behind it.
         outbox.close()
         detached.launch {
