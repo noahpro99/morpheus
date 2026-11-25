@@ -95,6 +95,7 @@ impl RoomTimeline {
     /// Everyone in the room under their role's heading: admins, moderators, members.
     pub async fn members(&self) -> Result<Vec<MemberRow>, FfiError> {
         let list = self.session.members(self.room_id.clone()).await?;
+        let nicks = self.nicks.snapshot();
         Ok(members::rows(&list)
             .into_iter()
             .map(|row| match row {
@@ -104,7 +105,7 @@ impl RoomTimeline {
                     MemberRow::Member {
                         member: MemberItem {
                             user_id: m.user_id.to_string(),
-                            name: m.name.clone(),
+                            name: morpheus_view_model::nicknames::shown_name(&nicks, m.user_id.as_str(), &m.name),
                             avatar: m.avatar.clone().map(|a| MediaHandle::new(a, &self.session)),
                             role: members::role_name(m.role).to_owned(),
                         },
@@ -149,7 +150,7 @@ impl RoomTimeline {
         let is_friend = session.friends().await?.contains(&who);
         Ok(ProfileCard {
             user_id: who.to_string(),
-            name: profile.name,
+            name: morpheus_view_model::nicknames::shown_name(&self.nicks.snapshot(), who.as_str(), &profile.name),
             avatar: profile.avatar.map(|a| MediaHandle::new(a, session)),
             status: profile.status,
             role,

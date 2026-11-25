@@ -179,10 +179,15 @@ impl Morpheus {
         let dir = self.dir.clone();
         let (overrides, changed) = (self.muted_now.clone(), self.layout_changed.clone());
         let rooms_now = self.rooms_now.clone();
+        let nicks = self.nicks.clone();
+        let mut nick_changes = nicks.watch();
         let task = runtime().spawn(async move {
             let mut rooms: Vec<RoomSummary> = Vec::new();
             let load = || async { Layout::load(&session).await.with_mutes(&overrides) };
             let mut layout = load().await;
+            if let Ok(map) = session.nicknames().await {
+                nicks.replace(map);
+            }
             let mut ticks = tokio::time::interval(std::time::Duration::from_secs(4));
             let mut told = false;
             loop {
@@ -200,6 +205,8 @@ impl Morpheus {
                     _ = changed.notified() => {
                         layout = load().await;
                     }
+                    // A nickname was set or changed: the DMs go by it.
+                    _ = nick_changes.changed() => {}
                     _ = ticks.tick() => {
                         // A timed mute that ran out ends (on every device), as on the desktop.
                         for id in layout.marks.ended_mutes(now_ms()) {
@@ -208,6 +215,10 @@ impl Morpheus {
                             }
                             overrides.lock().map(|mut m| m.insert(id.clone(), false)).ok();
                             let _ = session.set_mark(morpheus_core::marks::MUTED_UNTIL, id, None).await;
+                        }
+                        // So do the nicknames.
+                        if let Ok(map) = session.nicknames().await {
+                            nicks.replace(map);
                         }
                         // The layout changes on another device without the room list changing.
                         let now = load().await;
@@ -218,7 +229,10 @@ impl Morpheus {
                     }
                 }
                 told = true;
-                let sidebar = sidebar_of(&rooms, &session, &layout);
+                // A DM goes by your nickname for the person.
+                let nicknames = nicks.snapshot();
+                let shown: Vec<RoomSummary> = rooms.iter().cloned().map(|mut room| { room.name = morpheus_view_model::nicknames::room_title(&nicknames, &room); room }).collect();
+                let sidebar = sidebar_of(&shown, &session, &layout);
                 crate::sidebar_cache::save(&dir, &sidebar);
                 listener.on_sidebar(sidebar);
             }

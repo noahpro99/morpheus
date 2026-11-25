@@ -420,6 +420,7 @@ impl Morpheus {
                     K::CreateSpace(Some(space)) => page("category", space.to_string(), String::new()),
                     K::CreateSpace(None) => page("create-server", String::new(), String::new()),
                     K::SetStatus => page("status", String::new(), String::new()),
+                    K::Nickname(user, name) => page("nickname", user.to_string(), name),
                     K::RoomProfile(space) => page("profile", space.to_string(), String::new()),
                     _ => MenuOutcome::NotYet { label: i18n::t(&label) },
                 }

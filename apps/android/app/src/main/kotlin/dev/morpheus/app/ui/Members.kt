@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +40,8 @@ fun MembersPane(app: AppModel, model: RoomModel) {
     var members by remember { mutableStateOf<List<MemberRow>?>(null) }
     var card by remember { mutableStateOf<ProfileCard?>(null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(model) { members = try { model.members() } catch (_: Exception) { emptyList() } }
+    val nicknames by app.nicknameVersion.collectAsState()
+    LaunchedEffect(model, nicknames) { members = try { model.members() } catch (_: Exception) { emptyList() } }
     ScreenScaffold("members-pane", { TopBar(t("Members")) }) { inner -> Box(Modifier.fillMaxSize().padding(inner)) {
         Column(Modifier.fillMaxSize()) {
             val rows = members

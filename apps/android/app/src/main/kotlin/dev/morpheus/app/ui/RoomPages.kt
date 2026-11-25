@@ -73,6 +73,7 @@ fun RoomPageHost(app: AppModel) {
             "category" -> CategoryPage(app, page)
             "create-server" -> CreateServerPage(app)
             "status" -> StatusPage(app)
+            "nickname" -> NicknamePage(app, page)
             "profile" -> ProfilePage(app, page)
         }
     }
@@ -452,6 +453,24 @@ private fun StatusPage(app: AppModel) {
             Button({ save(text) }, Modifier.testTag("status-save"), enabled = !busy) { Text(t("Save")) }
             TextButton({ save("") }, Modifier.testTag("status-clear"), enabled = !busy) { Text(t("Clear status")) }
         }
+        Note(null, error)
+    }
+}
+
+@Composable
+private fun NicknamePage(app: AppModel, page: PageRequest) {
+    var text by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(page.roomId) { try { text = app.morpheus.nicknameOf(page.roomId) } catch (_: Exception) {} }
+    PageFrame(app, "Set nickname", "page-nickname") {
+        Text(app.morpheus.nicknameBlurb(page.extra), Modifier.testTag("nickname-blurb"), color = Palette.Muted, style = Type.secondary)
+        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().testTag("nickname-input"), singleLine = true, label = { Text(t("Nickname")) })
+        Button({
+            busy = true
+            scope.launch { try { app.morpheus.setNickname(page.roomId, text); app.nicknamesChanged(); app.closePage() } catch (e: Exception) { error = e.sentence(); busy = false } }
+        }, Modifier.testTag("nickname-save"), enabled = !busy) { Text(t("Save")) }
         Note(null, error)
     }
 }

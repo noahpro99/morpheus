@@ -127,7 +127,7 @@ impl Morpheus {
     /// My friends.
     pub async fn friends(&self) -> Result<Vec<FriendItem>, FfiError> {
         let session = self.session()?;
-        let nicknames = Default::default();
+        let nicknames = self.nicks.snapshot();
         let mut items = Vec::new();
         for user in session.friends().await? {
             let profile = session.profile(user.clone()).await.ok();

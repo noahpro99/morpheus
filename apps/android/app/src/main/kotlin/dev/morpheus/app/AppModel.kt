@@ -640,6 +640,15 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     private val _status = MutableStateFlow("")
 
+    private val _nicknameVersion = MutableStateFlow(0)
+
+    /** Counts the nickname changes made here: lists read once (the members) read again on it. */
+    val nicknameVersion: StateFlow<Int> = _nicknameVersion.asStateFlow()
+
+    fun nicknamesChanged() {
+        _nicknameVersion.value += 1
+    }
+
     /** My status message (empty for none). */
     val ownStatus: StateFlow<String> = _status.asStateFlow()
 

@@ -30,6 +30,7 @@ mod error;
 mod locks;
 mod media;
 mod menus;
+mod nicknames;
 mod people;
 mod push;
 mod rings;
@@ -163,6 +164,8 @@ pub struct Morpheus {
     pub(crate) menu: Mutex<Option<crate::menus::Stored>>,
     /// Password locks of this device.
     pub(crate) locks: Mutex<morpheus_view_model::locks::Locks>,
+    /// Your nicknames for people.
+    pub(crate) nicks: Arc<crate::nicknames::Nicknames>,
 }
 
 impl Morpheus {
@@ -199,6 +202,7 @@ impl Morpheus {
             rooms_now: Arc::default(),
             menu: Mutex::new(None),
             locks: Mutex::new(locks),
+            nicks: Arc::default(),
         }))
     }
 

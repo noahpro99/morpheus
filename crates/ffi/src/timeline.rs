@@ -131,7 +131,7 @@ pub trait TimelineListener: Send + Sync {
     fn on_rows(&self, rows: Vec<TimelineRow>);
 }
 
-fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, session: &Session) -> MessageItem {
+fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, session: &Session, nicks: &morpheus_view_model::nicknames::NickMap) -> MessageItem {
     let message = &row.message;
     let body = match &message.kind {
         MessageKind::Image {
@@ -187,7 +187,7 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             MessageId::Transaction(_) => None,
         },
         sender_id: message.sender.to_string(),
-        sender_name: message.sender_name.clone(),
+        sender_name: morpheus_view_model::nicknames::shown_name(nicks, message.sender.as_str(), &message.sender_name),
         sender_avatar_key: message.sender_avatar.as_ref().map(|m| m.key().to_owned()),
         sender_avatar: message
             .sender_avatar
@@ -230,11 +230,11 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
     }
 }
 
-fn rows_of(rows: &[Row], seen: &std::collections::HashMap<String, Vec<morpheus_core::OwnedUserId>>, session: &Session) -> Vec<TimelineRow> {
+fn rows_of(rows: &[Row], seen: &std::collections::HashMap<String, Vec<morpheus_core::OwnedUserId>>, session: &Session, nicks: &morpheus_view_model::nicknames::NickMap) -> Vec<TimelineRow> {
     rows.iter()
         .filter_map(|row| match row {
             Row::Message { row, show_header } => Some(TimelineRow::Message {
-                message: message_item(row, *show_header, seen.get(&row.message.unique_id).map(|users| users.iter().map(ToString::to_string).collect()).unwrap_or_default(), session),
+                message: message_item(row, *show_header, seen.get(&row.message.unique_id).map(|users| users.iter().map(ToString::to_string).collect()).unwrap_or_default(), session, nicks),
             }),
             Row::Date(label, at) => Some(TimelineRow::Date {
                 label: label.clone(),
@@ -254,6 +254,7 @@ pub struct RoomTimeline {
     pub(crate) handle: TimelineHandle,
     pub(crate) session: Session,
     pub(crate) room_id: OwnedRoomId,
+    pub(crate) nicks: Arc<crate::nicknames::Nicknames>,
     _updates: Arc<TaskHandle>,
 }
 
@@ -367,14 +368,23 @@ impl Morpheus {
         // above the first message after it, once, and stays.
         let read_at = if is_thread { None } else { session.fully_read_at(room_id.clone()).await.ok().flatten() };
         let (dir, cache_room) = (self.dir.clone(), room_id.to_string());
+        let nicks = self.nicks.clone();
+        let mut nick_changes = nicks.watch();
         let task = runtime().spawn(async move {
             let mut entries: Vector<TimelineEntry> = Vector::new();
             let mut known: HashMap<String, Arc<MessageRow>> = HashMap::new();
             let mut marker: Option<String> = None;
             let mut caught_up = false;
-            while let Some(batch) = updates.next().await {
-                for diff in batch {
-                    diff.apply(&mut entries);
+            loop {
+                // A new batch of changes, or a nickname that was set (the rows are drawn again with it).
+                tokio::select! {
+                    batch = updates.next() => {
+                        let Some(batch) = batch else { break };
+                        for diff in batch {
+                            diff.apply(&mut entries);
+                        }
+                    }
+                    _ = nick_changes.changed() => {}
                 }
                 if marker.is_none() && !caught_up {
                     marker = first_unread_after_marker(&entries)
@@ -395,7 +405,7 @@ impl Morpheus {
                         _ => None,
                     })
                     .collect();
-                let items = rows_of(&rows, &read_receipts(&entries), &session);
+                let items = rows_of(&rows, &read_receipts(&entries), &session, &nicks.snapshot());
                 // The open room's rows are kept for the next launch to draw at once (#313).
                 if !is_thread {
                     crate::timeline_cache::save(&dir, &cache_room, &items);
@@ -407,6 +417,7 @@ impl Morpheus {
             handle,
             session: for_timeline,
             room_id,
+            nicks: self.nicks.clone(),
             _updates: TaskHandle::new(task),
         }))
     }

@@ -291,7 +291,8 @@ impl Morpheus {
         let (Ok(session), Ok(user)) = (self.session(), OwnedUserId::try_from(user_id.as_str())) else {
             return fallback;
         };
-        session.profile(user).await.map(|p| p.name).unwrap_or(fallback)
+        let name = session.profile(user.clone()).await.map(|p| p.name).unwrap_or(fallback);
+        morpheus_view_model::nicknames::shown_name(&self.nicks.snapshot(), user.as_str(), &name)
     }
 }
 
