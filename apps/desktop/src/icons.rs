@@ -212,6 +212,13 @@ pub fn icon(name: &str, size: f32) -> Icon {
     )
 }
 
+/// A glyph with no colour of its own: it is drawn in the text colour of what holds it, so a
+/// button's hover style (`text_color` on a fill) reaches it. `icon` fixes its own colour,
+/// which a parent's hover cannot change (#402: the title bar's X stayed muted on the red).
+pub fn icon_inherit(name: &str, size: f32) -> Icon {
+    Icon(svg().path(format!("icons/{name}.svg")).size(px(size)).flex_none())
+}
+
 /// A drawn glyph: styled like an svg, and in test builds an `svg.icon` in the
 /// element tree (so a test can tell a button has one).
 pub struct Icon(Svg);

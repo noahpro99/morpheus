@@ -160,7 +160,7 @@ fn round_button(
             }))
             .text_color(rgb(theme::on(if accept { theme::green() } else { theme::danger() })))
         })
-        .child(icon(glyph, 14.0))
+        .child(crate::icons::icon_inherit(glyph, 14.0))
 }
 
 /// An invite in the sidebar: the room, who asked, accept and decline.

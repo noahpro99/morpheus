@@ -17,7 +17,7 @@ use gpui::{
     prelude::*, px, rgb, rgba,
 };
 
-use crate::{e2e::E2eExt as _, icons::icon, theme};
+use crate::{e2e::E2eExt as _, icons::{icon, icon_inherit}, theme};
 
 /// The bar's height.
 pub const BAR_HEIGHT: f32 = 32.0;
@@ -237,6 +237,21 @@ pub fn no_drag<E: gpui::InteractiveElement>(button: E) -> E {
     button.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
+/// What a window button shows while hovered: the glyph's colour, the opaque colour the fill
+/// comes to over the bar (what contrast is measured on), and the fill as drawn (0xRRGGBBAA).
+/// Close fills with the danger red; the others with the hover wash. The glyph is always
+/// picked by contrast on the fill (#266, #402), never a text token.
+pub fn control_hover(close: bool) -> (u32, u32, u32) {
+    if close {
+        let fill = theme::danger();
+        (theme::on_danger(), fill, (fill << 8) | 0xff)
+    } else {
+        let wash = theme::bg_hover();
+        let fill = crate::view_model::theme::over(wash, theme::bg_rail());
+        (theme::on(fill), fill, wash)
+    }
+}
+
 /// Minimise, maximise and close: nothing where the system's own buttons are
 /// on the bar (macOS).
 pub fn window_controls(window: &Window) -> AnyElement {
@@ -261,12 +276,9 @@ pub fn window_controls(window: &Window) -> AnyElement {
             .justify_center()
             .text_color(rgb(theme::text_muted()))
             .cursor_pointer()
-            .child(icon(glyph, size));
-        b = if title == "Close" {
-            b.hover(|s| s.bg(rgb(theme::danger())).text_color(rgb(theme::on_danger())))
-        } else {
-            b.hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
-        };
+            .child(icon_inherit(glyph, size));
+        let (glyph_hover, fill_hover, wash) = control_hover(title == "Close");
+        b = b.hover(move |s| s.bg(rgba(wash)).text_color(rgb(glyph_hover)));
         // Windows: the system's own button there (hovering maximise shows
         // the snap layouts); the system minimises, maximises and restores.
         if let Some(area) = layout.button_area(which) {
@@ -288,6 +300,8 @@ pub fn window_controls(window: &Window) -> AnyElement {
             },
         )
         .attr("title", title)
+        .attr("data-hover-color", format!("{glyph_hover:06x}"))
+        .attr("data-hover-bg", format!("{fill_hover:06x}"))
     };
     let edge = layout.caption_buttons().is_some();
     div()

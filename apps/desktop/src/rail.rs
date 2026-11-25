@@ -141,7 +141,7 @@ impl Badge {
             0.0
         };
         let (bg, fg) = match (folder, self.selected) {
-            (_, true) => (theme::accent_strong(), theme::text()),
+            (_, true) => (theme::accent_strong(), theme::on_accent_strong()),
             (true, false) => (theme::alpha(theme::accent(), 0x1f), theme::accent()),
             (false, false) => (theme::bg_elevated(), theme::text_muted()),
         };
@@ -394,7 +394,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             !rooms_selected && unread_in(&Scope::Rooms),
         )
         .track(shell, cx)
-        .build(icon("hash", 22.0), false, {
+        .build(crate::icons::icon_inherit("hash", 22.0), false, {
             let view = cx.entity();
             move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Rooms, cx))
         }),
@@ -412,7 +412,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                 !selected && unread_in(&Scope::Favorites),
             )
             .track(shell, cx)
-            .build(icon("star", 20.0), false, {
+            .build(crate::icons::icon_inherit("star", 20.0), false, {
                 let view = cx.entity();
                 move |_, cx| view.update(cx, |s, cx| s.pick_scope(Scope::Favorites, cx))
             }),
@@ -434,7 +434,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         )
         .track(shell, cx);
         badge.extra.push(("data-network", id.clone()));
-        rail = rail.child(badge.build(icon("link", 20.0), false, {
+        rail = rail.child(badge.build(crate::icons::icon_inherit("link", 20.0), false, {
             let view = cx.entity();
             move |_, cx| view.update(cx, |s, cx| s.pick_scope(scope.clone(), cx))
         }));
@@ -487,7 +487,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
                     classes.push_str(" has-current");
                 }
                 let content = if open {
-                    div().child(icon("folder", 20.0)).into_any_element()
+                    div().child(crate::icons::icon_inherit("folder", 20.0)).into_any_element()
                 } else {
                     let mut grid = div().flex().flex_wrap().w(px(39.0)).gap(px(3.0));
                     for space in members.iter().take(4) {

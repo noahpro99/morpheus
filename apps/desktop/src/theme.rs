@@ -526,6 +526,46 @@ mod source_tests {
         );
     }
 
+    /// A glyph on a hover fill takes the fill's foreground (#402): `icon(..)` fixes its own
+    /// colour (muted), which a parent's `text_color` on hover cannot change, so an icon inside
+    /// an element whose hover paints a strong fill (accent, danger, green) is `icon_inherit`
+    /// or sets its colour by `theme::on_*`, never a bare `icon(..)`.
+    #[test]
+    fn an_icon_on_a_strong_hover_fill_inherits_the_foreground() {
+        let mut files = Vec::new();
+        sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+        let strong = ["accent_strong()", "accent_solid()", "danger()", "green()", "accent())"];
+        let mut wrong = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).expect("source");
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            let lines: Vec<&str> = code.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if !line.contains(".hover(") {
+                    continue;
+                }
+                let closure = lines[i..lines.len().min(i + 5)].join("\n");
+                let fills = closure.contains(".bg(rgb(theme::")
+                    && strong.iter().any(|t| closure.contains(&format!("theme::{t}")));
+                if !fills {
+                    continue;
+                }
+                for (j, next) in lines.iter().enumerate().skip(i + 1).take(14) {
+                    if next.contains(".e2e(") {
+                        break;
+                    }
+                    let bare = next.contains("icon(")
+                        && !next.contains("icon_inherit(")
+                        && !next.contains("text_color");
+                    if bare {
+                        wrong.push(format!("{}:{}: {}", file.display(), j + 1, next.trim()));
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "bare icon(..) on a hover fill (use icon_inherit):\n{}", wrong.join("\n"));
+    }
+
     /// Text drawn on a theme fill uses that fill's own foreground: `.bg(rgb(theme::F()))`
     /// with a `text_color` in the same builder chain (up to the first child) picks
     /// `theme::on_F()` (or `theme::on(theme::F())`), not another fill's or a text token (#266:

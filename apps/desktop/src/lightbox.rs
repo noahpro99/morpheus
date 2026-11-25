@@ -300,7 +300,7 @@ impl Lightbox {
                     .text_color(rgb(theme::on(theme::accent_strong())))
             })
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_image(cx)))
-            .child(crate::icons::icon("copy", 16.0))
+            .child(crate::icons::icon_inherit("copy", 16.0))
             .child(div().child(label.clone()).e2e("span", "menu-label").text(label))
             .e2e("div", "context-item");
         let panel = div()

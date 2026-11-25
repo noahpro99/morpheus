@@ -254,7 +254,7 @@ pub fn controls<V: 'static>(
             })
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, _, cx| pick(this, mode, cx)))
-            .child(icon(glyph(mode), 18.0))
+            .child(crate::icons::icon_inherit(glyph(mode), 18.0))
             .child(mode.label())
             .e2e(
                 "button",
