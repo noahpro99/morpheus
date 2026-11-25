@@ -75,6 +75,12 @@ pub struct NotifyDefaults {
     pub rooms: String,
 }
 
+/// `preferred` when it reads on `fill` (4.5:1), else black or white (`theme::readable_on`).
+#[uniffi::export]
+pub fn readable_on(preferred: u32, fill: u32) -> u32 {
+    theme::readable_on(preferred, fill)
+}
+
 /// Black or white, whichever reads on `rgb` (`theme::on_colour`): the text on any fill a screen draws.
 #[uniffi::export]
 pub fn on_colour(rgb: u32) -> u32 {

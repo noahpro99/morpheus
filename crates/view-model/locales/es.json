@@ -867,5 +867,7 @@
   "Pick a colour": "Elegir un color",
   "On a computer with two graphics cards, draw with the dedicated one (faster, uses more power) rather than the one built into the processor. Takes effect the next time Morpheus starts.": "En un equipo con dos tarjetas gráficas, dibujar con la dedicada (más rápida, consume más energía) en lugar de la integrada en el procesador. Se aplica la próxima vez que se inicie Morpheus.",
   "\"%{name}\" is not a server name": "«%{name}» no es un nombre de servidor",
-  "%{count} unread": "%{count} sin leer"
+  "%{count} unread": "%{count} sin leer",
+  "Material You": "Material You",
+  "Use the colours of your wallpaper (Android 12 and up)": "Usar los colores de tu fondo de pantalla (Android 12 o superior)"
 }

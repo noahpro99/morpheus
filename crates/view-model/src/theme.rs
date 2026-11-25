@@ -256,6 +256,12 @@ pub fn on_colour(bg: u32) -> u32 {
     if contrast(0xffffff, bg) >= contrast(0x000000, bg) { 0xffffff } else { 0x000000 }
 }
 
+/// `preferred` (a theme's own text, a colour a system gave) when it reads on `fill` (4.5:1), else
+/// black or white by [`on_colour`]: the foreground for any fill whose pairing is not fixed.
+pub fn readable_on(preferred: u32, fill: u32) -> u32 {
+    if contrast(preferred, fill) >= 4.5 { preferred } else { on_colour(fill) }
+}
+
 /// `start` with its lightness moved toward white (`lighter`) or black, hue and saturation
 /// kept, until `passes` accepts it; at the end of the scale, the white or black itself.
 fn nudge(start: u32, lighter: bool, passes: impl Fn(u32) -> bool) -> u32 {
@@ -381,8 +387,8 @@ impl Palette {
         const NEEDED: f32 = 4.5;
         // A tinted container: the elevated surface with a share of `hue` in it.
         let container = |hue: u32| mix(self.bg_elevated, hue, 0.28);
-        let primary_container = container(self.accent_solid);
-        let secondary_container = container(self.accent);
+        let primary_container = container(self.accent);
+        let secondary_container = container(self.accent_strong);
         let tertiary_container = container(self.ok);
         let error_container = container(self.danger);
         let surface_container_lowest = self.bg_input;
@@ -408,12 +414,12 @@ impl Palette {
         let inverse_surface = self.text;
         let on_inverse = on_colour(inverse_surface);
         MaterialScheme {
-            primary: self.accent_solid,
-            on_primary: self.on_accent_solid(),
+            primary: self.accent,
+            on_primary: self.on_accent(),
             primary_container,
             on_primary_container: on_colour(primary_container),
-            secondary: self.accent,
-            on_secondary: self.on_accent(),
+            secondary: self.accent_strong,
+            on_secondary: self.on_accent_strong(),
             secondary_container,
             on_secondary_container: on_colour(secondary_container),
             tertiary: self.ok,
@@ -437,7 +443,7 @@ impl Palette {
             surface_container_highest,
             inverse_surface,
             inverse_on_surface: on_inverse,
-            inverse_primary: self.accent,
+            inverse_primary: self.accent_strong,
             outline: self.text_muted,
             outline_variant: mix(self.bg_chat, self.text, 0.16),
             scrim: 0x000000,
@@ -685,11 +691,18 @@ mod tests {
     }
 
     #[test]
+    fn readable_on_keeps_a_colour_that_reads_and_replaces_one_that_does_not() {
+        assert_eq!(readable_on(0xe6e8ee, 0x1a1e29), 0xe6e8ee);
+        assert_eq!(readable_on(0x777777, 0x808080), on_colour(0x808080), "grey on grey is replaced");
+        assert_eq!(readable_on(0xffffff, 0xffff00), 0x000000);
+    }
+
+    #[test]
     fn the_material_scheme_keeps_the_themes_own_text_and_surfaces_where_they_read() {
         let p = Palette::of(Theme::Dark);
         let m = p.material();
-        assert_eq!(m.primary, p.accent_solid);
-        assert_eq!(m.on_primary, p.on_accent_solid());
+        assert_eq!(m.primary, p.accent, "the accent reads as text on every surface, so it is the primary");
+        assert_eq!(m.on_primary, p.on_accent());
         assert_eq!(m.surface, p.bg_chat);
         assert_eq!(m.background, p.bg_rail);
         assert_eq!(m.on_surface, p.text, "the theme's own text colour is kept where it reads");
