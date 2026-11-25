@@ -6,6 +6,7 @@
 //! front ends.
 
 pub mod about;
+pub mod paste;
 pub mod clicks;
 pub mod bridges;
 pub mod rail_folders;

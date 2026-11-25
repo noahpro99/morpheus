@@ -70,6 +70,11 @@ pub struct PastedFile {
 
 pub struct Pasted(pub Vec<PastedFile>);
 
+/// Files copied in a file manager and pasted: attached as a drop of them is.
+pub struct PastedPaths(pub Vec<std::path::PathBuf>);
+
+impl EventEmitter<PastedPaths> for TextInput {}
+
 impl EventEmitter<Pasted> for TextInput {}
 
 /// The mask drawn for each character of a password.
@@ -471,34 +476,42 @@ impl TextInput {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) -> bool {
+        use crate::view_model::paste::{Choice, Offer, choose};
         let Some(item) = cx.read_from_clipboard() else {
             return false;
         };
-        let text = item.text().filter(|t| !t.is_empty());
-        if text.is_none() {
-            let files: Vec<PastedFile> = item
-                .entries()
-                .iter()
-                .filter_map(|entry| match entry {
-                    ClipboardEntry::Image(image) => {
-                        let mime = image.format.mime_type();
-                        Some(PastedFile {
-                            name: format!("image.{}", mime.rsplit('/').next().unwrap_or("png")),
-                            mime: mime.to_owned(),
-                            bytes: image.bytes.clone(),
-                        })
-                    }
-                    ClipboardEntry::String(_) => None,
-                })
-                .collect();
-            if !files.is_empty() {
-                cx.emit(Pasted(files));
+        let mut offer = Offer {
+            text: item.text(),
+            ..Offer::default()
+        };
+        for entry in item.entries() {
+            match entry {
+                ClipboardEntry::Image(image) => offer
+                    .images
+                    .push((image.format.mime_type().to_owned(), image.bytes.clone())),
+                ClipboardEntry::Paths(paths) => offer.paths.extend(paths.iter().cloned()),
+                ClipboardEntry::String(_) => {}
             }
-            return false;
         }
-        let text = text.unwrap_or_default();
-        self.insert_text(&text);
-        true
+        match choose(&offer) {
+            Choice::Text => {
+                self.insert_text(&offer.text.unwrap_or_default());
+                true
+            }
+            Choice::Picture(picture) => {
+                cx.emit(Pasted(vec![PastedFile {
+                    name: picture.name,
+                    mime: picture.mime,
+                    bytes: picture.bytes,
+                }]));
+                false
+            }
+            Choice::Files(paths) => {
+                cx.emit(PastedPaths(paths));
+                false
+            }
+            Choice::Nothing => false,
+        }
     }
 
     /// Typed or pasted text: a single-line box takes its lines as spaces.
@@ -1607,6 +1620,41 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].mime, "image/png");
         assert_eq!(files[0].bytes, vec![1, 2, 3]);
+    }
+
+    #[gpui::test]
+    fn a_pasted_tiff_is_handed_over_as_png_and_copied_files_as_paths(cx: &mut TestAppContext) {
+        let (input, cx) = open(cx);
+        let pictures = Rc::new(RefCell::new(Vec::<PastedFile>::new()));
+        let paths = Rc::new(RefCell::new(Vec::<std::path::PathBuf>::new()));
+        let (sink, files) = (pictures.clone(), paths.clone());
+        cx.update(|_, cx| {
+            cx.subscribe(&input, move |_, event: &Pasted, _| {
+                sink.borrow_mut().extend(event.0.clone())
+            })
+            .detach();
+            cx.subscribe(&input, move |_, event: &PastedPaths, _| {
+                files.borrow_mut().extend(event.0.clone())
+            })
+            .detach();
+        });
+        let mut tiff = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(2, 2)
+            .write_to(&mut tiff, image::ImageFormat::Tiff)
+            .expect("tiff");
+        let image = gpui::Image::from_bytes(gpui::ImageFormat::Tiff, tiff.into_inner());
+        cx.write_to_clipboard(ClipboardItem::new_image(&image));
+        cx.simulate_keystrokes("ctrl-v");
+        assert_eq!(pictures.borrow().len(), 1);
+        assert_eq!(pictures.borrow()[0].mime, "image/png");
+        // A Finder copy: the file, and its name as text.
+        cx.write_to_clipboard(ClipboardItem::from_entries(vec![
+                ClipboardEntry::Paths(vec!["/tmp/cat.png".into()]),
+                ClipboardEntry::String(gpui::ClipboardString::new("cat.png".into())),
+        ]));
+        cx.simulate_keystrokes("ctrl-v");
+        assert_eq!(*paths.borrow(), vec![std::path::PathBuf::from("/tmp/cat.png")]);
+        assert_eq!(value(&input, cx), "", "the file name is not typed");
     }
 
     #[gpui::test]

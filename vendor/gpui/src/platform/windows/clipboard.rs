@@ -159,6 +159,7 @@ fn write_to_clipboard_inner(item: ClipboardItem) -> Result<()> {
             ClipboardEntry::Image(image) => {
                 write_image_to_clipboard(image)?;
             }
+            ClipboardEntry::Paths(_) => {}
         },
         None => {
             // Writing an empty list of entries just clears the clipboard.

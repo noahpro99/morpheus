@@ -17,13 +17,15 @@ use block::ConcreteBlock;
 use cocoa::{
     appkit::{
         NSApplication, NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular,
+        NSFilenamesPboardType,
         NSEventModifierFlags, NSMenu, NSMenuItem, NSModalResponse, NSOpenPanel, NSPasteboard,
         NSPasteboardTypePNG, NSPasteboardTypeRTF, NSPasteboardTypeRTFD, NSPasteboardTypeString,
         NSPasteboardTypeTIFF, NSSavePanel, NSWindow,
     },
     base::{BOOL, NO, YES, id, nil, selector},
     foundation::{
-        NSArray, NSAutoreleasePool, NSBundle, NSData, NSInteger, NSProcessInfo, NSRange, NSString,
+        NSArray, NSAutoreleasePool, NSBundle, NSData, NSFastEnumeration, NSInteger, NSProcessInfo,
+        NSRange, NSString,
         NSUInteger, NSURL,
     },
 };
@@ -1044,6 +1046,7 @@ impl Platform for MacPlatform {
                         ClipboardEntry::Image(image) => {
                             self.write_image_to_clipboard(image);
                         }
+                        ClipboardEntry::Paths(_) => {}
                     },
                     None => {
                         // Writing an empty list of entries just clears the clipboard.
@@ -1108,38 +1111,53 @@ impl Platform for MacPlatform {
     fn read_from_clipboard(&self) -> Option<ClipboardItem> {
         let state = self.0.lock();
         let pasteboard = state.pasteboard;
+        let mut entries = Vec::new();
 
-        // First, see if it's a string.
         unsafe {
-            let types: id = pasteboard.types();
-            let string_type: id = ns_string("public.utf8-plain-text");
-
-            if msg_send![types, containsObject: string_type] {
-                let data = pasteboard.dataForType(string_type);
-                if data == nil {
-                    return None;
-                } else if data.bytes().is_null() {
-                    // https://developer.apple.com/documentation/foundation/nsdata/1410616-bytes?language=objc
-                    // "If the length of the NSData object is 0, this property returns nil."
-                    return Some(self.read_string_from_clipboard(&state, &[]));
-                } else {
-                    let bytes =
-                        slice::from_raw_parts(data.bytes() as *mut u8, data.length() as usize);
-
-                    return Some(self.read_string_from_clipboard(&state, bytes));
+            // Files copied in Finder (their names are also on the pasteboard as text).
+            let filenames = pasteboard.propertyListForType(NSFilenamesPboardType);
+            if filenames != nil {
+                let paths: Vec<PathBuf> = filenames
+                    .iter()
+                    .map(|file| path_from_objc(file))
+                    .collect();
+                if !paths.is_empty() {
+                    entries.push(ClipboardEntry::Paths(paths));
                 }
             }
 
-            // If it wasn't a string, try the various supported image types.
+            // Text.
+            let types: id = pasteboard.types();
+            let string_type: id = ns_string("public.utf8-plain-text");
+            if msg_send![types, containsObject: string_type] {
+                let data = pasteboard.dataForType(string_type);
+                if data != nil {
+                    let item = if data.bytes().is_null() {
+                        // https://developer.apple.com/documentation/foundation/nsdata/1410616-bytes?language=objc
+                        // "If the length of the NSData object is 0, this property returns nil."
+                        self.read_string_from_clipboard(&state, &[])
+                    } else {
+                        let bytes =
+                            slice::from_raw_parts(data.bytes() as *mut u8, data.length() as usize);
+                        self.read_string_from_clipboard(&state, bytes)
+                    };
+                    entries.extend(item.entries);
+                }
+            }
+
+            // Every picture format on it (a screenshot is often TIFF only; the app picks).
             for format in ImageFormat::iter() {
                 if let Some(item) = try_clipboard_image(pasteboard, format) {
-                    return Some(item);
+                    entries.extend(item.entries);
                 }
             }
         }
 
-        // If it wasn't a string or a supported image type, give up.
-        None
+        if entries.is_empty() {
+            None
+        } else {
+            Some(ClipboardItem { entries })
+        }
     }
 
     fn write_credentials(&self, url: &str, username: &str, password: &[u8]) -> Task<Result<()>> {

@@ -1539,9 +1539,16 @@ pub enum ClipboardEntry {
     String(ClipboardString),
     /// An image entry
     Image(Image),
+    /// Files (copied in a file manager)
+    Paths(Vec<std::path::PathBuf>),
 }
 
 impl ClipboardItem {
+    /// An item of several entries (a file, and its name as text).
+    pub fn from_entries(entries: Vec<ClipboardEntry>) -> Self {
+        Self { entries }
+    }
+
     /// Create a new ClipboardItem::String with no associated metadata
     pub fn new_string(text: String) -> Self {
         Self {

@@ -131,6 +131,10 @@ impl Composer {
             .detach();
         cx.subscribe(&input, |this, _, nav: &Nav, cx| this.nav(nav.0, cx))
             .detach();
+        cx.subscribe(&input, |this, _, pasted: &crate::input::PastedPaths, cx| {
+            this.attach_paths(&pasted.0, cx);
+        })
+        .detach();
         cx.subscribe(&input, |this, _, pasted: &Pasted, cx| {
             for file in &pasted.0 {
                 this.attach(file.name.clone(), file.mime.clone(), file.bytes.clone(), cx);
