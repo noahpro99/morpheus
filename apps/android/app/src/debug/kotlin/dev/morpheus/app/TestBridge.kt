@@ -120,6 +120,23 @@ class TestBridge(private val app: Application) {
     private fun handle(request: JSONObject): Any? = when (val op = request.getString("op")) {
         "ping" -> "pong"
         "tree" -> onMain { JSONArray(nodes().map { describe(it) }) }
+        // Tagged nodes of the unmerged tree (a clickable row merges its icon into itself): [{tag, x, y, width, height}] for tags with this prefix.
+        "unmerged" -> onMain {
+            val prefix = request.getString("prefix")
+            val out = JSONArray()
+            for (win in windows()) {
+                fun walk(node: SemanticsNode) {
+                    val tag = node.config.getOrNull(SemanticsProperties.TestTag)
+                    if (tag != null && tag.startsWith(prefix)) {
+                        val box = node.boundsInWindow.translate(win.dx.toFloat(), win.dy.toFloat())
+                        out.put(JSONObject().put("tag", tag).put("x", box.left).put("y", box.top).put("width", box.width).put("height", box.height))
+                    }
+                    node.children.forEach { walk(it) }
+                }
+                walk(win.root.semanticsOwner.unmergedRootSemanticsNode)
+            }
+            out
+        }
         "tap" -> {
             tap(request.getDouble("x").toFloat(), request.getDouble("y").toFloat())
             true

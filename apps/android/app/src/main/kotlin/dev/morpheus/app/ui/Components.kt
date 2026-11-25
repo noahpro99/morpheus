@@ -116,7 +116,7 @@ fun TopBar(
             },
             navigationIcon = {
                 if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), backTag ?: "back", onBack)
-                else Box(Modifier.width(Space.md))
+                else Box(Modifier.width(Space.lg))
             },
             actions = actions,
             windowInsets = WindowInsets(0),

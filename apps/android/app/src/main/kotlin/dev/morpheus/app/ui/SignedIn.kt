@@ -237,14 +237,14 @@ private fun RowScope.TabItem(
 private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
     // A long press on a server picks it up: drag it to where it goes. Let go without moving and the servers screen
     // (folders, order) opens. The order is the account's, so every device has it.
-    val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.row + Space.sm).toPx() }
+    val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.railItem + Space.lg).toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     PullDown(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail")) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = Space.md),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
+        verticalArrangement = Arrangement.spacedBy(Space.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         items(scopes, key = { it.key }) { scope ->
@@ -259,7 +259,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
             val manage by androidx.compose.runtime.rememberUpdatedState(onManage)
             val reorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
             Box(
-                Modifier.size(Size.rail, Size.row)
+                Modifier.size(Size.rail, Size.railItem)
                     .zIndex(if (dragged) 1f else 0f)
                     .graphicsLayer { translationY = if (dragged) shift else 0f; alpha = if (dragged) 0.85f else 1f }
                     .pointerInput(Unit) {
@@ -382,12 +382,12 @@ private fun ChannelList(
 @Composable
 private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel, selected: Boolean) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
-    Box(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = 1.dp).clip(RoundedCornerShape(Radius.md)).background(if (selected) Palette.Raised else Color.Transparent)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs / 2).clip(RoundedCornerShape(Radius.md)).background(if (selected) Palette.Raised else Color.Transparent)) {
         Column {
             ListRow(
                 room.name, "room-${room.name}",
                 // As tall as the rows always were: 60 dp for a person, 48 for a channel.
-                modifier = Modifier.height(if (room.isDm) 60.dp else Size.row - 8.dp).padding(end = 96.dp),
+                modifier = Modifier.height(if (room.isDm) 60.dp else 44.dp).padding(end = 96.dp),
                 strong = unread, quiet = !unread,
                 leading = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {

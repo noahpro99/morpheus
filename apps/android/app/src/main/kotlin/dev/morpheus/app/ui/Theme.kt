@@ -195,7 +195,9 @@ object Size {
     val row = 56.dp
     val topBar = 56.dp
     val tabBar = 64.dp
-    val rail = 72.dp
+    val rail = 80.dp
+    /** A server on the rail: its 48 dp icon, with 16 dp between them (the rail starts level with the channel panel). */
+    val railItem = 48.dp
     val avatarSm = 24.dp
     val avatar = 40.dp
     val avatarLg = 36.dp
