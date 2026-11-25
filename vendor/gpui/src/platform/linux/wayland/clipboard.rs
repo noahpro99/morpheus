@@ -179,8 +179,27 @@ impl Clipboard {
         self.self_mime.clone()
     }
 
-    pub fn send(&self, _mime_type: String, fd: OwnedFd) {
-        if let Some(text) = self.contents.as_ref().and_then(|contents| contents.text()) {
+    /// The mime types to offer for what we hold: the picture's own, or text.
+    pub fn offered_mime_types(&self) -> Vec<String> {
+        if let Some(image) = self.contents.as_ref().and_then(Self::image_of) {
+            return vec![image.format.mime_type().to_owned()];
+        }
+        TEXT_MIME_TYPES.iter().map(|m| m.to_string()).collect()
+    }
+
+    fn image_of(item: &ClipboardItem) -> Option<&Image> {
+        item.entries().iter().find_map(|entry| match entry {
+            ClipboardEntry::Image(image) => Some(image),
+            _ => None,
+        })
+    }
+
+    pub fn send(&self, mime_type: String, fd: OwnedFd) {
+        if let Some(image) = self.contents.as_ref().and_then(Self::image_of) {
+            if image.format.mime_type() == mime_type {
+                self.send_internal(fd, image.bytes.clone());
+            }
+        } else if let Some(text) = self.contents.as_ref().and_then(|contents| contents.text()) {
             self.send_internal(fd, text.as_bytes().to_owned());
         }
     }

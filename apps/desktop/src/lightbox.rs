@@ -12,6 +12,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, Render, ScrollWheelEvent,
     StyledImage as _, Window, deferred, div, img, prelude::*, px, rgb, rgba,
 };
+use crate::view_model::i18n::ts;
 use morpheus_core::{MediaRef, Session};
 
 use crate::{
@@ -46,7 +47,13 @@ pub struct Lightbox {
     /// The fitted size and window size of the last frame.
     fit: (f32, f32),
     viewport: (f32, f32),
+    /// The right-click menu (Copy image), where it was opened.
+    menu: Option<gpui::Point<gpui::Pixels>>,
 }
+
+/// The viewer has something to tell the window (a toast).
+pub struct Say(pub String);
+impl EventEmitter<Say> for Lightbox {}
 
 /// How far Left or Right pan a zoomed picture, px.
 const PAN_STEP: f32 = 80.0;
@@ -73,6 +80,7 @@ impl Lightbox {
             panning: None,
             fit: (0.0, 0.0),
             viewport: (0.0, 0.0),
+            menu: None,
         };
         this.fetch(cx);
         this
@@ -265,6 +273,64 @@ impl Lightbox {
     }
 }
 
+impl Lightbox {
+    /// Copy image: the picture shown onto the clipboard.
+    fn copy_image(&mut self, cx: &mut Context<Self>) {
+        self.menu = None;
+        let Some(image) = self.images.get(self.index) else { return };
+        media::copy_to_clipboard(&self.session, image.media.clone(), cx, |_, copied, cx| {
+            cx.emit(Say(
+                if copied { crate::view_model::i18n::t("Image copied") } else { crate::view_model::i18n::t("Could not copy the image") },
+            ))
+        });
+        cx.notify();
+    }
+
+    /// The right-click menu, over a backdrop that closes it.
+    fn menu_el(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let at = self.menu?;
+        let label = ts("Copy image");
+        let item = crate::menu::item_base("lightbox-copy-image".into())
+            .w_full()
+            .px(px(10.0))
+            .cursor_pointer()
+            .text_color(rgb(theme::text_muted()))
+            .hover(|s| {
+                s.bg(rgb(theme::accent_strong()))
+                    .text_color(rgb(theme::on(theme::accent_strong())))
+            })
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_image(cx)))
+            .child(crate::icons::icon("copy", 16.0))
+            .child(div().child(label.clone()).e2e("span", "menu-label").text(label))
+            .e2e("div", "context-item");
+        let panel = div()
+            .id("lightbox-menu")
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .occlude()
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .min_w(px(188.0))
+            .p(px(6.0))
+            .rounded(px(theme::RADIUS_LG))
+            .bg(theme::solid_rail())
+            .border_1()
+            .border_color(rgba(theme::edge()))
+            .shadow_lg()
+            .text_size(px(0.9 * theme::REM))
+            .child(item)
+            .e2e("div", "context-menu");
+        Some(
+            gpui::anchored()
+                .position(at)
+                .snap_to_window_with_margin(px(8.0))
+                .child(panel)
+                .into_any_element(),
+        )
+    }
+}
+
 impl Render for Lightbox {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.take_focus) {
@@ -309,6 +375,14 @@ impl Render for Lightbox {
                     MouseButton::Left,
                     cx.listener(|this, event: &MouseDownEvent, _, cx| {
                         this.press_picture(event, cx)
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.menu = Some(event.position);
+                        cx.notify();
                     }),
                 )
                 .child(
@@ -446,6 +520,7 @@ impl Render for Lightbox {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
                 match event.keystroke.key.as_str() {
+                    "escape" if this.menu.take().is_some() => cx.notify(),
                     "escape" => cx.emit(Closed),
                     "left" => this.step(-1, cx),
                     "right" => this.step(1, cx),
@@ -485,11 +560,26 @@ impl Render for Lightbox {
                 }),
             )
             .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _, _, cx| {
+                    if this.menu.take().is_some() {
+                        cx.notify();
+                    }
+                }),
+            )
+            .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|_, _, _, cx| cx.emit(Closed)),
+                cx.listener(|this, _, _, cx| {
+                    if this.menu.take().is_some() {
+                        cx.notify();
+                    } else {
+                        cx.emit(Closed)
+                    }
+                }),
             )
             .child(boxed)
             .child(toolbar)
+            .children(self.menu_el(cx))
             .e2e("div", "overlay lightbox-overlay")
             .focusable(&self.focus);
         deferred(layer).with_priority(30).into_any_element()
@@ -509,6 +599,8 @@ impl crate::shell::Shell {
         };
         let viewer = cx.new(|cx| Lightbox::new(session, images, index, cx));
         cx.subscribe(&viewer, |this, _, _: &Closed, cx| this.dialog_close(cx))
+            .detach();
+        cx.subscribe(&viewer, |this, _, say: &Say, cx| this.toast(say.0.clone(), cx))
             .detach();
         self.dialog_open(crate::dialogs::Dialog::Lightbox(viewer), cx);
     }

@@ -36,6 +36,8 @@ pub enum MenuAction {
     /// Touch screens: the text shown where holding selects it.
     SelectText(String),
     CopyText(String),
+    /// An image message: its picture itself onto the clipboard (desktop).
+    CopyImage,
     CopyLink(String),
     CopyId(String),
     /// A message carries a theme code (`theme_share`): open it in Settings to preview.
@@ -444,6 +446,7 @@ const TABLE: &[(&str, &str)] = &[
         ("Edit profile", "pencil"),
         ("Apply this theme", "palette"),
         ("Copy text", "copy"),
+        ("Copy image", "copy"),
         ("Copy message link", "link"),
         ("Copy link", "link"),
         ("Copy message ID", "hash"),

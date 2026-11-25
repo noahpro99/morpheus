@@ -706,3 +706,41 @@ mod tests {
         assert_eq!(letter("!!"), "?");
     }
 }
+
+/// A fetched picture as the clipboard takes it: the bytes as they came (a GIF
+/// stays a GIF), in the format sniffed from them. `None` for what GPUI cannot
+/// put on a clipboard (not a picture).
+pub fn clipboard_item(media: &morpheus_core::Media) -> Option<gpui::ClipboardItem> {
+    let format = format_of(media.mime())?;
+    Some(gpui::ClipboardItem::new_image(&Image::from_bytes(
+        format,
+        media.bytes.clone(),
+    )))
+}
+
+/// Copy image: fetches the picture's file (decrypted, if the room is encrypted)
+/// and puts it on the clipboard. `done` gets whether it worked.
+pub fn copy_to_clipboard<T: 'static>(
+    session: &morpheus_core::Session,
+    media: MediaRef,
+    cx: &mut gpui::Context<T>,
+    done: impl FnOnce(&mut T, bool, &mut gpui::Context<T>) + 'static,
+) {
+    let fetching = session.media_file(media);
+    cx.spawn(async move |this, cx| {
+        let item = fetching
+            .await
+            .ok()
+            .flatten()
+            .and_then(|media| clipboard_item(&media));
+        this.update(cx, |this, cx| {
+            let copied = item.is_some();
+            if let Some(item) = item {
+                cx.write_to_clipboard(item);
+            }
+            done(this, copied, cx);
+        })
+        .ok();
+    })
+    .detach();
+}
