@@ -56,7 +56,6 @@ const ALLOWED_IN: &[(&str, &str, &str)] = &[
     ("status_feed.rs", "Morpheus closed the connection", "an error line for the activity client"),
     ("status_feed.rs", "Morpheus is not running", "an error line for the activity client"),
     ("prefs.rs", "New folder", "stored as the folder's own name when it is made"),
-    ("timeline.rs", "Hi! \u{1f44b}", "sample text in the theme preview"),
     ("composer.rs", "Up in an empty box asks to edit", "a test name"),
     ("composer.rs", "Up with text asks for nothing", "a test name"),
     ("input.rs", "Enter leaves the text to its owner", "a test name"),

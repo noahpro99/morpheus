@@ -46,7 +46,7 @@ private const val LINK = "URL"
 
 /** A message's text with its links drawn as links: a tap on one opens it, a tap elsewhere offers the message's actions. */
 @Composable
-fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false) {
+fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false, maxLines: Int = Int.MAX_VALUE) {
     val context = LocalContext.current
     val text = remember(body, edited) {
         buildAnnotatedString {
@@ -63,7 +63,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false
         }
     }
     if (body.segments.none { it.url != null }) {
-        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), style = Type.body)
+        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), style = Type.body, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
         return
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -88,6 +88,8 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false
             .testTag("msg-body"),
         onTextLayout = { layout = it },
         style = Type.body,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 

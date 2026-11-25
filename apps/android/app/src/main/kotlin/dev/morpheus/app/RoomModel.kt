@@ -167,6 +167,20 @@ class RoomModel(
 
     fun delete(eventId: String) = enqueue { it.deleteMessage(eventId) }
 
+    private val _hidden = MutableStateFlow<Set<String>>(emptySet())
+    /** Messages deleted a moment ago, out of the chat while "Undo" is on offer (#415). */
+    val hidden: StateFlow<Set<String>> = _hidden.asStateFlow()
+
+    /** Delete with a few seconds to take it back: the message goes from the chat now and is deleted when the toast has gone. */
+    fun deleteUndoable(eventId: String) {
+        _hidden.value = _hidden.value + eventId
+        dev.morpheus.app.ui.Toasts.undoable(
+            dev.morpheus.app.ui.t("Message deleted"),
+            onUndo = { _hidden.value = _hidden.value - eventId },
+            onCommit = { delete(eventId) },
+        )
+    }
+
     fun send(text: String) {
         val editing = _editing.value
         if (editing?.eventId != null) {

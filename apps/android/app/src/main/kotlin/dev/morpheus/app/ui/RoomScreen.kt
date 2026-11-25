@@ -94,18 +94,25 @@ import uniffi.morpheus_ffi.TimelineRow
 
 private val quickReactions = listOf("👍", "❤️", "😂", "🎉", "😮")
 
+/** The tint and bar of a message that mentions you (the desktop's gold). */
+private val MentionGold = Color(0xFFFAA81A)
+
 /** A room: its messages (newest at the bottom), a composer, and what a tap on a message offers. */
 @Composable
 fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClose: () -> Unit = { app.closeRoom() }) {
     val model = remember(room.id, threadRoot) { RoomModel(app.morpheus, room, threadRoot, ready = { app.awaitSession() }) }
     var thread by remember(room.id) { mutableStateOf<String?>(null) }
     DisposableEffect(model) { onDispose { model.close() } }
-    val rows by model.rows.collectAsState()
+    val allRows by model.rows.collectAsState()
+    val hidden by model.hidden.collectAsState()
+    val rows = remember(allRows, hidden) { if (hidden.isEmpty()) allRows else allRows.filterNot { it is TimelineRow.Message && it.message.eventId in hidden } }
     val replyingTo by model.replyingTo.collectAsState()
     if (rows.any { it is TimelineRow.Message }) androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.roomDrawn() }
     // A room just joined is listed before its name is known: the title follows the list.
     val sidebar by app.sidebar.collectAsState()
     val title = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.name ?: room.name
+    // (A direct message just made is listed before its account data says it is one: read the list as it is now.)
+    val isDm = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.isDm ?: room.isDm
     val editing by model.editing.collectAsState()
     var info by remember(room.id) { mutableStateOf(false) }
     var searching by remember(room.id) { mutableStateOf(false) }
@@ -184,6 +191,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 if (threadRoot == null) {
                     IconAction(dev.morpheus.app.R.drawable.ic_lucide_phone, t("Call"), "call-button", { if (inThis) app.calls.show(true) else app.startCall(room.id, title) })
                     IconAction(dev.morpheus.app.R.drawable.ic_lucide_search, t("Search"), "search-button", { searching = true })
+                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_pin, t("Pinned messages"), "pinned-button", { app.openPage(dev.morpheus.app.PageRequest("pinned", room.id)) })
                     IconAction(dev.morpheus.app.R.drawable.ic_lucide_info, t("Room details"), "room-info-button", { info = true })
                 }
             }
@@ -199,7 +207,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                                 is uniffi.morpheus_ffi.MenuOutcome.Edit -> model.edit(message)
                                 is uniffi.morpheus_ffi.MenuOutcome.Thread -> thread = message.eventId
                                 is uniffi.morpheus_ffi.MenuOutcome.React -> message.eventId?.let { model.react(it, outcome.key) }
-                                is uniffi.morpheus_ffi.MenuOutcome.Delete -> message.eventId?.let { model.delete(it) }
+                                is uniffi.morpheus_ffi.MenuOutcome.Delete -> message.eventId?.let { model.deleteUndoable(it) }
                                 is uniffi.morpheus_ffi.MenuOutcome.ViewReactions -> app.openPage(dev.morpheus.app.PageRequest("reactions", room.id, message = message))
                                 is uniffi.morpheus_ffi.MenuOutcome.Report -> message.eventId?.let { app.openPage(dev.morpheus.app.PageRequest("report", room.id, it)) }
                                 is uniffi.morpheus_ffi.MenuOutcome.OpenRoom -> {}
@@ -211,6 +219,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onThread = { thread = it },
                 onImage = { viewing = it },
                 onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
+                onFull = { app.openPage(dev.morpheus.app.PageRequest("full-message", room.id, message = it)) },
+                isDm = isDm,
             )
             typingLine?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, fontSize = 12.sp)
@@ -282,11 +292,14 @@ private fun Timeline(
     onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
+    onFull: (MessageItem) -> Unit,
+    isDm: Boolean,
 ) {
     val state = rememberLazyListState()
     // Newest first: the list is laid out from the bottom.
     val items = remember(rows) { rows.asReversed() }
     val atStart = rows.any { it is TimelineRow.Start }
+    val sayHi = remember(rows, isDm) { uniffi.morpheus_ffi.sayHiOffered(isDm, atStart, rows.filterIsInstance<TimelineRow.Message>().map { it.message.isEvent }) }
     val nearTop by remember {
         derivedStateOf {
             val last = state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -339,7 +352,7 @@ private fun Timeline(
                         Modifier.fillMaxWidth().clickable { revealed = revealed + row.message.key }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("ignored-fold"),
                         color = Palette.Muted, fontSize = 13.sp,
                     )
-                } else MessageRow(row.message, model, onActions, onThread, onImage, onFile, lit != null && lit == row.message.eventId)
+                } else MessageRow(row.message, model, onActions, onThread, onImage, onFile, onFull, lit != null && lit == row.message.eventId)
                 is TimelineRow.Date -> Row(
                     Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
                     verticalAlignment = Alignment.CenterVertically,
@@ -349,12 +362,13 @@ private fun Timeline(
                     Text(dayLabel(row.timestampMs.toLong(), rememberNow()), Modifier.testTag("date-divider"), color = Palette.Muted, style = Type.caption.copy(fontWeight = FontWeight.SemiBold))
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
                 }
-                TimelineRow.Start -> Text(
-                    "This is the beginning of the room.",
-                    Modifier.fillMaxWidth().padding(24.dp).testTag("timeline-start"),
-                    textAlign = TextAlign.Center,
-                    color = Palette.Muted,
-                )
+                TimelineRow.Start -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                    Text("This is the beginning of the room.", Modifier.testTag("timeline-start"), textAlign = TextAlign.Center, color = Palette.Muted)
+                    // An empty direct message offers a greeting (#421).
+                    if (sayHi) {
+                        androidx.compose.material3.FilledTonalButton({ model.send(uniffi.morpheus_ffi.sayHiGreeting()) }, Modifier.testTag("say-hi")) { Text(t("Say hi! 👋")) }
+                    }
+                }
                 TimelineRow.New -> Text(
                     "NEW",
                     Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("new-divider"),
@@ -372,6 +386,18 @@ private fun Timeline(
             { scope.launch { state.animateScrollToItem(dividerAt) } },
             Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag("jump-unread"),
         ) { Text(t("Jump to unread")) }
+    }
+    // Scrolled away from the newest messages: a way back down (#414).
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val away by remember { derivedStateOf { uniffi.morpheus_ffi.awayFromPresent(state.firstVisibleItemIndex.toUInt(), state.firstVisibleItemScrollOffset / density) } }
+    // (The scope lives outside the button: the button goes while the scroll is still on its way.)
+    val jumpScope = androidx.compose.runtime.rememberCoroutineScope()
+    if (away) {
+        val scope = jumpScope
+        androidx.compose.material3.ExtendedFloatingActionButton(
+            { scope.launch { state.animateScrollToItem(0) } },
+            Modifier.align(Alignment.BottomCenter).padding(bottom = Space.lg).testTag("jump-present"),
+        ) { Text(t("Jump to present ↓")) }
     }
     }
 }
@@ -391,6 +417,7 @@ private fun MessageRow(
     onThread: (String) -> Unit,
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
+    onFull: (MessageItem) -> Unit,
     highlighted: Boolean = false,
 ) {
     // The gesture lives as long as the message's key: it must see the message as it is now (a reaction that came since), not as it was.
@@ -402,7 +429,8 @@ private fun MessageRow(
         Modifier
             .fillMaxWidth()
             .alpha(if (message.sending) 0.6f else 1f)
-            .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent)
+            .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else if (message.mentionsMe) MentionGold.copy(alpha = 0.10f) else Color.Transparent)
+            .then(if (message.mentionsMe) Modifier.drawBehind { drawRect(MentionGold, size = androidx.compose.ui.geometry.Size(2.dp.toPx(), size.height)) }.testTag("mention-bar") else Modifier)
             .pointerInput(message.key) {
                 // A tap does nothing; a double tap starts a reply and a long press opens the sheet (a tap with no handler
                 // waits for nothing: neither a long press nor a scroll is delayed).
@@ -449,7 +477,14 @@ private fun MessageRow(
                 )
             }
             when (val body = message.body) {
-                is MessageBody.Text -> LinkedText(body, message.edited, message.sending)
+                is MessageBody.Text -> {
+                    // A very long message shows its first lines and a bar that opens the whole text on a page (#408).
+                    val shown = message.collapsedLines
+                    LinkedText(body, message.edited, message.sending, maxLines = shown?.toInt() ?: Int.MAX_VALUE)
+                    if (shown != null) {
+                        TextButton({ onFull(message) }, Modifier.testTag("show-more")) { Text(t("Show more")) }
+                    }
+                }
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
                 is MessageBody.File -> Text(

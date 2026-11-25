@@ -218,6 +218,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                         openSettings()
                         openSettingsPage("Appearance")
                     }
+                    is uniffi.morpheus_ffi.MenuOutcome.Leave -> leaveRoomUndoable(outcome.roomId, outcome.name)
                     is uniffi.morpheus_ffi.MenuOutcome.Switched -> accountChanged()
                     is uniffi.morpheus_ffi.MenuOutcome.AddAccount -> beginAddAccount()
                     is uniffi.morpheus_ffi.MenuOutcome.SignOut -> signOut()
@@ -542,7 +543,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     /** The channel list while signed in; the Rust side stops pushing when nobody collects. */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val sidebar: StateFlow<Sidebar?> = _screen
+    private val rawSidebar: StateFlow<Sidebar?> = _screen
         .flatMapLatest {
             when (it) {
                 is Screen.SignedIn -> morpheus.sidebars()
@@ -552,6 +553,30 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), startBar)
+
+    /** Rooms just left, out of the lists while "Undo" is on offer (#415). */
+    private val leftRooms = MutableStateFlow<Set<String>>(emptySet())
+
+    val sidebar: StateFlow<Sidebar?> = kotlinx.coroutines.flow.combine(rawSidebar, leftRooms) { bar, left ->
+        if (bar == null || left.isEmpty()) bar
+        else bar.copy(scopes = bar.scopes.map { scope -> scope.copy(sections = scope.sections.map { section -> section.copy(rooms = section.rooms.filter { it.id !in left }) }) })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), startBar)
+
+    /** Leave a room with a few seconds to take it back: it goes from the lists now and is left when the toast has gone. */
+    fun leaveRoomUndoable(roomId: String, name: String) {
+        leftRooms.value = leftRooms.value + roomId
+        if (_room.value?.id == roomId) closeRoom()
+        dev.morpheus.app.ui.Toasts.undoable(
+            t("Left #%{name}", "name" to name),
+            onUndo = { leftRooms.value = leftRooms.value - roomId },
+            onCommit = {
+                viewModelScope.launch {
+                    try { morpheus.leaveRoom(roomId) } catch (e: Exception) { _error.value = e.sentence() }
+                    leftRooms.value = leftRooms.value - roomId
+                }
+            },
+        )
+    }
 
     init {
         _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile() }; signedInChanged(it) }.launchIn(viewModelScope)

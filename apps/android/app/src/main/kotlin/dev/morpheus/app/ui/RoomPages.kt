@@ -64,6 +64,8 @@ fun RoomPageHost(app: AppModel) {
             "privacy" -> PrivacyPage(app, page)
             "overview" -> OverviewPage(app, page)
             "reactions" -> ReactionsPage(app, page)
+            "pinned" -> PinnedPage(app, page)
+            "full-message" -> FullMessagePage(app, page)
             "report" -> ReportPage(app, page)
             "rename-folder" -> RenameFolderPage(app, page)
             "unlock" -> UnlockPage(app, page)
@@ -278,6 +280,46 @@ private fun ReactionsPage(app: AppModel, page: PageRequest) {
                 Text(reaction.senders.joinToString(", ") { People.nameOf(it, names) }, Modifier.testTag("reaction-people-${reaction.key}"), color = Palette.Muted, style = Type.secondary)
             }
         }
+    }
+}
+
+/** A room's pinned messages, newest pin first, each with a button that unpins it (#413). */
+@Composable
+private fun PinnedPage(app: AppModel, page: PageRequest) {
+    var pins by remember { mutableStateOf<List<uniffi.morpheus_ffi.PinnedItem>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    // Read again while the page is open: a pin made from another device shows too.
+    LaunchedEffect(page.roomId) {
+        while (true) {
+            try { pins = app.morpheus.pinnedMessages(page.roomId) } catch (e: Exception) { error = e.sentence() }
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+    PageFrame(app, "Pinned messages", "page-pinned") {
+        val list = pins
+        if (list != null && list.isEmpty()) Text(t("Nothing pinned yet. Long-press a message to pin it."), Modifier.testTag("pinned-empty"), color = Palette.Muted)
+        for (pin in list.orEmpty()) {
+            Row(Modifier.fillMaxWidth().testTag("pinned-item"), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    pin.sender?.let { Text(it, Modifier.testTag("pinned-sender"), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) }
+                    Text(pin.body, Modifier.testTag("pinned-body"))
+                }
+                IconAction(dev.morpheus.app.R.drawable.ic_lucide_pin_off, t("Unpin"), "unpin-${pin.eventId}", {
+                    scope.launch { try { app.morpheus.unpinMessage(page.roomId, pin.eventId); pins = app.morpheus.pinnedMessages(page.roomId) } catch (e: Exception) { error = e.sentence() } }
+                })
+            }
+        }
+        Note(null, error)
+    }
+}
+
+/** A long message in full (#408): the page the "Show more" bar opens. */
+@Composable
+private fun FullMessagePage(app: AppModel, page: PageRequest) {
+    val message = page.message
+    PageFrame(app, message?.senderName ?: "Message", "page-full-message") {
+        (message?.body as? uniffi.morpheus_ffi.MessageBody.Text)?.let { LinkedText(it, message?.edited == true, sending = false) }
     }
 }
 

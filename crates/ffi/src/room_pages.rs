@@ -328,3 +328,32 @@ pub struct ServerProfile {
     pub blurb: String,
     pub name: String,
 }
+
+/// One pinned message of a room, as the pinned list shows it (#413).
+#[derive(uniffi::Record)]
+pub struct PinnedItem {
+    pub event_id: String,
+    /// Who sent it, as a short name; `None` when the message could not be fetched.
+    pub sender: Option<String>,
+    /// The text, or a short description of what is not text.
+    pub body: String,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The room's pinned messages, the newest pin first (the desktop's pinned list).
+    pub async fn pinned_messages(&self, room_id_of: String) -> Result<Vec<PinnedItem>, FfiError> {
+        let pins = self.session()?.pinned_messages(room_id(&room_id_of)?).await?;
+        Ok(pins
+            .into_iter()
+            .rev()
+            .map(|pin| PinnedItem { event_id: pin.event_id.to_string(), sender: pin.sender.map(|s| s.localpart().to_owned()), body: pin.body })
+            .collect())
+    }
+
+    /// Take a message off the room's pins.
+    pub async fn unpin_message(&self, room_id_of: String, event_id: String) -> Result<(), FfiError> {
+        let event = OwnedEventId::try_from(event_id.as_str()).map_err(|_| failed(format!("{event_id} is not an event id")))?;
+        Ok(self.session()?.pin(room_id(&room_id_of)?, event, false).await?)
+    }
+}

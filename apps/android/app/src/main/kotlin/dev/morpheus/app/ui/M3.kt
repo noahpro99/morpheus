@@ -147,12 +147,38 @@ object Toasts {
             host.showSnackbar(text, duration = if (long) SnackbarDuration.Long else SnackbarDuration.Short)
         }
     }
+
+    /**
+     * Say `text` with an Undo button for a few seconds (#415). The caller has already made the thing look done: `onUndo` takes it back,
+     * `onCommit` runs when the moment has passed (or another toast took the place), and the thing is done for good.
+     */
+    fun undoable(text: String, onUndo: () -> Unit, onCommit: () -> Unit, tag: String = "toast") {
+        this.tag = tag
+        scope.launch {
+            host.currentSnackbarData?.dismiss()
+            val seconds = uniffi.morpheus_ffi.undoSeconds().toLong()
+            val result = kotlinx.coroutines.withTimeoutOrNull(seconds * 1000) {
+                host.showSnackbar(text, actionLabel = t("Undo"), duration = SnackbarDuration.Indefinite)
+            }
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) onUndo() else onCommit()
+        }
+    }
 }
 
 @Composable
 fun ToastHost(modifier: Modifier = Modifier) {
     SnackbarHost(Toasts.host, modifier) { data ->
-        Snackbar(data, Modifier.semantics(mergeDescendants = true) {}.testTag(Toasts.tag), shape = MaterialTheme.shapes.small)
+        val action = data.visuals.actionLabel
+        if (action == null) {
+            Snackbar(data, Modifier.semantics(mergeDescendants = true) {}.testTag(Toasts.tag), shape = MaterialTheme.shapes.small)
+        } else {
+            // With an action the parts stay apart: the words, and a button a test (or a screen reader) can find.
+            Snackbar(
+                Modifier.testTag(Toasts.tag),
+                shape = MaterialTheme.shapes.small,
+                action = { TextButton({ data.performAction() }, Modifier.testTag("toast-action")) { Text(action) } },
+            ) { Text(data.visuals.message, Modifier.testTag("toast-text")) }
+        }
     }
 }
 

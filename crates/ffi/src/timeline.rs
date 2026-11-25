@@ -103,6 +103,12 @@ pub struct MessageItem {
     pub preview_url: Option<String>,
     /// Who else has read up to this message (user IDs, not the sender or me).
     pub read_by: Vec<String>,
+    /// Someone else's message that mentions me: the row is lit (#407).
+    pub mentions_me: bool,
+    /// A very long message: how many of its lines stay in view while it is collapsed behind "Show more" (#408).
+    pub collapsed_lines: Option<u32>,
+    /// A room event (someone joined, the topic changed), not something a person wrote.
+    pub is_event: bool,
 }
 
 /// The chip on a thread's root: how many replies, and from whom last.
@@ -227,6 +233,13 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             count: morpheus_view_model::threads::chip_count(t),
             latest: morpheus_view_model::threads::chip_latest(t),
         }),
+        mentions_me: message.mentions_me && !message.is_own,
+        collapsed_lines: if matches!(message.kind, MessageKind::Text { .. }) {
+            morpheus_view_model::long_message::collapse(&row.blocks).map(|c| c.shown as u32)
+        } else {
+            None
+        },
+        is_event: matches!(message.kind, MessageKind::State(_)),
     }
 }
 
@@ -421,4 +434,30 @@ impl Morpheus {
             _updates: TaskHandle::new(task),
         }))
     }
+}
+
+/// Whether the timeline offers "Jump to present": `rows_above` rows lie between the newest one and the first
+/// visible one, which is scrolled `offset_px` past its start (logical pixels). The desktop's rule (#414).
+#[uniffi::export]
+pub fn away_from_present(rows_above: u32, offset_px: f32) -> bool {
+    morpheus_view_model::jump::away_from_present(rows_above, offset_px)
+}
+
+/// What "Say hi! 👋" sends (#421).
+#[uniffi::export]
+pub fn say_hi_greeting() -> String {
+    morpheus_view_model::say_hi::GREETING.to_owned()
+}
+
+/// Whether the start of a conversation offers "Say hi!": a direct message with only room events in it
+/// (`message_is_event` has a flag per message row: true when it is such an event).
+#[uniffi::export]
+pub fn say_hi_offered(is_direct: bool, at_start: bool, message_is_event: Vec<bool>) -> bool {
+    morpheus_view_model::say_hi::offered(is_direct, at_start, message_is_event)
+}
+
+/// How long "Undo" is offered after a message is deleted or a room left, in seconds (#415).
+#[uniffi::export]
+pub fn undo_seconds() -> u64 {
+    morpheus_view_model::toast::UNDO_SECS
 }

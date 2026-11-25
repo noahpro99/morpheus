@@ -71,6 +71,8 @@ pub mod rail_drag;
 pub mod scrollbar;
 pub mod reorder;
 pub mod long_message;
+pub mod jump;
+pub mod say_hi;
 pub mod text_selection;
 pub mod transcript;
 pub mod rich;

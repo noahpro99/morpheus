@@ -45,6 +45,9 @@ pub enum MenuOutcome {
     /// Toggle this reaction on the message.
     React { key: String },
     Delete,
+    /// Leave this room, after a moment in which "Undo" can take it back (#415): the phone hides it, shows the toast and
+    /// calls `leave_room` once the moment has passed. `name` is what the toast names.
+    Leave { room_id: String, name: String },
     /// Open this room (a direct message was made or found).
     OpenRoom { room_id: String },
     /// Add `@name ` to the message being written.
@@ -335,8 +338,8 @@ impl Morpheus {
                 MenuOutcome::Done
             }
             MenuAction::Leave(id, _) => {
-                session.leave_room(id).await?;
-                MenuOutcome::Done
+                let name = self.rooms_now.lock().ok().and_then(|rooms| rooms.iter().find(|r| r.id == id).map(|r| r.name.clone())).unwrap_or_else(|| id.to_string());
+                MenuOutcome::Leave { room_id: id.to_string(), name }
             }
             MenuAction::Favorite(id, on) => {
                 session.set_favorite(id, on).await?;
@@ -510,6 +513,9 @@ mod tests {
             thread: None,
             preview_url: None,
             read_by: Vec::new(),
+            mentions_me: false,
+            collapsed_lines: None,
+            is_event: false,
         };
         let room = morpheus_core::OwnedRoomId::try_from("!r:x").expect("room");
         let core = message_of(&item);

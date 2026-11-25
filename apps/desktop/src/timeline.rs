@@ -56,8 +56,8 @@ const PREFILL_MAX_PAGES: u16 = 200;
 const NEAR_TOP_ROWS: usize = 8;
 /// ... or when what is loaded is shorter than the view plus this (px).
 const FILL_PX: f32 = 400.0;
-/// How far from the newest message (px) before the jump button appears.
-const JUMP_THRESHOLD_PX: f32 = 240.0;
+/// How far from the newest message (px) before the jump button appears (shared with the phone).
+use crate::view_model::jump::JUMP_THRESHOLD_PX;
 const PAGE_SIZE: u16 = 40;
 /// Most history pages loaded looking for a message jumped to.
 const JUMP_MAX_PAGES: u32 = 50;
@@ -678,7 +678,7 @@ impl TimelineView {
         let Some(handle) = self.handle.clone() else {
             return;
         };
-        let sending = handle.send_text("Hi! 👋".to_owned());
+        let sending = handle.send_text(crate::view_model::say_hi::GREETING.to_owned());
         cx.spawn(async move |_, _| {
             if let Err(err) = sending.await {
                 eprintln!("morpheus-desktop: sending: {err}");
@@ -1137,10 +1137,14 @@ impl TimelineView {
         };
         let Row::Message { row, show_header } = row else {
             if matches!(row, Row::Start)
-                && self.say_hi
-                && !self.rows.iter().any(|r| {
-                    matches!(r, Row::Message { row, .. } if !matches!(row.message.kind, MessageKind::State(_)))
-                })
+                && crate::view_model::say_hi::offered(
+                    self.say_hi,
+                    true,
+                    self.rows.iter().filter_map(|r| match r {
+                        Row::Message { row, .. } => Some(matches!(row.message.kind, MessageKind::State(_))),
+                        _ => None,
+                    }),
+                )
             {
                 let weak = cx.weak_entity();
                 return message::say_hi_row(move |cx| {
