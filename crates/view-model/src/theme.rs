@@ -294,6 +294,157 @@ impl Palette {
     }
 }
 
+/// The Material 3 colour roles of a palette (`0xRRGGBB`): what the Android app's
+/// `MaterialTheme` is built from. Every `on_*` is picked by contrast, never
+/// hardcoded: black or white by [`on_colour`] on a coloured fill, and the
+/// theme's own text colours on the surfaces they read on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaterialScheme {
+    pub primary: u32,
+    pub on_primary: u32,
+    pub primary_container: u32,
+    pub on_primary_container: u32,
+    pub secondary: u32,
+    pub on_secondary: u32,
+    pub secondary_container: u32,
+    pub on_secondary_container: u32,
+    pub tertiary: u32,
+    pub on_tertiary: u32,
+    pub tertiary_container: u32,
+    pub on_tertiary_container: u32,
+    pub error: u32,
+    pub on_error: u32,
+    pub error_container: u32,
+    pub on_error_container: u32,
+    pub background: u32,
+    pub on_background: u32,
+    pub surface: u32,
+    pub on_surface: u32,
+    pub surface_variant: u32,
+    /// Secondary text: reads on every surface below.
+    pub on_surface_variant: u32,
+    pub surface_container_lowest: u32,
+    pub surface_container_low: u32,
+    pub surface_container: u32,
+    pub surface_container_high: u32,
+    pub surface_container_highest: u32,
+    pub inverse_surface: u32,
+    pub inverse_on_surface: u32,
+    pub inverse_primary: u32,
+    pub outline: u32,
+    pub outline_variant: u32,
+    pub scrim: u32,
+}
+
+impl MaterialScheme {
+    /// Every (role, fill, foreground drawn on it).
+    pub fn pairs(&self) -> Vec<(&'static str, u32, u32)> {
+        vec![
+            ("primary", self.primary, self.on_primary),
+            ("primary_container", self.primary_container, self.on_primary_container),
+            ("secondary", self.secondary, self.on_secondary),
+            ("secondary_container", self.secondary_container, self.on_secondary_container),
+            ("tertiary", self.tertiary, self.on_tertiary),
+            ("tertiary_container", self.tertiary_container, self.on_tertiary_container),
+            ("error", self.error, self.on_error),
+            ("error_container", self.error_container, self.on_error_container),
+            ("background", self.background, self.on_background),
+            ("surface", self.surface, self.on_surface),
+            ("surface_variant", self.surface_variant, self.on_surface_variant),
+            ("surface_container_lowest", self.surface_container_lowest, self.on_surface),
+            ("surface_container_low", self.surface_container_low, self.on_surface),
+            ("surface_container", self.surface_container, self.on_surface),
+            ("surface_container_high", self.surface_container_high, self.on_surface),
+            ("surface_container_highest", self.surface_container_highest, self.on_surface),
+            ("inverse_surface", self.inverse_surface, self.inverse_on_surface),
+        ]
+    }
+
+    /// The surfaces text sits on.
+    pub fn surfaces(&self) -> Vec<(&'static str, u32)> {
+        vec![
+            ("background", self.background),
+            ("surface", self.surface),
+            ("surface_variant", self.surface_variant),
+            ("surface_container_lowest", self.surface_container_lowest),
+            ("surface_container_low", self.surface_container_low),
+            ("surface_container", self.surface_container),
+            ("surface_container_high", self.surface_container_high),
+            ("surface_container_highest", self.surface_container_highest),
+        ]
+    }
+}
+
+impl Palette {
+    /// The Material 3 roles of this palette.
+    pub fn material(&self) -> MaterialScheme {
+        const NEEDED: f32 = 4.5;
+        // A tinted container: the elevated surface with a share of `hue` in it.
+        let container = |hue: u32| mix(self.bg_elevated, hue, 0.28);
+        let primary_container = container(self.accent_solid);
+        let secondary_container = container(self.accent);
+        let tertiary_container = container(self.ok);
+        let error_container = container(self.danger);
+        let surface_container_lowest = self.bg_input;
+        let surface_container_low = self.bg_sidebar;
+        let surface_container = self.bg_sidebar;
+        let surface_container_high = self.bg_elevated;
+        let surface_container_highest = mix(self.bg_elevated, self.text, 0.06);
+        let surface_variant = self.bg_elevated;
+        let surfaces = [
+            self.bg_rail,
+            self.bg_chat,
+            surface_variant,
+            surface_container_lowest,
+            surface_container_low,
+            surface_container,
+            surface_container_high,
+            surface_container_highest,
+        ];
+        // The theme's own text where it reads on every surface, else black or white by contrast.
+        let reads_everywhere = |fg: u32| surfaces.iter().all(|s| contrast(fg, *s) >= NEEDED);
+        let on_surface = if reads_everywhere(self.text) { self.text } else { on_colour(self.bg_chat) };
+        let on_surface_variant = if reads_everywhere(self.text_muted) { self.text_muted } else { on_surface };
+        let inverse_surface = self.text;
+        let on_inverse = on_colour(inverse_surface);
+        MaterialScheme {
+            primary: self.accent_solid,
+            on_primary: self.on_accent_solid(),
+            primary_container,
+            on_primary_container: on_colour(primary_container),
+            secondary: self.accent,
+            on_secondary: self.on_accent(),
+            secondary_container,
+            on_secondary_container: on_colour(secondary_container),
+            tertiary: self.ok,
+            on_tertiary: on_colour(self.ok),
+            tertiary_container,
+            on_tertiary_container: on_colour(tertiary_container),
+            error: self.danger,
+            on_error: self.on_danger(),
+            error_container,
+            on_error_container: on_colour(error_container),
+            background: self.bg_rail,
+            on_background: on_surface,
+            surface: self.bg_chat,
+            on_surface,
+            surface_variant,
+            on_surface_variant,
+            surface_container_lowest,
+            surface_container_low,
+            surface_container,
+            surface_container_high,
+            surface_container_highest,
+            inverse_surface,
+            inverse_on_surface: on_inverse,
+            inverse_primary: self.accent,
+            outline: self.text_muted,
+            outline_variant: mix(self.bg_chat, self.text, 0.16),
+            scrim: 0x000000,
+        }
+    }
+}
+
 /// A key cap drawn on a coloured fill: the text colour, and the border and
 /// background washes (0xRRGGBBAA).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -515,6 +666,35 @@ mod tests {
                 assert!(ratio >= 3.0, "{name}: the icon on {fill_name} is {ratio:.2}:1");
             }
         }
+    }
+
+    #[test]
+    fn every_material_on_colour_reads_on_its_fill_in_every_palette() {
+        for (name, p) in every_palette() {
+            let m = p.material();
+            for (role, fill, on) in m.pairs() {
+                let ratio = contrast(on, fill);
+                assert!(ratio >= 4.5, "{name}: {role} {on:06x} on {fill:06x} is {ratio:.2}:1 (under 4.5)");
+            }
+            // The secondary text reads on every surface a list or a sheet can sit on, not only on `surface`.
+            for (role, fill) in m.surfaces() {
+                let ratio = contrast(m.on_surface_variant, fill);
+                assert!(ratio >= 4.5, "{name}: on_surface_variant on {role} {fill:06x} is {ratio:.2}:1");
+            }
+        }
+    }
+
+    #[test]
+    fn the_material_scheme_keeps_the_themes_own_text_and_surfaces_where_they_read() {
+        let p = Palette::of(Theme::Dark);
+        let m = p.material();
+        assert_eq!(m.primary, p.accent_solid);
+        assert_eq!(m.on_primary, p.on_accent_solid());
+        assert_eq!(m.surface, p.bg_chat);
+        assert_eq!(m.background, p.bg_rail);
+        assert_eq!(m.on_surface, p.text, "the theme's own text colour is kept where it reads");
+        assert_eq!(m.error, p.danger);
+        assert_eq!(m.on_error, p.on_danger());
     }
 
     fn luminance(rgb: u32) -> u32 {

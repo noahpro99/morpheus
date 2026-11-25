@@ -54,7 +54,7 @@ pub use calls::{CallCard, CallHandle, CallListener, CallListing, CallPerson, Cal
 pub use error::FfiError;
 pub use composer::{CustomEmojiItem, CustomEmojiSection, EmojiSection, SuggestionItem, SuggestionKind, emoji_sections, with_emoji};
 pub use media::MediaHandle;
-pub use settings::{Appearance, LanguageChoice, NotifyDefaults, PaletteItem, SettingHit, SettingsGroup, ThemeChoice, search_settings, settings_groups};
+pub use settings::{Appearance, LanguageChoice, MaterialItem, NotifyDefaults, PaletteItem, SettingHit, SettingsGroup, ThemeChoice, search_settings, settings_groups};
 pub use room_info::{PreviewCard, PreviewSettings, HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
 pub use people::{RailRowItem, DirectoryItem, DirectoryPage, FriendItem, InviteItem};
 pub use push::{PushNotice, preview_push};

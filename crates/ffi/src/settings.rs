@@ -36,6 +36,8 @@ pub struct PaletteItem {
     pub danger: u32,
     /// Text on the danger colour (a mention pill, an unread badge).
     pub on_danger: u32,
+    /// The Material 3 roles of this palette.
+    pub material: MaterialItem,
     /// Dark text on light surfaces: the system bars flip with it.
     pub is_light: bool,
 }
@@ -90,7 +92,84 @@ fn palette_item(p: &Palette) -> PaletteItem {
         on_accent: p.on_accent_solid(),
         danger: p.danger,
         on_danger: p.on_danger(),
+        material: material_item(&p.material()),
         is_light: theme::contrast(p.bg_chat, 0x000000) > theme::contrast(p.bg_chat, 0xffffff),
+    }
+}
+
+/// The Material 3 colour roles (`theme::MaterialScheme`), `0xRRGGBB`: every on-colour picked by contrast.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct MaterialItem {
+    pub primary: u32,
+    pub on_primary: u32,
+    pub primary_container: u32,
+    pub on_primary_container: u32,
+    pub secondary: u32,
+    pub on_secondary: u32,
+    pub secondary_container: u32,
+    pub on_secondary_container: u32,
+    pub tertiary: u32,
+    pub on_tertiary: u32,
+    pub tertiary_container: u32,
+    pub on_tertiary_container: u32,
+    pub error: u32,
+    pub on_error: u32,
+    pub error_container: u32,
+    pub on_error_container: u32,
+    pub background: u32,
+    pub on_background: u32,
+    pub surface: u32,
+    pub on_surface: u32,
+    pub surface_variant: u32,
+    pub on_surface_variant: u32,
+    pub surface_container_lowest: u32,
+    pub surface_container_low: u32,
+    pub surface_container: u32,
+    pub surface_container_high: u32,
+    pub surface_container_highest: u32,
+    pub inverse_surface: u32,
+    pub inverse_on_surface: u32,
+    pub inverse_primary: u32,
+    pub outline: u32,
+    pub outline_variant: u32,
+    pub scrim: u32,
+}
+
+fn material_item(m: &theme::MaterialScheme) -> MaterialItem {
+    MaterialItem {
+        primary: m.primary,
+        on_primary: m.on_primary,
+        primary_container: m.primary_container,
+        on_primary_container: m.on_primary_container,
+        secondary: m.secondary,
+        on_secondary: m.on_secondary,
+        secondary_container: m.secondary_container,
+        on_secondary_container: m.on_secondary_container,
+        tertiary: m.tertiary,
+        on_tertiary: m.on_tertiary,
+        tertiary_container: m.tertiary_container,
+        on_tertiary_container: m.on_tertiary_container,
+        error: m.error,
+        on_error: m.on_error,
+        error_container: m.error_container,
+        on_error_container: m.on_error_container,
+        background: m.background,
+        on_background: m.on_background,
+        surface: m.surface,
+        on_surface: m.on_surface,
+        surface_variant: m.surface_variant,
+        on_surface_variant: m.on_surface_variant,
+        surface_container_lowest: m.surface_container_lowest,
+        surface_container_low: m.surface_container_low,
+        surface_container: m.surface_container,
+        surface_container_high: m.surface_container_high,
+        surface_container_highest: m.surface_container_highest,
+        inverse_surface: m.inverse_surface,
+        inverse_on_surface: m.inverse_on_surface,
+        inverse_primary: m.inverse_primary,
+        outline: m.outline,
+        outline_variant: m.outline_variant,
+        scrim: m.scrim,
     }
 }
 
