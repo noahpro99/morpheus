@@ -208,6 +208,16 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                         val clipboard = morpheusApp?.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
                         clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("", outcome.text))
                     }
+                    is uniffi.morpheus_ffi.MenuOutcome.CopyImage -> {
+                        val copied = morpheusApp?.copyImage(outcome.bytes, outcome.mime) == true
+                        dev.morpheus.app.ui.Toasts.say(if (copied) t("Image copied") else t("Could not copy the image"), "image-copied")
+                    }
+                    is uniffi.morpheus_ffi.MenuOutcome.ShowTheme -> {
+                        _themeCodeToTry.value = outcome.code
+                        closeRoom() // Settings is under an open chat
+                        openSettings()
+                        openSettingsPage("Appearance")
+                    }
                     is uniffi.morpheus_ffi.MenuOutcome.Switched -> accountChanged()
                     is uniffi.morpheus_ffi.MenuOutcome.AddAccount -> beginAddAccount()
                     is uniffi.morpheus_ffi.MenuOutcome.SignOut -> signOut()
@@ -219,6 +229,14 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                 _error.value = e.sentence()
             }
         }
+    }
+
+    /** A theme code a message offered: Settings > Appearance has it ready to use (null once used or left). */
+    private val _themeCodeToTry = MutableStateFlow<String?>(null)
+    val themeCodeToTry: StateFlow<String?> = _themeCodeToTry.asStateFlow()
+
+    fun themeCodeTried() {
+        _themeCodeToTry.value = null
     }
 
     private val _settingsOpen = MutableStateFlow(false)

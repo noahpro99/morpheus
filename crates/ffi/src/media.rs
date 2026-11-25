@@ -8,6 +8,12 @@ pub struct MediaHandle {
 }
 
 impl MediaHandle {
+    pub(crate) fn media_ref(&self) -> MediaRef {
+        self.media.clone()
+    }
+}
+
+impl MediaHandle {
     pub(crate) fn new(media: MediaRef, session: &Session) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
             media,

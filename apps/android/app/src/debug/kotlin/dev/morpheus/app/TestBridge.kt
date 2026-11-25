@@ -230,6 +230,17 @@ class TestBridge(private val app: Application) {
             view.onCreateInputConnection(info)
             JSONObject().put("input_type", info.inputType).put("caps_sentences", info.inputType and android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0)
         }
+        // What is on the clipboard: its types, its text, and for a picture the size of what its address serves.
+        "clipboard" -> onMain {
+            val manager = app.getSystemService(android.content.ClipboardManager::class.java)
+            val clip = manager.primaryClip
+            val item = clip?.getItemAt(0)
+            val size = item?.uri?.let { uri -> app.contentResolver.openInputStream(uri)?.use { it.readBytes().size } }
+            JSONObject()
+                .put("mime", JSONArray((0 until (clip?.description?.mimeTypeCount ?: 0)).map { clip!!.description.getMimeType(it) }))
+                .put("text", item?.text?.toString())
+                .put("picture_bytes", size ?: JSONObject.NULL)
+        }
         "state" -> onMain {
             JSONObject()
                 .put("screen", AppState.screen)

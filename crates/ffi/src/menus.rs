@@ -62,6 +62,10 @@ pub enum MenuOutcome {
     ViewReactions,
     /// Report the message the sheet was opened on.
     Report,
+    /// The picture of the message, to put on the clipboard: its bytes and type.
+    CopyImage { bytes: Vec<u8>, mime: String },
+    /// Show this theme code in Settings > Appearance, ready to be used.
+    ShowTheme { code: String },
     /// The desktop's dialog or screen for this item is not on the phone yet: its label.
     NotYet { label: String },
 }
@@ -70,6 +74,8 @@ pub(crate) struct Stored {
     pub items: Vec<MenuItem>,
     pub room: Option<OwnedRoomId>,
     pub event_id: Option<String>,
+    /// The picture of an image message.
+    pub media: Option<morpheus_core::MediaRef>,
 }
 
 pub fn rows_of(items: &[MenuItem], prefix: &str) -> Vec<MenuRow> {
@@ -110,9 +116,10 @@ fn failed(reason: impl Into<String>) -> FfiError {
 
 /// The core message a [`MessageItem`] came from, as far as the menu looks at it.
 fn message_of(item: &MessageItem) -> morpheus_core::Message {
-    let text = match &item.body {
-        MessageBody::Text { text, .. } => Some(text.clone()),
-        _ => None,
+    let kind = match &item.body {
+        MessageBody::Image { caption, media, width, height } => MessageKind::Image { body: caption.clone(), media: media.media_ref(), width: *width, height: *height, blurhash: None },
+        MessageBody::Text { text, .. } => MessageKind::Text { body: text.clone(), html: None },
+        _ => MessageKind::Text { body: String::new(), html: None },
     };
     morpheus_core::Message {
         unique_id: item.key.clone(),
@@ -138,7 +145,7 @@ fn message_of(item: &MessageItem) -> morpheus_core::Message {
         in_reply_to: None,
         thread_root: None,
         thread: None,
-        kind: MessageKind::Text { body: text.unwrap_or_default(), html: None },
+        kind,
         state_kind: None,
         state_who: None,
         shield: None,
@@ -156,9 +163,13 @@ impl Morpheus {
     }
 
     fn store(&self, items: &[MenuItem], room: Option<OwnedRoomId>, event_id: Option<String>) -> Vec<MenuRow> {
+        self.store_with(items, room, event_id, None)
+    }
+
+    fn store_with(&self, items: &[MenuItem], room: Option<OwnedRoomId>, event_id: Option<String>, media: Option<morpheus_core::MediaRef>) -> Vec<MenuRow> {
         let rows = rows_of(items, "");
         if let Ok(mut slot) = self.menu.lock() {
-            *slot = Some(Stored { items: items.to_vec(), room, event_id });
+            *slot = Some(Stored { items: items.to_vec(), room, event_id, media });
         }
         rows
     }
@@ -247,17 +258,21 @@ impl Morpheus {
         };
         let rooms = self.rooms_now.lock().map(|r| r.clone()).unwrap_or_default();
         let targets = forward_targets(&rooms, &room);
-        let items = message_menu(&core, Some(&room), pinned, &targets, true);
-        Ok(self.store(&items, Some(room), message.event_id))
+        let items = morpheus_view_model::menu::with_copy_image(message_menu(&core, Some(&room), pinned, &targets, true), &core);
+        let media = match &core.kind {
+            MessageKind::Image { media, .. } => Some(media.clone()),
+            _ => None,
+        };
+        Ok(self.store_with(&items, Some(room), message.event_id, media))
     }
 
     /// Do what the item at `path` of the last menu built says. What only the screen can do is told back.
     pub async fn run_menu_item(&self, path: String) -> Result<MenuOutcome, FfiError> {
-        let (action, label, room, event_id) = {
+        let (action, label, room, event_id, media) = {
             let slot = self.menu.lock().map_err(|_| failed("the menu is busy"))?;
             let stored = slot.as_ref().ok_or_else(|| failed("no menu is open"))?;
             let item = at(&stored.items, &path).ok_or_else(|| failed("that item is gone"))?;
-            (item.action.clone(), item.label.clone(), stored.room.clone(), stored.event_id.clone())
+            (item.action.clone(), item.label.clone(), stored.room.clone(), stored.event_id.clone(), stored.media.clone())
         };
         let Some(action) = action else { return Ok(MenuOutcome::Done) };
         let session = self.session()?;
@@ -277,6 +292,15 @@ impl Morpheus {
             MenuAction::Delete => MenuOutcome::Delete,
             MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) | MenuAction::SelectText(text) => {
                 MenuOutcome::Copy { text }
+            }
+            MenuAction::CopyImage => {
+                let media = media.ok_or_else(|| failed("this message has no picture"))?;
+                let file = session.media_file(media).await?.ok_or_else(|| failed("could not fetch the picture"))?;
+                MenuOutcome::CopyImage { mime: file.mime().to_owned(), bytes: file.bytes }
+            }
+            MenuAction::ApplyTheme(text) => {
+                let theme = morpheus_view_model::theme_share::find_in_message(&text).ok_or_else(|| failed("there is no theme code in this message"))?;
+                MenuOutcome::ShowTheme { code: theme.encode() }
             }
             MenuAction::Pin(pin) => {
                 if let (Some(room), Some(event)) = (room, event()) {

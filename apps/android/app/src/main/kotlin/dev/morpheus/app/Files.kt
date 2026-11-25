@@ -75,3 +75,17 @@ fun Context.openLink(url: String): String? {
         dev.morpheus.app.ui.t("No app can open %{name}", "name" to address)
     }
 }
+
+/** Put a picture on the clipboard (as a file this app shares), so other apps can paste it. */
+fun Context.copyImage(bytes: ByteArray, mime: String): Boolean = try {
+    val dir = File(cacheDir, "opened").apply { mkdirs() }
+    val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "png"
+    val file = File(dir, "copied.$extension")
+    file.writeBytes(bytes)
+    val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    clipboard.setPrimaryClip(android.content.ClipData.newUri(contentResolver, "image", uri))
+    true
+} catch (_: Exception) {
+    false
+}

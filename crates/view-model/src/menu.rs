@@ -313,6 +313,16 @@ pub fn message_link(room: &OwnedRoomId, event_id: &str) -> String {
     format!("https://matrix.to/#/{room}/{event_id}")
 }
 
+/// "Copy image" on a picture message, before "Copy message link" (or at the end): the picture itself goes on the
+/// clipboard. A menu that is not on a picture is returned as it was.
+pub fn with_copy_image(mut items: Vec<MenuItem>, message: &Message) -> Vec<MenuItem> {
+    if matches!(message.kind, morpheus_core::MessageKind::Image { .. }) {
+        let at = items.iter().position(|i| i.label == "Copy message link").unwrap_or(items.len());
+        items.insert(at, MenuItem::new("Copy image", MenuAction::CopyImage));
+    }
+    items
+}
+
 /// Whether a menu on `message` has the quick-reaction row on top.
 pub fn offers_quick_reactions(message: &Message) -> bool {
     !message.is_local_echo
@@ -717,6 +727,25 @@ mod tests {
             ]
         );
         assert!(items.iter().find(|i| i.label == "Delete message").is_some_and(|i| i.danger));
+    }
+
+    #[test]
+    fn a_picture_message_offers_copy_image_before_the_link_and_others_do_not() {
+        let plain = message_menu(&message(false), Some(&room()), false, &[], true);
+        assert!(!labels(&with_copy_image(plain, &message(false))).contains(&"Copy image"));
+        let mut picture = message(false);
+        picture.kind = MessageKind::Image {
+            body: "p.png".into(),
+            media: morpheus_core::MediaRef::from_mxc_uri("mxc://x/abc"),
+            width: None,
+            height: None,
+            blurhash: None,
+        };
+        let items = with_copy_image(message_menu(&picture, Some(&room()), false, &[], true), &picture);
+        let labels = labels(&items);
+        let copy = labels.iter().position(|l| *l == "Copy image").expect("offered");
+        assert_eq!(labels.iter().position(|l| *l == "Copy message link"), Some(copy + 1));
+        assert_eq!(items[copy].action, Some(MenuAction::CopyImage));
     }
 
     #[test]

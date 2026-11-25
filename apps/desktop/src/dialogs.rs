@@ -175,7 +175,7 @@ impl Shell {
             .unwrap_or_default();
         let items = message_menu(message, room.as_ref(), pinned, &targets, false);
         let items = with_selection(items, self.selection_copy_text(&message.unique_id, cx));
-        let items = with_copy_image(items, message);
+        let items = crate::view_model::menu::with_copy_image(items, message);
         let powers = room.as_ref().and_then(crate::composer::known_powers);
         let items = match &powers {
             Some(powers) => crate::view_model::permissions::restrict_menu(items, powers),
@@ -1753,24 +1753,6 @@ fn open_prompt(
         .attr("role", "alertdialog")
         .focusable(focus);
     Some(boxed.into_any_element())
-}
-
-/// "Copy image" on a picture, before "Copy text" (or the end).
-fn with_copy_image(
-    mut items: Vec<crate::view_model::menu::MenuItem>,
-    message: &Message,
-) -> Vec<crate::view_model::menu::MenuItem> {
-    if matches!(message.kind, MessageKind::Image { .. }) {
-        let at = items
-            .iter()
-            .position(|i| crate::view_model::menu::translated_label(&i.label) == ts("Copy message link"))
-            .unwrap_or(items.len());
-        items.insert(
-            at,
-            crate::view_model::menu::MenuItem::new("Copy image", MenuAction::CopyImage),
-        );
-    }
-    items
 }
 
 /// "Copy selection" before "Copy text" when text of the message is selected (#273).

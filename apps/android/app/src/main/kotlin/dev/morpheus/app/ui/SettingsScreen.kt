@@ -113,7 +113,10 @@ fun SettingsScreen(app: AppModel) {
                 Text(code, Modifier.weight(1f).testTag("theme-code"), fontSize = 13.sp)
                 TextButton({ clipboard.setText(AnnotatedString(code)) }, Modifier.testTag("code-copy")) { Text(t("Copy")) }
             }
-            var pasted by remember { mutableStateOf("") }
+            // A message that carried a theme code opened this page with the code ready to use.
+            val offered by app.themeCodeToTry.collectAsState()
+            var pasted by remember { mutableStateOf(offered ?: "") }
+            LaunchedEffect(offered) { offered?.let { pasted = it; app.themeCodeTried() } }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(pasted, { pasted = it }, Modifier.weight(1f).testTag("code-input"), placeholder = { Text(t("Paste a theme code.")) }, singleLine = true)
                 Button({ attempt { app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }

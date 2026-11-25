@@ -451,7 +451,7 @@ private fun MessageRow(
             when (val body = message.body) {
                 is MessageBody.Text -> LinkedText(body, message.edited, message.sending)
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
-                is MessageBody.Image -> PictureBody(body, onImage)
+                is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
                 is MessageBody.File -> Text(
                     (when (body.kind) { FileKind.VIDEO -> "🎞 "; FileKind.AUDIO -> "🎵 "; else -> "📎 " }) +
                         body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }),
@@ -513,7 +513,8 @@ private fun MessageRow(
 }
 
 @Composable
-private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit) {
+// A long press on the picture opens the message sheet like anywhere on the message (the picture takes its own taps).
+private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit, onLongPress: () -> Unit) {
     val bitmap by produceState<ImageBitmap?>(null, body.media.key()) {
         value = Images.load(body.media, 720, 720)
     }
@@ -527,7 +528,7 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit)
                 .padding(top = 4.dp)
                 .widthIn(max = 280.dp)
                 .aspectRatio(ratio.coerceIn(0.4f, 3f))
-                .pointerInput(body.media.key()) { detectTapGestures { onImage(body.media) } }
+                .pointerInput(body.media.key()) { detectTapGestures(onLongPress = { onLongPress() }) { onImage(body.media) } }
                 .semantics { onClick("Open picture") { onImage(body.media); true } }
                 .testTag("msg-image"),
             contentScale = ContentScale.Fit,
