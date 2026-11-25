@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -179,7 +180,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             if (id.isNotEmpty()) model.jumpTo(id)
         }
         else if (info) RoomInfo(app, model, room, title) { info = false }
-        else if (thread == null) RoomPages(app, model, room, pager, threadRoot == null) { ScreenScaffold(if (threadRoot == null) "room-screen" else "thread-screen", {
+        else if (thread == null) RoomPages(app, model, room, pager, threadRoot == null, isDm) { ScreenScaffold(if (threadRoot == null) "room-screen" else "thread-screen", {
             val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
             TopBar(
                 if (threadRoot == null) title else t("Thread"),
@@ -645,7 +646,7 @@ private fun ImageViewer(media: MediaHandle, onClose: () -> Unit) {
  * (the rail and the list, to pick another room) and the members one swipe to the left. A thread has no panes.
  */
 @Composable
-private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: PagerState, panes: Boolean, chat: @Composable () -> Unit) {
+private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: PagerState, panes: Boolean, isDm: Boolean, chat: @Composable () -> Unit) {
     if (!panes) {
         chat()
         return
@@ -683,7 +684,15 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
             return 0f
         }
     }
-    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager").pointerInput(Unit) {
+    // A DM has no channels or members to page to: a swipe left in it goes back to the DMs (#458; list_swipes), the chat sliding off the list.
+    var leaveDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager").then(if (!isDm) Modifier else Modifier.pointerInput(Unit) {
+        detectHorizontalDragGestures(
+            onDragStart = { leaveDrag = 0f },
+            onDragEnd = { if (kotlin.math.abs(leaveDrag) > size.width / 6f && uniffi.morpheus_ffi.chatSwipeLeaves(true, fingerLeft = leaveDrag < 0f)) app.selectTab(dev.morpheus.app.Tab.Dms) },
+            onDragCancel = { leaveDrag = 0f },
+        ) { _, amount -> leaveDrag += amount }
+    }).pointerInput(Unit) {
         // The finger leaving the pager: what the keyboard's lags are measured from (the debug bridge reports them, #379).
         awaitPointerEventScope {
             while (true) {
@@ -691,7 +700,7 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
                 if (event.changes.none { it.pressed }) dev.morpheus.app.AppState.imeLiftAt = android.os.SystemClock.uptimeMillis()
             }
         }
-    }, flingBehavior = fling, key = { it }) { page ->
+    }, userScrollEnabled = !isDm, flingBehavior = fling, key = { it }) { page ->
         when (page) {
             // The Servers tab as it is outside a room: its bar is here, the chat has none.
             0 -> Column(Modifier.fillMaxSize().testTag("pane-channels")) {

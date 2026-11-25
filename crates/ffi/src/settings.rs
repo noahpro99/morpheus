@@ -415,6 +415,13 @@ pub fn last_chats_opened(kept: String, room: String, is_dm: bool) -> String {
     last.encode()
 }
 
+/// In an open chat (`is_dm`), whether a swipe (`finger_left` is the direction the finger moved) leaves it for its list (#458).
+#[uniffi::export]
+pub fn chat_swipe_leaves(is_dm: bool, finger_left: bool) -> bool {
+    use morpheus_view_model::list_swipes::Finger;
+    morpheus_view_model::list_swipes::leaves_chat(is_dm, if finger_left { Finger::Left } else { Finger::Right })
+}
+
 /// What a swipe on `list` does; `finger_left` is the direction the finger moved.
 #[uniffi::export]
 pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool) -> SwipeStep {

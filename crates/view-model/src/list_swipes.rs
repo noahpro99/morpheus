@@ -7,6 +7,9 @@
 //!
 //! A swipe that would open a chat when none was kept does nothing.
 //!
+//! In an open chat the swipe that leaves it is the opposite of the one that opened it (#458): a DM opens with a swipe right from the
+//! DMs, so a swipe left goes back to the DMs; a server channel opens with a swipe left from Servers, so a swipe right goes back to Servers.
+//!
 //! Which way is which is the one pair of constants below.
 
 /// The way the finger moves.
@@ -76,6 +79,17 @@ impl LastChats {
     }
 }
 
+/// In an open chat, does this swipe leave it for its list? A DM goes back on the swipe that leads to the servers, a channel on the one
+/// that leads to the DMs, each the opposite of the swipe that opened it.
+pub fn leaves_chat(is_dm: bool, finger: Finger) -> bool {
+    if is_dm { finger == TOWARDS_SERVERS } else { finger == TOWARDS_DMS }
+}
+
+/// The list a chat goes back to.
+pub fn list_of_chat(is_dm: bool) -> List {
+    if is_dm { List::Dms } else { List::Servers }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +134,19 @@ mod tests {
         assert_eq!(LastChats::parse(&only_channel.encode()), only_channel);
         assert_eq!(LastChats::parse(""), LastChats::default());
         assert_eq!(LastChats::parse("garbage"), LastChats { dm: Some("garbage".into()), channel: None });
+    }
+
+    #[test]
+    fn a_swipe_in_a_chat_goes_back_to_its_list_the_way_opposite_to_the_one_that_opened_it() {
+        assert!(leaves_chat(true, Finger::Left));
+        assert!(!leaves_chat(true, Finger::Right));
+        assert_eq!(list_of_chat(true), List::Dms);
+        assert!(leaves_chat(false, Finger::Right));
+        assert!(!leaves_chat(false, Finger::Left));
+        assert_eq!(list_of_chat(false), List::Servers);
+        // Each is the reverse of the swipe that opens it from its list.
+        let last = kept();
+        assert_eq!(last.swipe(List::Dms, Finger::Right), Step::Open("!dm:x".into()));
+        assert_eq!(last.swipe(List::Servers, Finger::Left), Step::Open("!chan:x".into()));
     }
 }
