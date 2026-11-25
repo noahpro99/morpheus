@@ -77,6 +77,8 @@ fun colourPairs(s: ColorScheme): List<Triple<String, Int, Int>> = listOf(
     Triple("surface_variant", s.surfaceVariant.toArgb(), s.onSurfaceVariant.toArgb()),
     Triple("surface_container_high", s.surfaceContainerHigh.toArgb(), s.onSurface.toArgb()),
     Triple("inverse_surface", s.inverseSurface.toArgb(), s.inverseOnSurface.toArgb()),
+    Triple("composer_text", ComposerColours.fill(s).toArgb(), ComposerColours.text(s).toArgb()),
+    Triple("composer_hint", ComposerColours.fill(s).toArgb(), ComposerColours.hint(s).toArgb()),
 )
 
 /**
@@ -219,4 +221,14 @@ object Type {
 fun onColour(fill: Color): Color {
     val rgb = (fill.toArgb() and 0xFFFFFF).toUInt()
     return Color(0xFF000000.toInt() or uniffi.morpheus_ffi.onColour(rgb).toInt())
+}
+
+/** [preferred] if it reads on [fill], else black or white: the core's contrast helper for anything drawn on a fill the scheme has no pair for. */
+fun readable(preferred: Color, fill: Color): Color = rgb(uniffi.morpheus_ffi.readableOn(preferred.rgb(), fill.rgb()))
+
+/** What the message box draws on its field (a surface container): the text, and the hint and icons, each read against the field's fill. */
+object ComposerColours {
+    fun fill(s: ColorScheme): Color = s.surfaceContainerHigh
+    fun text(s: ColorScheme): Color = readable(s.onSurface, fill(s))
+    fun hint(s: ColorScheme): Color = readable(s.onSurfaceVariant, fill(s))
 }

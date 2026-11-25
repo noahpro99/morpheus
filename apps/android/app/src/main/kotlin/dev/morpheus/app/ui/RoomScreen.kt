@@ -227,29 +227,10 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, fontSize = 12.sp)
             }
             replyingTo?.let { reply ->
-                Row(
-                    Modifier.fillMaxWidth().background(Palette.Raised).padding(start = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        t("Replying to %{name}: %{text}", "name" to reply.senderName.toString(), "text" to summary(reply.body)),
-                        Modifier.weight(1f).testTag("reply-banner"),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = Palette.Muted,
-                        fontSize = 13.sp,
-                    )
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Cancel reply"), "reply-cancel", { model.replyTo(null) }, tint = Palette.Muted)
-                }
+                ComposerBanner(dev.morpheus.app.R.drawable.ic_lucide_reply, t("Replying to %{name}: %{text}", "name" to reply.senderName.toString(), "text" to summary(reply.body)), "reply-bar", "reply-banner", t("Cancel reply"), "reply-cancel") { model.replyTo(null) }
             }
             editing?.let {
-                Row(
-                    Modifier.fillMaxWidth().background(Palette.Raised).padding(start = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(t("Editing your message"), Modifier.weight(1f).testTag("edit-banner"), color = Palette.Muted, fontSize = 13.sp)
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Cancel editing"), "edit-cancel", { model.edit(null) }, tint = Palette.Muted)
-                }
+                ComposerBanner(dev.morpheus.app.R.drawable.ic_lucide_pencil, t("Editing your message"), "edit-bar", "edit-banner", t("Cancel editing"), "edit-cancel") { model.edit(null) }
             }
             // Messages that did not go stay here, to send again or drop (the text is not lost with the composer).
             val unsent by model.failed.collectAsState()
@@ -593,37 +574,48 @@ private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, 
     }
     Column(Modifier.background(Palette.Background)) {
     SuggestionStrip(suggestions) { setText(it.draftAfter); suggestions = emptyList() }
+    // One rounded filled field (attach inside it on the left, emoji on the right) with the send button beside it, 8 dp from the
+    // edges and from each other; every colour on the field is read against the field's fill (the contrast rule, #266).
+    val scheme = MaterialTheme.colorScheme
+    val fill = ComposerColours.fill(scheme)
+    val ink = ComposerColours.text(scheme)
+    val hint = ComposerColours.hint(scheme)
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.sm),
         verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        IconAction(dev.morpheus.app.R.drawable.ic_lucide_paperclip, t("Attach a file"), "attach", onAttach, tint = Palette.Muted)
-        OutlinedTextField(
+        androidx.compose.material3.TextField(
             field, { field = it },
-            Modifier.weight(1f).heightIn(min = 48.dp, max = 140.dp).focusRequester(focus).testTag("composer"),
-            placeholder = { Text(t("Message"), color = Palette.Muted) },
+            Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).focusRequester(focus).testTag("composer"),
+            placeholder = { Text(t("Message")) },
             maxLines = 5,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(28.dp),
             textStyle = Type.body,
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Palette.Raised, unfocusedContainerColor = Palette.Raised,
-                focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,
-                focusedTextColor = Palette.Text, unfocusedTextColor = Palette.Text, cursorColor = Palette.Accent,
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedContainerColor = fill, unfocusedContainerColor = fill, disabledContainerColor = fill,
+                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
+                focusedTextColor = ink, unfocusedTextColor = ink, cursorColor = scheme.primary,
+                focusedPlaceholderColor = hint, unfocusedPlaceholderColor = hint,
+                focusedLeadingIconColor = hint, unfocusedLeadingIconColor = hint, focusedTrailingIconColor = hint, unfocusedTrailingIconColor = hint,
             ),
+            leadingIcon = {
+                IconAction(dev.morpheus.app.R.drawable.ic_lucide_paperclip, t("Attach a file"), "attach", onAttach, tint = hint)
+            },
             trailingIcon = {
-                androidx.compose.material3.IconButton({ panel = !panel }, Modifier.size(40.dp).semantics { contentDescription = t("Emoji") }.testTag("emoji-button")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                androidx.compose.material3.IconButton({ panel = !panel }, Modifier.size(Size.target).semantics { contentDescription = t("Emoji") }.testTag("emoji-button")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = hint) }
             },
         )
         val canSend = text.isNotBlank()
         androidx.compose.material3.FilledIconButton(
             { onSend(text.trim()); setText(""); model.stopTyping() },
-            Modifier.size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
+            // Level with a one-line field (56 dp tall): 4 dp up from its bottom.
+            Modifier.padding(bottom = Space.xs).size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
             enabled = canSend,
             colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
-                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh, disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                containerColor = scheme.primary, contentColor = scheme.onPrimary,
+                disabledContainerColor = fill, disabledContentColor = hint,
             ),
         ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
     }
@@ -723,4 +715,20 @@ private object Drafts {
     private val kept = HashMap<String, androidx.compose.ui.text.input.TextFieldValue>()
     fun get(key: String) = kept[key] ?: androidx.compose.ui.text.input.TextFieldValue("")
     fun put(key: String, value: androidx.compose.ui.text.input.TextFieldValue) { if (value.text.isEmpty()) kept.remove(key) else kept[key] = value }
+}
+
+/** The bar over the message box that says what it is for (a reply, an edit): the screen's width, an icon, one line, a close button. */
+@Composable
+private fun ComposerBanner(@androidx.annotation.DrawableRes icon: Int, text: String, barTag: String, textTag: String, closeDescription: String, closeTag: String, onClose: () -> Unit) {
+    val fill = ComposerColours.fill(MaterialTheme.colorScheme)
+    val ink = ComposerColours.hint(MaterialTheme.colorScheme)
+    Row(
+        Modifier.fillMaxWidth().testTag(barTag).background(fill).padding(start = Space.lg),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        GlyphIcon(icon, size = 20.dp, tint = ink)
+        Text(text, Modifier.weight(1f).testTag(textTag), maxLines = 1, overflow = TextOverflow.Ellipsis, color = ink, style = MaterialTheme.typography.bodyMedium)
+        IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, closeDescription, closeTag, onClose, tint = ink)
+    }
 }
