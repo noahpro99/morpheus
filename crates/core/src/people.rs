@@ -108,17 +108,27 @@ impl Session {
         })
     }
 
-    /// Report a user to the homeserver admins (MSC4260).
+    /// Report a user to the homeserver admins (MSC4260). The SDK takes the unstable path on a server
+    /// that does not list Matrix 1.14, and a server that has the report on its stable path (Synapse
+    /// 1.12 has) answers that 404 M_UNRECOGNIZED: then the stable path is tried (#457).
     pub fn report_user(&self, user_id: OwnedUserId, reason: String) -> CoreFuture<()> {
         let client = self.client.clone();
         self.core.run(async move {
-            client
-                .send(report_user::v3::Request::new(
-                    user_id,
-                    reason.trim().to_owned(),
-                ))
-                .await?;
-            Ok(())
+            let reason = reason.trim().to_owned();
+            match client
+                .send(report_user::v3::Request::new(user_id.clone(), reason.clone()))
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(err)
+                    if err
+                        .as_client_api_error()
+                        .is_some_and(|e| e.status_code.as_u16() == 404) =>
+                {
+                    report_user_stable(&client, &user_id, &reason).await
+                }
+                Err(err) => Err(err.into()),
+            }
         })
     }
 
@@ -332,4 +342,33 @@ impl Session {
             Ok(())
         })
     }
+}
+
+/// `POST /_matrix/client/v3/users/{id}/report` with the reason, whatever versions the server lists.
+async fn report_user_stable(
+    client: &matrix_sdk::Client,
+    user_id: &OwnedUserId,
+    reason: &str,
+) -> Result<(), Error> {
+    let base = client.homeserver();
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .map_err(|()| Error::Other("the homeserver address cannot take a path".into()))?
+        .pop_if_empty()
+        .extend(["_matrix", "client", "v3", "users", user_id.as_str(), "report"]);
+    let mut request = client
+        .http_client()
+        .post(url)
+        .header("content-type", "application/json")
+        .body(serde_json::json!({ "reason": reason }).to_string());
+    if let Some(token) = client.access_token() {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().await.map_err(|e| Error::Other(e.to_string()))?;
+    if response.status().is_success() {
+        return Ok(());
+    }
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    Err(Error::Other(format!("{status}: {body}")))
 }

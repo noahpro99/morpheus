@@ -2794,3 +2794,27 @@ async fn a_fresh_sign_in_knows_when_every_rooms_last_message_came() {
         let _ = session.leave_room(room.id.clone()).await;
     }
 }
+
+/// #457: reporting a user works on a homeserver that speaks Matrix 1.12 (the SDK's unstable MSC4260 path is
+/// answered 404 M_UNRECOGNIZED there; the stable path is what such a server has).
+#[tokio::test]
+async fn a_user_can_be_reported_on_a_homeserver_older_than_matrix_1_14() {
+    let Some(env) = env() else {
+        eprintln!("MORPHEUS_TEST_HOMESERVER not set; skipping live test");
+        return;
+    };
+    let core = Core::with_session_store(fresh_data_dir(), SessionStoreKind::File).expect("core");
+    let session = core
+        .login(LoginRequest {
+            homeserver: env.homeserver,
+            username: "alice".into(),
+            password: "alice-password".into(),
+        })
+        .await
+        .expect("login");
+    let bob: morpheus_core::OwnedUserId = "@bob:localhost".parse().expect("user id");
+    session
+        .report_user(bob, "a live test of reporting".into())
+        .await
+        .expect("the report is accepted");
+}
