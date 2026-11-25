@@ -116,7 +116,7 @@ impl Discover {
                     this.chosen(cx);
                 }
                 None => {
-                    this.input_error = Some(format!("\"{}\" is not a server name", typed.trim()));
+                    this.input_error = Some(crate::view_model::i18n::tf("\"%{name}\" is not a server name", &[("name", typed.trim())]));
                     cx.notify();
                 }
             }

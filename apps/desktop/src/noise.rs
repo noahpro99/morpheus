@@ -886,7 +886,7 @@ pub fn sensitivity<V: 'static>(cx: &mut Context<V>) -> Vec<AnyElement> {
             .child(if auto {
                 ts("Follows your room: keys and noise between words are kept out.").to_owned()
             } else {
-                format!("Threshold {} {}: drag it over your level to set it.", shown(shown_threshold), param.unit)
+                crate::view_model::i18n::tf("Threshold %{value} %{unit}: drag it over your level to set it.", &[("value", &shown(shown_threshold).to_string()), ("unit", &param.unit.to_string())])
             })
             .child(if morpheus_call::applied_noise_suppression().is_some() {
                 ""

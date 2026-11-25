@@ -286,9 +286,9 @@ pub fn spawn_ring_watcher(session: Session) {
                                     if crate::locks::is_locked(&call.room_id) {
                                         crate::locks::locked_call()
                                     } else {
-                                        format!(
-                                            "{} is calling",
-                                            if hidden { ts("Someone") } else { &name }
+                                        crate::view_model::i18n::tf(
+                                            "%{name} is calling",
+                                            &[("name", if hidden { ts("Someone") } else { &name })]
                                         )
                                     },
                                     ts("Open Morpheus to answer").into(),

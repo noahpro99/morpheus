@@ -80,7 +80,7 @@ pub fn set_overlay(hwnd: isize, rgba: Option<&[u8]>, size: u32, count: usize) ->
         return false;
     };
     let hwnd = HWND(hwnd as *mut c_void);
-    let description = HSTRING::from(format!("{count} unread"));
+    let description = HSTRING::from(crate::view_model::i18n::tf("%{count} unread", &[("count", &count.to_string())]));
     match rgba {
         Some(rgba) => {
             let Some(icon) = make_icon(rgba, size) else {

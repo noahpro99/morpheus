@@ -3,7 +3,7 @@
 //! (`crates/ui/src/components/settings.rs`). What they offer and say is in
 //! `view_model::settings`; this draws it and runs the calls.
 
-use crate::view_model::i18n::t;
+use crate::view_model::i18n::{t, ts};
 use std::time::Duration;
 
 use gpui::{
@@ -234,7 +234,7 @@ impl SettingsView {
             let result = saving.await;
             this.update(cx, |this, cx| {
                 this.notify_notes[slot] = Some(match result {
-                    Ok(()) => Ok("Saved"),
+                    Ok(()) => Ok(ts("Saved")),
                     Err(err) => Err(err.to_string()),
                 });
                 cx.notify();
@@ -303,7 +303,7 @@ impl SettingsView {
                 "device-notifications".into(),
                 "device-notifications",
                 "",
-                "Notifications on this device",
+                ts("Notifications on this device"),
                 on_here,
                 true,
                 false,
@@ -322,7 +322,7 @@ impl SettingsView {
                 "message-sounds".into(),
                 "message-sounds",
                 "",
-                "Message sounds",
+                ts("Message sounds"),
                 sounds_here,
                 true,
                 false,
@@ -445,7 +445,7 @@ impl SettingsView {
             "vim-mode".into(),
             "vim-mode",
             "",
-            "Vim mode",
+            ts("Vim mode"),
             vim_on,
             true,
             false,
@@ -460,7 +460,7 @@ impl SettingsView {
             "spell-check".into(),
             "spell-check",
             "",
-            "Spell check",
+            ts("Spell check"),
             spell_on,
             true,
             false,
@@ -493,7 +493,7 @@ impl SettingsView {
             "link-previews".into(),
             "link-previews",
             "",
-            "Link previews",
+            ts("Link previews"),
             previews_now.enabled,
             true,
             false,
@@ -506,7 +506,7 @@ impl SettingsView {
             "link-previews-encrypted".into(),
             "link-previews-encrypted",
             "",
-            "Also in encrypted rooms",
+            ts("Also in encrypted rooms"),
             previews_now.in_encrypted,
             true,
             false,
@@ -516,7 +516,7 @@ impl SettingsView {
             }),
         );
         let previews_section = section(
-            "Link previews",
+            ts("Link previews"),
             "link-previews-section",
             vec![
                 previews,
@@ -567,13 +567,13 @@ impl SettingsView {
                     DeviceKind::Microphone,
                     "microphone",
                     "mic",
-                    "Microphone",
+                    ts("Microphone"),
                     &found.microphones,
                     self.voice_prefs.microphone.as_deref(),
                     cx,
                 ));
                 children.push(self.volume_slider(
-                    "Input Volume",
+                    ts("Input Volume"),
                     "input-volume",
                     self.voice_prefs.input_volume,
                     true,
@@ -583,13 +583,13 @@ impl SettingsView {
                     DeviceKind::Speaker,
                     "speaker",
                     "volume-2",
-                    "Speaker",
+                    ts("Speaker"),
                     &found.speakers,
                     self.voice_prefs.speaker.as_deref(),
                     cx,
                 ));
                 children.push(self.volume_slider(
-                    "Output Volume",
+                    ts("Output Volume"),
                     "output-volume",
                     self.voice_prefs.output_volume,
                     false,
@@ -600,7 +600,7 @@ impl SettingsView {
                         DeviceKind::Camera,
                         "camera",
                         "video",
-                        "Camera",
+                        ts("Camera"),
                         &found.cameras,
                         self.voice_prefs.camera.as_deref(),
                         cx,
@@ -678,7 +678,7 @@ impl SettingsView {
         let shown = rows
             .iter()
             .find(|row| row.checked)
-            .map_or_else(|| "System default".to_owned(), |row| row.name.clone());
+            .map_or_else(|| t("System default"), |row| row.name.clone());
         let open = self.picker_open == Some(name);
         let current_id = current.unwrap_or_default().to_owned();
         let head = div()
@@ -978,7 +978,7 @@ impl SettingsView {
                     "autostart".into(),
                     "autostart",
                     "",
-                    "Open Morpheus",
+                    ts("Open Morpheus"),
                     state.enabled,
                     true,
                     false,
@@ -996,7 +996,7 @@ impl SettingsView {
                     "start-hidden".into(),
                     "start-hidden",
                     "",
-                    "Start hidden in the tray",
+                    ts("Start hidden in the tray"),
                     state.hidden,
                     true,
                     !state.hidden_selectable_with(keep),
@@ -1026,7 +1026,7 @@ impl SettingsView {
                     "keep-running".into(),
                     "keep-running",
                     "",
-                    "Keep running in the background",
+                    ts("Keep running in the background"),
                     keep,
                     true,
                     false,
@@ -1126,15 +1126,15 @@ impl SettingsView {
                 .into_any_element(),
         ];
         let diag_open = self.diag_open;
-        let toggle = button("diag-toggle", "Show debug info", Kind::Secondary, "diag-toggle")
+        let toggle = button("diag-toggle", ts("Show debug info"), Kind::Secondary, "diag-toggle")
             .child(icon(if diag_open { "chevron-down" } else { "chevron-right" }, 16.0).text_color(rgb(theme::text())))
-            .child(if diag_open { "Hide debug info" } else { "Show debug info" })
+            .child(if diag_open { ts("Hide debug info") } else { ts("Show debug info") })
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.diag_open = !this.diag_open;
                 cx.notify();
             }))
             .e2e("button", "button secondary diag-toggle")
-            .text(if diag_open { "Hide debug info" } else { "Show debug info" });
+            .text(if diag_open { ts("Hide debug info") } else { ts("Show debug info") });
         diag_children.push(div().mt(px(10.0)).flex().child(toggle).into_any_element());
         for section in diagnostics.sections.iter().filter(|_| diag_open) {
             diag_children.push(
@@ -1249,12 +1249,12 @@ impl SettingsView {
                 "muted",
             )
             .into_any_element(),
-            switch("auto", "Turn on by itself while I share my screen", s.auto, |s| s.auto = !s.auto),
+            switch("auto", ts("Turn on by itself while I share my screen"), s.auto, |s| s.auto = !s.auto),
             choice(
                 "streamer-now".to_owned(),
                 "streamer-now",
                 "",
-                "Turn on now",
+                ts("Turn on now"),
                 crate::streamer::active(),
                 true,
                 false,
@@ -1273,17 +1273,17 @@ impl SettingsView {
                 None,
                 false,
                 vec![
-                    switch("names", "People's names (shortened to a letter)", s.names, |s| s.names = !s.names),
-                    switch("notifications", "What notifications say", s.notifications, |s| {
+                    switch("names", ts("People's names (shortened to a letter)"), s.names, |s| s.names = !s.names),
+                    switch("notifications", ts("What notifications say"), s.notifications, |s| {
                         s.notifications = !s.notifications
                     }),
-                    switch("ids", "IDs, e-mail addresses, phone numbers and links", s.ids, |s| s.ids = !s.ids),
+                    switch("ids", ts("IDs, e-mail addresses, phone numbers and links"), s.ids, |s| s.ids = !s.ids),
                 ],
             ),
-            switch("ask", "Ask before opening another channel while I share", s.ask, |s| s.ask = !s.ask),
+            switch("ask", ts("Ask before opening another channel while I share"), s.ask, |s| s.ask = !s.ask),
             switch(
                 "remember-opened",
-                "Don't ask again for channels you've already opened this stream",
+                ts("Don't ask again for channels you've already opened this stream"),
                 s.remember_opened,
                 |s| s.remember_opened = !s.remember_opened,
             ),
@@ -1330,7 +1330,7 @@ impl SettingsView {
         pick(
             "lock-timeout-now".into(),
             "now".into(),
-            "Immediately (when you leave the chat)",
+            ts("Immediately (when you leave the chat)"),
             !custom && now == AutoLock::Immediately,
             Some(AutoLock::Immediately),
         );
@@ -1346,13 +1346,13 @@ impl SettingsView {
         pick(
             "lock-timeout-never".into(),
             "never".into(),
-            "Never (only on restart or Lock now)",
+            ts("Never (only on restart or Lock now)"),
             !custom && now == AutoLock::Never,
             Some(AutoLock::Never),
         );
         let label = match now {
             AutoLock::After(secs) if now.is_custom() => crate::view_model::i18n::tf("Custom (%{time})", &[("time", &describe_secs(secs))]),
-            _ => "Custom".to_owned(),
+            _ => t("Custom"),
         };
         pick("lock-timeout-custom".into(), "custom".into(), &label, custom, None);
         if custom {
@@ -1473,7 +1473,7 @@ impl SettingsView {
         let call = session.set_display_name(name);
         self.run_profile(
             async move { call.await.map_err(|err| err.to_string()) },
-            "Saved.",
+            ts("Saved."),
             cx,
         );
     }
@@ -1489,7 +1489,7 @@ impl SettingsView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Choose a picture".into()),
+            prompt: Some(ts("Choose a picture").into()),
             filters: crate::view_model::room_dialogs::picture_filters(),
         });
         cx.spawn(async move |this, cx| {
@@ -1515,7 +1515,7 @@ impl SettingsView {
             None => {
                 self.picked = None;
                 self.profile_note = Some(Err(
-                    "That file is not a picture Morpheus can show.".to_owned()
+                    t("That file is not a picture Morpheus can show.")
                 ));
             }
         }
@@ -1545,7 +1545,7 @@ impl SettingsView {
                 let _ = std::fs::remove_file(&path);
                 done.map_err(|err| err.to_string())
             },
-            "Picture updated.",
+            ts("Picture updated."),
             cx,
         );
     }
@@ -1559,7 +1559,7 @@ impl SettingsView {
         let call = session.remove_avatar();
         self.run_profile(
             async move { call.await.map_err(|err| err.to_string()) },
-            "Picture removed.",
+            ts("Picture removed."),
             cx,
         );
     }
@@ -1799,9 +1799,9 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(6.0))
-            .child(self.hsv_slider(0, "hue", "Hue", h / 360.0, format!("{}", h.round() as i32), rainbow, cx))
-            .child(self.hsv_slider(1, "sat", "Saturation", s, format!("{}%", (s * 100.0).round() as i32), saturation, cx))
-            .child(self.hsv_slider(2, "val", "Value", v, format!("{}%", (v * 100.0).round() as i32), value, cx))
+            .child(self.hsv_slider(0, "hue", ts("Hue"), h / 360.0, format!("{}", h.round() as i32), rainbow, cx))
+            .child(self.hsv_slider(1, "sat", ts("Saturation"), s, format!("{}%", (s * 100.0).round() as i32), saturation, cx))
+            .child(self.hsv_slider(2, "val", ts("Value"), v, format!("{}%", (v * 100.0).round() as i32), value, cx))
             .into_any_element()
     }
 
@@ -1828,7 +1828,7 @@ impl SettingsView {
                 .overflow_hidden()
                 .child(div().w(relative_36()).h_full().bg(rgb(side)))
                 .child(div().flex_1().h_full().bg(rgb(chat)));
-            let pin_label = if entry.pinned { "Pinned" } else { "Pin" };
+            let pin_label = if entry.pinned { ts("Pinned") } else { ts("Pin") };
             let pin = div()
                 .id(ElementId::from(SharedString::from(format!("history-pin-{key}"))))
                 .px(px(6.0))
@@ -2027,10 +2027,10 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap(px(12.0))
-                    .child(step("zoom-out", "Zoom out", Kind::Secondary, zoom::zoom_out, cx))
+                    .child(step("zoom-out", ts("Zoom out"), Kind::Secondary, zoom::zoom_out, cx))
                     .child(level)
-                    .child(step("zoom-in", "Zoom in", Kind::Secondary, zoom::zoom_in, cx))
-                    .child(step("zoom-reset", "Reset", Kind::Secondary, |_| zoom::DEFAULT, cx))
+                    .child(step("zoom-in", ts("Zoom in"), Kind::Secondary, zoom::zoom_in, cx))
+                    .child(step("zoom-reset", ts("Reset"), Kind::Secondary, |_| zoom::DEFAULT, cx))
                     .into_any_element(),
             ],
             self.hl("zoom"),
@@ -2053,7 +2053,7 @@ impl SettingsView {
             "glass-on".into(),
             "glass",
             "on",
-            "Transparent",
+            ts("Transparent"),
             current.on,
             true,
             !supported,
@@ -2176,7 +2176,7 @@ impl SettingsView {
             );
         }
         body.shrink_to_fit();
-        section("Transparent", "glass", body, self.hl("glass"))
+        section(ts("Transparent"), "glass", body, self.hl("glass"))
     }
 
     /// The look as it is now, as a shareable code.
@@ -2234,7 +2234,7 @@ impl SettingsView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Open a theme".into()),
+            prompt: Some(ts("Open a theme").into()),
             filters: crate::view_model::room_dialogs::theme_filters(),
         });
         cx.spawn(async move |this, cx| {
@@ -2432,9 +2432,9 @@ impl SettingsView {
                 div()
                     .id("theme-custom-icon")
                     .child(icon("palette", 40.0).text_color(rgb(ink)))
-                    .tip(super::colour_field::TIP)
+                    .tip(super::colour_field::tip())
                     .e2e("div", "custom-palette-icon")
-                    .attr("data-tip", super::colour_field::TIP),
+                    .attr("data-tip", super::colour_field::tip()),
             );
         let tile = div()
             .id("theme-custom")
@@ -2610,9 +2610,9 @@ fn preview(p: crate::view_model::theme::Palette) -> impl IntoElement {
         .flex_1()
         .gap(px(8.0))
         .p(px(10.0))
-        .child(message("alice", "Morning! Shall we start?", "preview-message"))
+        .child(message("alice", ts("Morning! Shall we start?"), "preview-message"))
         .child(thread)
-        .child(message("you", "Yes, give me a minute.", "preview-message"))
+        .child(message("you", ts("Yes, give me a minute."), "preview-message"))
         .child(
             div()
                 .px(px(10.0))

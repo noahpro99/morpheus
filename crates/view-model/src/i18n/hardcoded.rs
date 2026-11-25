@@ -68,6 +68,16 @@ const ALLOWED_IN: &[(&str, &str, &str)] = &[
     ("lightbox.rs", "Zoom in", "the test bridge's title attribute, never drawn"),
     ("lightbox.rs", "Zoom out", "the test bridge's title attribute, never drawn"),
     ("mac_menu.rs", "TextInput", "a class name macOS looks up"),
+    ("call_ui.rs", "none: {why}", "a test-bridge attribute value, never drawn"),
+    ("room_list.rs", "section {class}", "a css-like class"),
+    ("screen_quality.rs", "{class} active", "a css-like class"),
+    ("switcher.rs", "{classes} active", "a css-like class"),
+    ("status_feed.rs", "reading the status failed: {err}", "an error line for the activity client"),
+    ("tray.rs", "unsupported tray png colour type {other:?}", "a log line"),
+    ("update_self_test.rs", "no update offered for this platform: {status:?}", "a self-test line, never shown"),
+    ("update_self_test.rs", "updated from process {from}; now {}\\n", "a self-test line, never shown"),
+    ("menu.rs", "React with {key}", "the test bridge's title attribute, never drawn"),
+    ("settings/pages.rs", "USERPROFILE", "a Windows environment variable"),
 ];
 
 /// Whether `lit` reads as text for people.
@@ -104,6 +114,27 @@ fn text_like(lit: &str) -> bool {
     first.is_uppercase() && (words > 1 || plain.trim().chars().count() >= 3)
 }
 
+/// A `format!` literal that reads as words around its placeholders even without a capital start:
+/// "{n} unread", "in {room}: new". Two or more words of three letters or more, or one word next to
+/// a placeholder, outside what is not text (paths, ids).
+fn sentence_in_format(lit: &str) -> bool {
+    if lit.contains("::") || lit.contains('/') || lit.contains('_') || lit.contains('=') || lit.contains('-') {
+        return false;
+    }
+    let mut plain = String::new();
+    let mut depth = 0;
+    for c in lit.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' if depth > 0 => depth -= 1,
+            c if depth == 0 => plain.push(c),
+            _ => {}
+        }
+    }
+    let words = plain.split_whitespace().filter(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 3).count();
+    words >= 1 && lit.contains('{') && lit.contains(' ')
+}
+
 /// The name of the call a literal is an argument of: the identifier (with a `!` for a macro)
 /// before the nearest unclosed `(` or `[` going backwards.
 fn enclosing_call(code: &[u8], at: usize) -> String {
@@ -119,6 +150,9 @@ fn enclosing_call(code: &[u8], at: usize) -> String {
                         return String::new();
                     }
                     let mut end = i;
+                    if end > 0 && code[end - 1] == b'!' {
+                        end -= 1;
+                    }
                     while end > 0 && code[end - 1].is_ascii_whitespace() {
                         end -= 1;
                     }
@@ -127,9 +161,6 @@ fn enclosing_call(code: &[u8], at: usize) -> String {
                         start -= 1;
                     }
                     let name = std::str::from_utf8(&code[start..end]).unwrap_or_default().to_owned();
-                    if start > 0 && code[start - 1] == b'!' {
-                        return name;
-                    }
                     return name.rsplit("::").next().unwrap_or_default().to_owned();
                 }
                 depth -= 1;
@@ -198,8 +229,9 @@ fn literals(text: &str) -> Vec<(usize, String, String)> {
                 }
                 value.push_str(&clean[start..j.min(clean.len())]);
                 let lines = value.matches('\n').count();
-                if text_like(&value) {
-                    found.push((line_no, value, enclosing_call(bytes, i)));
+                let call = enclosing_call(bytes, i);
+                if text_like(&value) || (call == "format" && sentence_in_format(&value)) {
+                    found.push((line_no, value, call));
                 }
                 line_no += lines;
                 i = j;

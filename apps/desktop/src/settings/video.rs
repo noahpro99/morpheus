@@ -228,8 +228,8 @@ impl SettingsView {
             rows.push(switch_row(
                 "dedicated-gpu",
                 "dedicated-gpu-switch",
-                DEDICATED_GPU_LABEL,
-                DEDICATED_GPU_HINT,
+                dedicated_gpu_label(),
+                dedicated_gpu_hint(),
                 on,
                 cx.listener(move |this, _, _, cx| {
                     crate::graphics::set(&this.data_dir, !on);
@@ -357,5 +357,9 @@ pub(super) fn switch_row(
 
 /// Voice & Video → Graphics card's switch for the card that draws the app
 /// (Linux).
-pub const DEDICATED_GPU_LABEL: &str = "Use the dedicated graphics card";
-pub const DEDICATED_GPU_HINT: &str = "On a computer with two graphics cards, draw with the dedicated one (faster, uses more power) rather than the one built into the processor. Takes effect the next time Morpheus starts.";
+pub fn dedicated_gpu_label() -> &'static str {
+    ts("Use the dedicated graphics card")
+}
+pub fn dedicated_gpu_hint() -> &'static str {
+    ts("On a computer with two graphics cards, draw with the dedicated one (faster, uses more power) rather than the one built into the processor. Takes effect the next time Morpheus starts.")
+}

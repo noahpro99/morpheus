@@ -12,7 +12,9 @@ use gpui::{
 use crate::{e2e::E2eExt as _, theme};
 
 /// The tooltip of the Custom tile's palette icon.
-pub const TIP: &str = "Pick a colour";
+pub fn tip() -> &'static str {
+    crate::view_model::i18n::ts("Pick a colour")
+}
 
 /// The popover around `content`; `close` runs on Escape and `click_outside` once a click outside
 /// it is done (pressed and released outside), and `focus` is the popover's, so Escape reaches it.
