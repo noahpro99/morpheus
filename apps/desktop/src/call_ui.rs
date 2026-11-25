@@ -24,7 +24,7 @@ use crate::{
     theme,
     view_model::{
         calls::{
-            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_picture_bucket, card_width, default_stage_height, focus_layout, focused_card,
+            CARD_RATIO, CallState, Card, VideoFeed, card_avatar_size, card_picture_bucket, card_width, default_stage_height, grid_card_size, focus_layout, focused_card,
             Mark, is_unwatched, listed, marks, media_of, tiles, toggled_focus,
         },
         nicknames::shown_name,
@@ -821,6 +821,7 @@ fn sized(
     base: gpui::Stateful<gpui::Div>,
     fit: Fit,
     ratio: Option<f32>,
+    screen: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let room = match fit {
         Fit::Grid(w) => (w, w / CARD_RATIO),
@@ -834,6 +835,12 @@ fn sized(
             base.w(px(w)).h(px(h)).flex_none()
         }
         (_, None) => base.w(px(room.0)).h(px(room.1)),
+        // A share in the grid is a card like the others (16:9); its picture
+        // is fitted inside and centred by the frame's own painting (#401).
+        (Fit::Grid(w), Some(_)) if screen => {
+            let (w, h) = grid_card_size(w);
+            base.w(px(w)).h(px(h))
+        }
         (_, Some(ratio)) => {
             let (w, h) = fit_ratio(room, ratio);
             base.w(px(w)).h(px(h)).flex_none()
@@ -1062,6 +1069,7 @@ fn person_card(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
         None,
+        false,
     )
     .group(gpui::SharedString::from(group.clone()))
     .relative()
@@ -1162,6 +1170,7 @@ fn video_card(
         div().id(gpui::SharedString::from(format!("card-{key}"))),
         fit,
         Some(ratio),
+        feed.screen,
     )
     .group(gpui::SharedString::from(group.clone()))
     .relative()
@@ -1530,7 +1539,7 @@ fn invite_card(cx: &mut Context<Shell>, room: &OwnedRoomId, direct: bool, fit: F
             None,
         )
     };
-    sized(div().id("call-invite-card"), fit, None)
+    sized(div().id("call-invite-card"), fit, None, false)
         .flex()
         .items_center()
         .justify_center()
@@ -1645,7 +1654,7 @@ fn cards(
                             Card::Video(feed) if feed.screen => {
                                 let name = shown(shell, &feed.user);
                                 let bg = person_card_bg(shell, &feed.user);
-                                sized(div().id(gpui::SharedString::from(format!("strip-share-{}", feed.user))), Fit::Strip(strip_h), None)
+                                sized(div().id(gpui::SharedString::from(format!("strip-share-{}", feed.user))), Fit::Strip(strip_h), None, false)
                                     .relative()
                                     .rounded(px(theme::RADIUS_LG))
                                     .bg(rgb(bg))

@@ -565,6 +565,27 @@ pub fn grid_layout(count: usize, width: f32, height: f32) -> Grid {
     best
 }
 
+/// Where a picture of shape `ratio` (width over height) sits inside a card:
+/// scaled to fit, its shape kept, centred, the rest left as the card's own
+/// background (bars at the sides, or above and below). Returns (x, y, w, h)
+/// relative to the card.
+pub fn fit_in_card(card_w: f32, card_h: f32, ratio: f32) -> (f32, f32, f32, f32) {
+    let (w, h) = if ratio <= 0.0 || !ratio.is_finite() {
+        (card_w, card_h)
+    } else if card_w / card_h > ratio {
+        (card_h * ratio, card_h)
+    } else {
+        (card_w, card_w / ratio)
+    };
+    ((card_w - w) / 2.0, (card_h - h) / 2.0, w, h)
+}
+
+/// The size of a card in the grid: the same for everything shown, a person
+/// or a shared screen of any shape, so the grid stays regular.
+pub fn grid_card_size(tile_w: f32) -> (f32, f32) {
+    (tile_w, tile_w / CARD_RATIO)
+}
+
 /// How a stage with one card focused is shared: the focused card at the top,
 /// then one row of the other cards (16:9) under it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1465,6 +1486,28 @@ mod tests {
             Some("@alice:x")
         );
         assert_eq!(focused_card(&Some("@gone:x".into()), &cards), None);
+    }
+
+    #[test]
+    fn a_share_of_any_shape_is_a_card_like_the_others_with_its_picture_fitted_inside() {
+        let g = grid_layout(3, 1200.0, 700.0);
+        let person = grid_card_size(g.tile_w);
+        for ratio in [21.0 / 9.0, 9.0 / 16.0, 16.0 / 9.0, 1.0, 32.0 / 9.0] {
+            let card = grid_card_size(g.tile_w);
+            assert_eq!(card, person, "a share {ratio} wide has the people's card size");
+            assert!((card.0 / card.1 - CARD_RATIO).abs() < 0.001, "16:9");
+            let (x, y, w, h) = fit_in_card(card.0, card.1, ratio);
+            assert!((w / h - ratio).abs() < 0.001, "shape kept: {w}x{h} for {ratio}");
+            assert!(w <= card.0 + 0.01 && h <= card.1 + 0.01, "inside the card");
+            assert!(w >= card.0 - 0.01 || h >= card.1 - 0.01, "as large as fits");
+            assert!((x * 2.0 + w - card.0).abs() < 0.01, "centred across");
+            assert!((y * 2.0 + h - card.1).abs() < 0.01, "centred down");
+        }
+        // Ultrawide: bars above and below; portrait: bars at the sides.
+        let (x, y, ..) = fit_in_card(320.0, 180.0, 21.0 / 9.0);
+        assert!(x == 0.0 && y > 0.0);
+        let (x, y, ..) = fit_in_card(320.0, 180.0, 9.0 / 16.0);
+        assert!(x > 0.0 && y == 0.0);
     }
 
     #[test]
