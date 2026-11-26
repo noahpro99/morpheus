@@ -1358,7 +1358,13 @@ impl Render for TextInput {
             outer = if self.slim {
                 outer.flex_1().py(px(4.0))
             } else {
-                outer.flex_1().py(px(12.0)).pl(px(4.0)).pr(px(8.0))
+                // A line centred in a box of one line (the message box): equal space above and below,
+                // which is also the same for every line of a taller one (#519).
+                outer
+                    .flex_1()
+                    .py(px((theme::BOTTOM_H - LINE_HEIGHT) / 2.0))
+                    .pl(px(4.0))
+                    .pr(px(8.0))
             };
         } else {
             outer = outer
