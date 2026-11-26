@@ -269,6 +269,11 @@ private fun Timeline(
     // the last, and a request made while one was out was ignored.
     val loading by model.loadingOlder.collectAsState()
     LaunchedEffect(nearTop, items.size, atStart, loading) { if (nearTop && !atStart && !loading) model.loadOlder() }
+    // The skeleton stays until the older rows are in the list, not only until the request ends: the rows arrive a moment after it, and a list at
+    // its far end that lost the skeleton first would shift under the reader (#501).
+    var askedAt by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    LaunchedEffect(loading) { if (loading) askedAt = rows.size else { kotlinx.coroutines.delay(400); askedAt = -1 } }
+    val waitingForOlder = (loading || (askedAt >= 0 && rows.size == askedAt)) && !atStart && rows.isNotEmpty()
     // A new message at the bottom stays in view when the person is looking at the bottom.
     val newestKey = (items.firstOrNull() as? TimelineRow.Message)?.message?.key
     LaunchedEffect(newestKey) { if (state.firstVisibleItemIndex <= 1) state.animateScrollToItem(0) }
@@ -341,6 +346,9 @@ private fun Timeline(
                 )
             }
         }
+        // Older messages on their way (#501): skeleton rows above the oldest, so scrolling up never meets a blank edge. They are the last item of
+        // this bottom-up list, past the one the list is anchored on (#470), so their coming and going moves nothing the person is reading.
+        if (waitingForOlder) item(key = "older-skeleton") { Box(Modifier.padding(vertical = Space.md).testTag("older-skeleton")) { SkeletonRows(3) } }
     }
     }
     if (dividerAt >= 0 && !dividerShowing) {
