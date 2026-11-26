@@ -6,6 +6,7 @@
 #   scripts/android-emulator.sh --window      with a window (to watch it), no snapshot saved
 #   scripts/android-emulator.sh --cold        cold boot (ignore the snapshot) and save a new one
 #   scripts/android-emulator.sh --stop        stop it
+#   scripts/android-emulator.sh --save        save the quick-boot snapshot from the running (idle) emulator now
 #
 # Environment: MORPHEUS_EMULATOR_PORT (default 5554, the serial is emulator-<port>),
 # MORPHEUS_EMULATOR_GPU (default swiftshader_indirect: software, needs no display and no GPU driver; `host`
@@ -22,12 +23,13 @@ serial=emulator-$port
 avd=${MORPHEUS_AVD:-morpheus}
 gpu=${MORPHEUS_EMULATOR_GPU:-swiftshader_indirect}
 snap=headless
-window=0 cold=0 stop=0
+window=0 cold=0 stop=0 save=0
 for a in "$@"; do
     case $a in
         --window) window=1 ;;
         --cold) cold=1 ;;
         --stop) stop=1 ;;
+        --save) save=1 ;;
         *) echo "unknown option $a" >&2; exit 2 ;;
     esac
 done
@@ -80,8 +82,8 @@ adbs shell settings put global animator_duration_scale 0 >/dev/null 2>&1 || true
 echo "emulator: booted in $(awk -v a="$started" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }') s ($serial)"
 
 # First clean boot (one this script started, never somebody else's running phone): save the quick-boot snapshot (not for a windowed run).
-if [ "$ours" = 1 ] && [ "$window" = 0 ] && [ ! -d "$snapdir" ]; then
+if [ "$window" = 0 ] && { [ "$save" = 1 ] || { [ "$ours" = 1 ] && [ ! -d "$snapdir" ]; }; }; then
     sleep 15 # let the first-boot work settle before it is frozen into the snapshot
-    adbs emu avd snapshot save "$snap" >/dev/null 2>&1 && echo "emulator: quick-boot snapshot '$snap' saved" \
+    adbs emu avd snapshot save "$snap" >target/emulator-snapshot.log 2>&1 && echo "emulator: quick-boot snapshot '$snap' saved" \
         || echo "emulator: could not save the snapshot (continuing without)" >&2
 fi
