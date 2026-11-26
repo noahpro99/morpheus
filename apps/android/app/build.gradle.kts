@@ -187,5 +187,5 @@ roborazzi {
 // The tests call the Rust core (colour helpers, words) through JNA: the host build of crates/ffi, which
 // scripts/android-check-prep.sh makes, is what they load.
 tasks.withType<Test>().configureEach {
-    systemProperty("jna.library.path", repoRoot.resolve("target/" + (System.getenv("ANDROID_CHECK_PROFILE") ?: "debug")).absolutePath)
+    systemProperty("jna.library.path", (if (rustPrebuilt != null) File(rustPrebuilt, "lib") else repoRoot.resolve("target/debug")).absolutePath)
 }

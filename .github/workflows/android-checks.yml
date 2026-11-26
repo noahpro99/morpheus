@@ -2,9 +2,10 @@
 # Material 3 checks, compose-rules (detekt), our own source rules, the accessibility checks and the
 # Roborazzi screenshot tests. All on the JVM, no emulator. Runs beside the other workflows (not
 # after them), only when Android or the Rust API it binds to changed, and keeps to the fast-CI
-# rules (#358): the Rust cache of the Linux build is restored (never saved here), Gradle's caches
-# are kept, and the one cross-compile the app needs is skipped: the Kotlin bindings are read from
-# a host build of crates/ffi and WebRTC's Java half is a stub (scripts/android-check-prep.sh).
+# rules (#358): the Kotlin bindings and host library are cached by a hash of the Rust sources (a Kotlin-only
+# change never runs cargo; a Rust change builds incrementally on a Rust cache of its own), Gradle's caches are kept,
+# and the app's cross-compile is skipped: the bindings come from a host build of crates/ffi and WebRTC's Java half
+# is a stub (scripts/android-check-prep.sh).
 name: Android checks
 
 on:
@@ -47,24 +48,6 @@ jobs:
           rustc --edition 2021 --test crates/view-model/src/android_rules.rs -o android_rules
           ./android_rules
 
-      - name: Libraries
-        run: scripts/ci-linux-deps.sh
-
-      - name: Rust
-        run: rustup show active-toolchain || rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux-x86_64
-          save-if: false
-          cache-workspace-crates: true
-          cache-directories: .warm
-
-      - name: Cache file times
-        run: |
-          scripts/ci-cache.sh restore-vendor
-          scripts/ci-cache.sh restore-mtimes
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -75,7 +58,32 @@ jobs:
           gradle-version: 8.14.4
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      # The bindings and the host library change only when Rust does: kept by the hash of its sources, so most runs
+      # (Kotlin-only changes) skip cargo entirely. On a miss the build is incremental on its own saved Rust cache.
+      - name: Kotlin bindings (cached)
+        id: bindings
+        uses: actions/cache@v4
+        with:
+          path: target/android-checks
+          key: android-bindings-${{ hashFiles('crates/ffi/**', 'crates/core/**', 'crates/view-model/**', 'crates/call/**', 'vendor/**', 'Cargo.lock', 'scripts/android-check-prep.sh') }}
+
+      - name: Libraries
+        if: steps.bindings.outputs.cache-hit != 'true'
+        run: scripts/ci-linux-deps.sh
+
+      - name: Rust
+        if: steps.bindings.outputs.cache-hit != 'true'
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.bindings.outputs.cache-hit != 'true'
+        with:
+          shared-key: android-ffi
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-workspace-crates: true
+
       - name: Kotlin bindings
+        if: steps.bindings.outputs.cache-hit != 'true'
         run: scripts/android-check-prep.sh
 
       - name: Lint, compose-rules, our rules

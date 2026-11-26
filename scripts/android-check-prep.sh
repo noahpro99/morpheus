@@ -20,6 +20,9 @@ cargo build -p morpheus-ffi "${flags[@]}"
 cargo run -q "${flags[@]}" -p morpheus-ffi --features bindgen --bin uniffi-bindgen -- \
     generate --library "target/$profile/libmorpheus_ffi.so" --language kotlin --no-format --out-dir "$out/kotlin"
 
+# The tests load the library itself (the colour helpers) through JNA.
+mkdir -p "$out/lib" && cp "target/$profile/libmorpheus_ffi.so" "$out/lib/"
+
 stub=$out/stub
 rm -rf "$stub" && mkdir -p "$stub/src/livekit/org/webrtc" "$stub/classes"
 cat > "$stub/src/livekit/org/webrtc/ContextUtils.java" <<'J'
