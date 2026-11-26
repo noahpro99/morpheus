@@ -19,7 +19,7 @@ on:
 
 concurrency:
   group: ios-native-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -60,7 +60,10 @@ jobs:
         run: nohup python3 apps/ios/ci/homeserver.py start "$RUNNER_TEMP/hs" > "$RUNNER_TEMP/hs.out" 2>&1 &
 
       - name: Rust
-        run: rustup show active-toolchain || rustup toolchain install
+        run: |
+          v=$(sed -n "s/^channel = \"\(.*\)\"/\1/p" rust-toolchain.toml)
+          rustup toolchain install "$v" --profile minimal --no-self-update
+          echo "RUSTUP_TOOLCHAIN=$v" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios-sim
@@ -104,7 +107,11 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
-      - run: rustup show active-toolchain || rustup toolchain install
+      - name: Rust
+        run: |
+          v=$(sed -n "s/^channel = \"\(.*\)\"/\1/p" rust-toolchain.toml)
+          rustup toolchain install "$v" --profile minimal --no-self-update
+          echo "RUSTUP_TOOLCHAIN=$v" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios-device
