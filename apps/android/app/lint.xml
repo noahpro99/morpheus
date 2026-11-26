@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- The Lucide icon set is kept whole so a screen can pick any glyph; unused ones are not waste. -->
+    <issue id="UnusedResources">
+        <ignore path="**/res/drawable/ic_lucide_*.xml" />
+    </issue>
+    <!-- "A newer version exists" would break the build the day a release comes out; versions are bumped on purpose. -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <!-- UniFFI's generated Kotlin (not ours; it picks Cleaner only where the runtime has it). -->
+    <issue id="NewApi">
+        <ignore path="**/uniffi/**" />
+    </issue>
+    <issue id="all">
+        <ignore path="**/uniffi/**" />
+    </issue>
+</lint>

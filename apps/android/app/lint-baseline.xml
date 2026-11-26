@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.7.3" type="baseline" client="gradle" dependencies="false" name="AGP (8.7.3)" variant="all" version="8.7.3">
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 30 (current min is 29): `android.content.pm.ServiceInfo#FOREGROUND_SERVICE_TYPE_MICROPHONE`"
+        errorLine1="                    startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)"
+        errorLine2="                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/CallService.kt"
+            line="40"
+            column="55"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 27 (current min is 26): `android.app.Activity#setShowWhenLocked`"
+        errorLine1="            setShowWhenLocked(true)"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/MainActivity.kt"
+            line="92"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 27 (current min is 26): `android.app.Activity#setTurnScreenOn`"
+        errorLine1="            setTurnScreenOn(true)"
+        errorLine2="            ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/MainActivity.kt"
+            line="93"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 26): `dynamicDarkColorScheme`"
+        errorLine1="            contrasted(if (night) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context))"
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Theme.kt"
+            line="114"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 26): `dynamicLightColorScheme`"
+        errorLine1="            contrasted(if (night) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context))"
+        errorLine2="                                                                       ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Theme.kt"
+            line="114"
+            column="72"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `enableOnBackInvokedCallback` is only used in API level 33 and higher (current min is 26)"
+        errorLine1="        android:enableOnBackInvokedCallback=&quot;true&quot;>"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="22"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="SetAndClearCommunicationDevice"
+        message="Must call `clearCommunicationDevice()` after `setCommunicationDevice()`"
+        errorLine1="                audio.availableCommunicationDevices.firstOrNull { &quot;device-${it.id}&quot; == key }?.let { audio.setCommunicationDevice(it) }"
+        errorLine2="                                                                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/CallModel.kt"
+            line="232"
+            column="101"/>
+    </issue>
+
+    <issue
+        id="SetAndClearCommunicationDevice"
+        message="Must call `clearCommunicationDevice()` after `setCommunicationDevice()`"
+        errorLine1="            audio.availableCommunicationDevices.firstOrNull { it.type == wanted }?.let { audio.setCommunicationDevice(it) }"
+        errorLine2="                                                                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/CallModel.kt"
+            line="247"
+            column="90"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="fun SkeletonRows(count: Int = 6, avatars: Boolean = true, modifier: Modifier = Modifier) {"
+        errorLine2="                                                          ~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Components.kt"
+            line="184"
+            column="59"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, media?.key() ?: key, px) {"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Avatar.kt"
+            line="72"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, media.key()) { value = Images.load(media, size * 3, size * 3) }"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/ComposerExtras.kt"
+            line="78"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val card by produceState&lt;uniffi.morpheus_ffi.PreviewCard?>(null, url) { value = model.preview(url) }"
+        errorLine2="                ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Links.kt"
+            line="101"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, shown.url) { value = shown.image?.let { Images.load(it, 600, 400) } }"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Links.kt"
+            line="103"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, body.media.key()) {"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/RoomScreen.kt"
+            line="561"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, media.key()) { value = Images.load(media, 2048, 2048) }"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/RoomScreen.kt"
+            line="654"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val targets by produceState(emptyList&lt;ShareTarget>(), query, sidebar) {"
+        errorLine2="                   ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/ShareScreen.kt"
+            line="69"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val picture by produceState&lt;ImageBitmap?>(null, shared) {"
+        errorLine2="                   ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/ShareScreen.kt"
+            line="155"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UnusedMaterial3ScaffoldPaddingParameter"
+        message="Content padding parameter _ is not used"
+        errorLine1="        ) { _ -> Box(Modifier.fillMaxSize()) {"
+        errorLine2="            ~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/Root.kt"
+            line="50"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`)."
+        errorLine1="    return remember(name) { context.resources.getIdentifier(&quot;ic_lucide_&quot; + name.replace(&apos;-&apos;, &apos;_&apos;), &quot;drawable&quot;, context.packageName) }"
+        errorLine2="                                              ~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/ActionSheet.kt"
+            line="65"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="DiscouragedApi"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`)."
+        errorLine1="    val id = context.resources.getIdentifier(&quot;ic_lucide_&quot; + name.replace(&apos;-&apos;, &apos;_&apos;), &quot;drawable&quot;, context.packageName)"
+        errorLine2="                               ~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/SettingsScreen.kt"
+            line="230"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="ExportedContentProvider"
+        message="Exported content providers can provide access to potentially sensitive data"
+        errorLine1="        &lt;provider android:name=&quot;.DebugShareProvider&quot; android:authorities=&quot;dev.morpheus.mobile.debugshare&quot; android:exported=&quot;true&quot; />"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="src/debug/AndroidManifest.xml"
+            line="5"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="ExportedService"
+        message="Exported service does not require permission"
+        errorLine1="        &lt;service"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="24"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="DataExtractionRules"
+        message="The attribute `android:allowBackup` is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute `android:dataExtractionRules` specifying an `@xml` resource which configures cloud backups and device transfers on Android 12 and higher."
+        errorLine1="        android:allowBackup=&quot;false&quot;"
+        errorLine2="                             ~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="17"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 26. Merge all the resources in this folder into `mipmap-anydpi`.">
+        <location
+            file="src/main/res/mipmap-anydpi-v26"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `CallModel` which has field `context` pointing to `Context`); this is a memory leak"
+        errorLine1="        /** The call going, for the notification&apos;s Hang up. */"
+        errorLine2="        ^">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/CallModel.kt"
+            line="255"
+            column="9"/>
+    </issue>
+
+</issues>

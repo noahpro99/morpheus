@@ -32,6 +32,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -183,7 +185,7 @@ private fun PrivacyPage(app: AppModel, page: PageRequest) {
     var join by remember { mutableStateOf("public") }
     var history by remember { mutableStateOf("shared") }
     var confirming by remember { mutableStateOf(false) }
-    var reload by remember { mutableStateOf(0) }
+    var reload by remember { mutableIntStateOf(0) }
     var ok by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -233,7 +235,7 @@ private fun PrivacyPage(app: AppModel, page: PageRequest) {
 @Composable
 private fun OverviewPage(app: AppModel, page: PageRequest) {
     var overview by remember { mutableStateOf<Overview?>(null) }
-    var reload by remember { mutableStateOf(0) }
+    var reload by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val sidebar by app.sidebar.collectAsState()
@@ -361,8 +363,8 @@ private fun CropPicture(frame: uniffi.morpheus_ffi.CropFrame, onUse: (ByteArray)
         val bytes = frame.picture()
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
     }
-    var tick by remember { mutableStateOf(0) }
-    var framePx by remember { mutableStateOf(1f) }
+    var tick by remember { mutableIntStateOf(0) }
+    var framePx by remember { mutableFloatStateOf(1f) }
     val scope = rememberCoroutineScope()
     Column(Modifier.testTag("crop"), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         Text(t("Drag the picture and zoom to choose what shows."), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)

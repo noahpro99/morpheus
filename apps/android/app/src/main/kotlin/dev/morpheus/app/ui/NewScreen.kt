@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -165,7 +166,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
     var friends by remember { mutableStateOf<List<FriendItem>?>(null) }
     var typed by remember { mutableStateOf("") }
     var failure by remember { mutableStateOf<String?>(null) }
-    var round by remember { mutableStateOf(0) }
+    var round by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(round) {
         try {

@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -110,7 +111,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     val slide = model.slide
     // 0 is the DMs, 1 is Servers, and between is a slide.
     val place = remember { androidx.compose.animation.core.Animatable(if (tab == Tab.Dms) 0f else 1f) }
-    var settle by remember { mutableStateOf(0) }
+    var settle by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf(false) }
     var before by remember { mutableStateOf(tab) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()

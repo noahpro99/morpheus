@@ -261,3 +261,13 @@ hs-user name password *flags:
 e2e-android-native-release signing="debug":
     nix develop .#android-emulator -c bash -c 'set -euo pipefail; (cd apps/android && gradle assembleRelease -PrustAbis=x86_64 -PreleaseSigning={{signing}}); s="${ANDROID_SERIAL:-emulator-5554}"; apk=apps/android/app/build/outputs/apk/release/app-release.apk; adb -s "$s" install -r "$apk" || { adb -s "$s" uninstall dev.morpheus.mobile; adb -s "$s" install "$apk"; }'
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_RELEASE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" scripts/e2e-cargo.sh --test android_release -- --nocapture
+
+# Android spec checks that never run the app (#468): Android Lint (with the Compose and Material 3
+# checks), compose-rules through detekt, and our own source rules. Prepares the Kotlin bindings from
+# the host build first (scripts/android-check-prep.sh), so no Android cross-build is needed.
+android-lint: android-check-prep
+    nix develop .#android -c bash -c 'cd apps/android && gradle lintDebug detekt -PrustPrebuilt=$PWD/../../target/android-checks'
+
+# The Kotlin bindings and the WebRTC stub the Android checks compile against
+android-check-prep:
+    nix develop .#android -c scripts/android-check-prep.sh

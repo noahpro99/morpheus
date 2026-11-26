@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 // The Rust half: crates/ffi built for these ABIs (`scripts/android-ffi.sh`),
@@ -11,7 +12,11 @@ plugins {
 // separated; both by default.
 val rustAbis = (findProperty("rustAbis") as String?) ?: "arm64-v8a,x86_64"
 val repoRoot = rootDir.resolve("../..").canonicalFile
-val rustOut = layout.buildDirectory.dir("rust")
+// `-PrustPrebuilt=<dir>`: the Kotlin bindings and libwebrtc.jar are already in <dir> (kotlin/, libs/),
+// from scripts/android-check-prep.sh, so nothing is cross-built: lint, detekt and the JVM tests
+// (screenshots, rules) need only the Kotlin side.
+val rustPrebuilt = findProperty("rustPrebuilt") as String?
+val rustOut = if (rustPrebuilt != null) layout.dir(provider { File(rustPrebuilt) }) else layout.buildDirectory.dir("rust")
 
 val buildRust = tasks.register<Exec>("buildRust") {
     description = "Builds crates/ffi for Android and generates its Kotlin bindings"
@@ -107,12 +112,37 @@ android {
         buildConfig = true
     }
     packaging { jniLibs.useLegacyPackaging = false }
+
+    // `just android-lint`: Android Lint, with the Compose and Material 3 checks that ship inside
+    // those libraries, fails the build on any warning (what is accepted is in lint-baseline.xml).
+    lint {
+        warningsAsErrors = true
+        abortOnError = true
+        checkDependencies = false
+        baseline = file("lint-baseline.xml")
+        lintConfig = file("lint.xml")
+        htmlReport = false
+        xmlReport = false
+        textReport = true
+        textOutput = file("build/reports/lint-results.txt")
+    }
 }
 
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach { dependsOn(buildRust) }
-tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach { dependsOn(buildRust) }
+if (rustPrebuilt == null) {
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach { dependsOn(buildRust) }
+    tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach { dependsOn(buildRust) }
+}
+
+detekt {
+    // Only the compose-rules ruleset (io.nlopez.compose.rules), nothing of detekt's own style rules.
+    buildUponDefaultConfig = false
+    config.setFrom(file("detekt.yml"))
+    baseline = file("detekt-baseline.xml")
+    source.setFrom("src/main/kotlin", "src/debug/kotlin", "src/release/kotlin")
+}
 
 dependencies {
+    detektPlugins("io.nlopez.compose.rules:detekt:0.4.22")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
@@ -126,7 +156,7 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.14.0@aar")
     implementation("org.unifiedpush.android:connector:3.0.10")
     // WebRTC's Java half (calls): built with crates/call, copied out by scripts/android-ffi.sh.
-    implementation(files(rustOut.map { it.file("libs/libwebrtc.jar") }).builtBy(buildRust))
+    implementation(files(rustOut.map { it.file("libs/libwebrtc.jar") }).let { if (rustPrebuilt == null) it.builtBy(buildRust) else it })
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
 }

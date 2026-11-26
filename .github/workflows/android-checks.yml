@@ -1,0 +1,77 @@
+# The Android spec checks that never run the app (#468): Android Lint with the Compose and
+# Material 3 checks, compose-rules (detekt), our own source rules, the accessibility checks and the
+# Roborazzi screenshot tests. All on the JVM, no emulator. Runs beside the other workflows (not
+# after them), only when Android or the Rust API it binds to changed, and keeps to the fast-CI
+# rules (#358): the Rust cache of the Linux build is restored (never saved here), Gradle's caches
+# are kept, and the one cross-compile the app needs is skipped: the Kotlin bindings are read from
+# a host build of crates/ffi and WebRTC's Java half is a stub (scripts/android-check-prep.sh).
+name: Android checks
+
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - "apps/android/**"
+      - "crates/ffi/**"
+      - "crates/core/**"
+      - "crates/view-model/**"
+      - "crates/call/**"
+      - Cargo.toml
+      - Cargo.lock
+      - scripts/android-check-prep.sh
+      - scripts/ci-linux-deps.sh
+      - .github/workflows/android-checks.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+concurrency:
+  group: android-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      ANDROID_CHECK_PROFILE: release
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Libraries
+        run: scripts/ci-linux-deps.sh
+
+      - name: Rust
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-x86_64
+          save-if: false
+          cache-workspace-crates: true
+          cache-directories: .warm
+
+      - name: Cache file times
+        run: |
+          scripts/ci-cache.sh restore-vendor
+          scripts/ci-cache.sh restore-mtimes
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.4
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Kotlin bindings
+        run: scripts/android-check-prep.sh
+
+      - name: Lint, compose-rules, our rules
+        working-directory: apps/android
+        run: gradle lintDebug detekt -PrustPrebuilt=$GITHUB_WORKSPACE/target/android-checks
