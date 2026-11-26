@@ -62,7 +62,11 @@ jobs:
       - name: Rust
         run: |
           v=$(sed -n "s/^channel = \"\(.*\)\"/\1/p" rust-toolchain.toml)
-          rustup toolchain install "$v" --profile minimal --no-self-update
+          for i in 1 2 3 4 5; do
+            rustup toolchain install "$v" --profile minimal --no-self-update && RUSTUP_TOOLCHAIN="$v" cargo --version && break
+            rustup toolchain uninstall "$v" || true
+            sleep 10
+          done
           echo "RUSTUP_TOOLCHAIN=$v" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
@@ -110,7 +114,11 @@ jobs:
       - name: Rust
         run: |
           v=$(sed -n "s/^channel = \"\(.*\)\"/\1/p" rust-toolchain.toml)
-          rustup toolchain install "$v" --profile minimal --no-self-update
+          for i in 1 2 3 4 5; do
+            rustup toolchain install "$v" --profile minimal --no-self-update && RUSTUP_TOOLCHAIN="$v" cargo --version && break
+            rustup toolchain uninstall "$v" || true
+            sleep 10
+          done
           echo "RUSTUP_TOOLCHAIN=$v" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
