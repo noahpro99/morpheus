@@ -421,6 +421,12 @@ pub fn last_chat_in_server(kept: String, server: String) -> Option<String> {
     morpheus_view_model::list_swipes::LastChats::parse(&kept).last_in(&server).map(str::to_owned)
 }
 
+/// The index of the channel a server opens on when none was opened there yet (#506): the desktop's pick, the first text channel listed.
+#[uniffi::export]
+pub fn default_channel(voice: Vec<bool>) -> Option<u32> {
+    morpheus_view_model::list_swipes::default_channel(&voice).map(|i| i as u32)
+}
+
 /// Whether a chat (a DM or not) goes back to the DMs list (else Servers) when a swipe sends it away (#469).
 #[uniffi::export]
 pub fn chat_list_is_dms(is_dm: bool) -> bool {

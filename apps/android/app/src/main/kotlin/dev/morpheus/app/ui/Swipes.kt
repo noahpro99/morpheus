@@ -1,6 +1,18 @@
 package dev.morpheus.app.ui
 
 import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.launch
 
 /** The speed of a drag, so a quick flick commits a swipe whatever its length (the rule is view-model list_swipes, #486). */
 class FlickTracker {
@@ -34,4 +46,44 @@ class FlickTracker {
     fun commits(distance: Float, width: Float): Boolean {
         return uniffi.morpheus_ffi.swipeCommitsWithVelocity(distance, velocity(), width)
     }
+}
+
+/**
+ * A pushed screen (settings and its pages, room details, security, bridges, new, reorder, the inbox, the message search, a room's pages): a
+ * horizontal swipe either way goes back (#507), by the same rule as the chat swipes: the screen follows the finger, and a short drag
+ * or a quick flick (view-model `swipe_commits_with_velocity`, #486) sends it off the way the finger went, a short slow one springs back.
+ * Going back is the system back (the activity's dispatcher), so a swipe reaches the same place as the gesture, a button or a `BackHandler`.
+ * A slider, a horizontal list or a text selection that takes the drag first keeps it: this only sees a drag nothing inside consumed.
+ */
+@Composable
+fun SwipeBack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val offset = remember { androidx.compose.animation.core.Animatable(0f) }
+    var width by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val flick = remember { FlickTracker() }
+    val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    Box(
+        modifier
+            .onSizeChanged { width = it.width.toFloat().coerceAtLeast(1f) }
+            .offset { androidx.compose.ui.unit.IntOffset(offset.value.toInt(), 0) }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { flick.reset() },
+                    onDragEnd = {
+                        val goes = flick.commits(kotlin.math.abs(offset.value), width)
+                        scope.launch {
+                            if (goes) {
+                                offset.animateTo(if (offset.value < 0f) -width else width, Motion.slide())
+                                dispatcher?.onBackPressed()
+                                offset.snapTo(0f)
+                            } else offset.animateTo(0f, Motion.slide())
+                        }
+                    },
+                    onDragCancel = { scope.launch { offset.animateTo(0f, Motion.slide()) } },
+                ) { change, amount ->
+                    flick.add(change, amount)
+                    scope.launch { offset.snapTo(offset.value + amount) }
+                }
+            },
+    ) { content() }
 }

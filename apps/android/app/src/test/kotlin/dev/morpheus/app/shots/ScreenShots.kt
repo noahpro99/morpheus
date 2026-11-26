@@ -24,6 +24,7 @@ import dev.morpheus.app.ui.ListRow
 import dev.morpheus.app.ui.EmptyState
 import dev.morpheus.app.ui.MentionPill
 import dev.morpheus.app.ui.MorpheusTheme
+import dev.morpheus.app.ui.RoomRow
 import dev.morpheus.app.ui.Palette
 import dev.morpheus.app.ui.ScreenScaffold
 import dev.morpheus.app.ui.SearchField
@@ -117,6 +118,27 @@ class ScreenShots(private val light: Boolean) {
                 ListRow("general", "r1", supporting = "alice: see you at ten", leading = { GlyphIcon(R.drawable.ic_lucide_hash) }, trailing = { UnreadBadge(3UL, "b1") }, strong = true, onClick = {})
                 ListRow("random", "r2", supporting = "bob: lol", leading = { GlyphIcon(R.drawable.ic_lucide_hash) }, quiet = true, onClick = {})
                 ListRow("leave", "r3", leading = { GlyphIcon(R.drawable.ic_lucide_trash_2) }, danger = true, onClick = {})
+            }
+        }
+    }
+
+    private fun room(name: String, dm: Boolean = false, unread: ULong = 0UL, highlights: ULong = 0UL, muted: Boolean = false) = uniffi.morpheus_ffi.RoomItem(
+        id = name, name = name, topic = null, avatar = null, avatarKey = null, isDm = dm, isVoice = false, isEncrypted = false,
+        unread = unread, highlights = highlights, muted = muted, pinned = false, call = emptyList(),
+    )
+
+    /** The channel list as the phone draws it (#478): the real rows, full width, with counts and a selection; the touch-target check runs over them. */
+    @Test
+    fun channel_list() = shoot("channel-list") {
+        ScreenScaffold("channels", topBar = { TopBar("Engineering") }) { pad ->
+            Column(Modifier.padding(pad).fillMaxWidth()) {
+                SectionHeader("Text channels")
+                RoomRow(room("general", unread = 3UL), selected = false, onOpen = {}, onMenu = {}, callName = { it })
+                RoomRow(room("random"), selected = true, onOpen = {}, onMenu = {}, callName = { it })
+                RoomRow(room("a-channel-with-a-very-long-name-that-must-not-run-under-the-counts", unread = 120UL, highlights = 2UL), selected = false, onOpen = {}, onMenu = {}, callName = { it })
+                RoomRow(room("announcements", muted = true), selected = false, onOpen = {}, onMenu = {}, callName = { it })
+                SectionHeader("Direct messages")
+                RoomRow(room("bob", dm = true, unread = 1UL), selected = false, onOpen = {}, onMenu = {}, callName = { it })
             }
         }
     }

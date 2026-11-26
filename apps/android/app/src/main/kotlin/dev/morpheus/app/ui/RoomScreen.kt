@@ -31,8 +31,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -117,6 +121,13 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val title = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.name ?: room.name
     // (A direct message just made is listed before its account data says it is one: read the list as it is now.)
     val isDm = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.isDm ?: room.isDm
+    val encrypted = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id }?.isEncrypted ?: room.isEncrypted
+    // What the composer's label shows before the name (#502): the person's picture for a DM, the server's icon for a channel.
+    val listed = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == room.id } ?: room
+    val serverOfRoom = if (isDm) null else sidebar?.scopes?.firstOrNull { it.kind == uniffi.morpheus_ffi.ScopeKind.SERVER && it.sections.any { s -> s.rooms.any { r -> r.id == room.id } } }
+    // The button row above the composer goes while the box is focused or has text and returns when it is empty and not focused, or on a pull down (#502).
+    var composing by remember(room.id, threadRoot) { mutableStateOf(false) }
+    var pulled by remember(room.id, threadRoot) { mutableStateOf(false) }
     val editing by model.editing.collectAsState()
     var info by remember(room.id) { mutableStateOf(false) }
     var searching by remember(room.id) { mutableStateOf(false) }
@@ -151,25 +162,14 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     LaunchedEffect(newest, openNow?.id == room.id) { if (newest != null && threadRoot == null && openNow?.id == room.id) model.markRead() }
 
     Box(Modifier.fillMaxSize()) {
-        if (searching) SearchPanel(model) { id ->
+        if (searching) SwipeBack(Modifier.fillMaxSize()) { SearchPanel(model) { id ->
             searching = false
             if (id.isNotEmpty()) model.jumpTo(id)
-        }
-        else if (info) RoomInfo(app, model, room, title) { info = false }
+        } }
+        else if (info) SwipeBack(Modifier.fillMaxSize()) { RoomInfo(app, model, room, title) { info = false } }
         else if (thread == null) RoomPages(app, room, threadRoot == null, isDm) { ScreenScaffold(if (threadRoot == null) "room-screen" else "thread-screen", {
-            val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
-            TopBar(
-                if (threadRoot == null) title else t("Thread"),
-                titleTag = if (threadRoot == null) "room-title" else "thread-title",
-                onTitle = if (threadRoot == null) ({ info = true }) else null,
-            ) {
-                if (threadRoot == null) {
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_phone, t("Call"), "call-button", { if (inThis) app.calls.show(true) else app.startCall(room.id, title) })
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_search, t("Search"), "search-button", { searching = true })
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_pin, t("Pinned messages"), "pinned-button", { app.openPage(dev.morpheus.app.PageRequest("pinned", room.id)) })
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_info, t("Room details"), "room-info-button", { info = true })
-                }
-            }
+            // A chat has no top bar (#502): its name is the composer's label and its buttons are the row above the composer. A thread keeps a title.
+            if (threadRoot != null) TopBar(t("Thread"), titleTag = "thread-title")
         }) { inner -> Column(Modifier.fillMaxSize().padding(inner)) {
             Timeline(
                 model, rows, Modifier.weight(1f),
@@ -196,6 +196,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
                 onFull = { app.openPage(dev.morpheus.app.PageRequest("full-message", room.id, message = it)) },
                 isDm = isDm,
+                onPull = { pulled = true },
             )
             typingLine?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
@@ -223,7 +224,20 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
-            Composer(model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, onAttach = { picker.launch("*/*") }) { model.send(it) }
+            Composer(
+                model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, title = if (threadRoot == null) title else null, dm = isDm, encrypted = encrypted, room = listed, server = serverOfRoom,
+                onComposing = { composing = it; pulled = false }, onAttach = { picker.launch("*/*") },
+            ) { model.send(it) }
+            if (threadRoot == null) {
+                val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
+                ChatActions(
+                    visible = !composing || pulled,
+                    onCall = { if (inThis) app.calls.show(true) else app.startCall(room.id, title) },
+                    onSearch = { searching = true },
+                    onPins = { app.openPage(dev.morpheus.app.PageRequest("pinned", room.id)) },
+                    onInfo = { info = true },
+                )
+            }
         } } }
         viewing?.let { ImageViewer(it) { viewing = null } }
         thread?.let { root ->
@@ -251,8 +265,19 @@ private fun Timeline(
     onFile: (MediaHandle, String) -> Unit,
     onFull: (MessageItem) -> Unit,
     isDm: Boolean,
+    onPull: () -> Unit,
 ) {
     val state = rememberLazyListState()
+    // A pull down at the newest message (the finger moving down while the list rests at the bottom) brings the button row back (#502).
+    val pull by androidx.compose.runtime.rememberUpdatedState(onPull)
+    val pullDown = remember(state) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (available.y > 0f && state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset == 0) pull()
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
     // Newest first: the list is laid out from the bottom.
     val items = remember(rows) { rows.asReversed() }
     val atStart = rows.any { it is TimelineRow.Start }
@@ -308,7 +333,7 @@ private fun Timeline(
     // No stretch at the ends (#470): it held the list in its pulled state when a page of older messages arrived under it, and
     // the next drags up went into the stretch instead of the list.
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
-    LazyColumn(Modifier.fillMaxSize().testTag("timeline"), state = state, reverseLayout = true) {
+    LazyColumn(Modifier.fillMaxSize().nestedScroll(pullDown).testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
                 is TimelineRow.Message -> if (row.message.senderId in ignored && row.message.key !in revealed) {
@@ -561,7 +586,11 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit,
 }
 
 @Composable
-private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester, onAttach: () -> Unit, onSend: (String) -> Unit) {
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun Composer(
+    model: RoomModel, draftKey: String, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester,
+    title: String?, dm: Boolean, encrypted: Boolean, room: RoomItem, server: uniffi.morpheus_ffi.ScopeItem?, onComposing: (Boolean) -> Unit, onAttach: () -> Unit, onSend: (String) -> Unit,
+) {
     // What is typed is kept with its cursor or selected range for this chat or thread (#460), and comes back when it is opened again.
     var field by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
     val current by androidx.compose.runtime.rememberUpdatedState(field)
@@ -569,6 +598,19 @@ private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, 
     val text = field.text
     fun setText(value: String) { field = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length)) }
     var panel by remember { mutableStateOf(false) }
+    // Focused or with text: the button row is out of the way (#502). The keyboard closing (back) while the box keeps its focus lets the row return
+    // (the focus stays, so a selection in the draft is kept); the keyboard coming up again, or a change of focus, takes it away again.
+    var focused by remember { mutableStateOf(false) }
+    val keyboardUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    var keyboardWasUp by remember { mutableStateOf(false) }
+    var dismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(keyboardUp, focused) {
+        if (keyboardUp) { keyboardWasUp = true; dismissed = false }
+        else if (keyboardWasUp) { keyboardWasUp = false; dismissed = focused }
+        if (!focused) dismissed = false
+    }
+    val composing = (focused && !dismissed) || text.isNotEmpty()
+    LaunchedEffect(composing, text) { onComposing(composing) }
     var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     LaunchedEffect(text) { suggestions = model.suggest(text) }
     LaunchedEffect(text) { if (text.isNotBlank()) model.typing() }
@@ -590,8 +632,9 @@ private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, 
     ) {
         androidx.compose.material3.TextField(
             field, { field = it },
-            Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).focusRequester(focus).testTag("composer"),
-            placeholder = { Text(t("Message")) },
+            Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).focusRequester(focus).onFocusChanged { focused = it.isFocused }.testTag("composer"),
+            // The chat's name is the placeholder, and floats above what is typed (#502): a lock before it when encrypted, a # for a channel that is not.
+            label = { ChatLabel(title, dm, encrypted, hint, room, server) },
             maxLines = 5,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             shape = RoundedCornerShape(28.dp),
@@ -600,7 +643,7 @@ private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, 
                 focusedContainerColor = fill, unfocusedContainerColor = fill, disabledContainerColor = fill,
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
                 focusedTextColor = ink, unfocusedTextColor = ink, cursorColor = scheme.primary,
-                focusedPlaceholderColor = hint, unfocusedPlaceholderColor = hint,
+                focusedPlaceholderColor = hint, unfocusedPlaceholderColor = hint, focusedLabelColor = hint, unfocusedLabelColor = hint,
                 focusedLeadingIconColor = hint, unfocusedLeadingIconColor = hint, focusedTrailingIconColor = hint, unfocusedTrailingIconColor = hint,
             ),
             leadingIcon = {
@@ -623,6 +666,58 @@ private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, 
         ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
     }
     if (panel) EmojiPanel(model) { setText(withEmoji(text, it)) }
+    }
+}
+
+/** The chat's name as the composer's label: a picture or server icon, a lock (open when not encrypted), then the name. */
+@Composable
+private fun ChatLabel(title: String?, dm: Boolean, encrypted: Boolean, tint: Color, room: RoomItem, server: uniffi.morpheus_ffi.ScopeItem?) {
+    // (A node of its own: a text field merges what it holds into itself, except the parts that merge their own, so the tests and a screen reader find the name.)
+    Row(Modifier.semantics(mergeDescendants = true) { }.testTag(if (title != null) "room-title" else "composer-label"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        if (title != null) {
+            // The picture (a DM) or the server's squircle (a channel), then a lock or an open lock, then the name; no #.
+            Box(Modifier.clearAndSetSemantics { }) {
+                if (dm) Avatar(room.avatar, title, 16.dp, key = room.avatarKey)
+                else if (server != null) ServerIcon(server.avatar, server.title, 16.dp, key = server.avatarKey)
+            }
+            GlyphIcon(
+                if (encrypted) dev.morpheus.app.R.drawable.ic_lucide_lock else dev.morpheus.app.R.drawable.ic_lucide_lock_open,
+                Modifier.semantics(mergeDescendants = true) { }.testTag(if (encrypted) "room-title-lock" else "room-title-lock-open"), size = 16.dp, tint = tint,
+            )
+        }
+        Text(title ?: t("Message"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Call, Search, Pins and Info as a row of rounded buttons under the composer (#502). It slides away on the motion tokens (emphasized, medium 2 in and short 4 out). */
+@Composable
+private fun ChatActions(visible: Boolean, onCall: () -> Unit, onSearch: () -> Unit, onPins: () -> Unit, onInfo: () -> Unit) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible,
+        enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(Motion.Medium2, easing = Motion.EmphasizedDecelerate)) { it } +
+            androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(Motion.Medium2, easing = Motion.EmphasizedDecelerate)),
+        exit = androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedAccelerate)) { it } +
+            androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedAccelerate)),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm).padding(bottom = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_phone, t("Call"), "call-button", onCall, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_search, t("Search"), "search-button", onSearch, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_pin, t("Pins"), "pinned-button", onPins, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_info, t("Info"), "room-info-button", onInfo, Modifier.weight(1f))
+        }
+    }
+}
+
+/** One of the row's buttons: a Material 3 tonal button, a pill (its radius is half its 48 dp height: the concentric rule's end cap), icon and label. */
+@Composable
+private fun ChatAction(@androidx.annotation.DrawableRes icon: Int, label: String, tag: String, onClick: () -> Unit, modifier: Modifier) {
+    androidx.compose.material3.FilledTonalButton(
+        onClick, modifier.height(Size.target).testTag(tag), shape = CircleShape,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.sm),
+    ) {
+        GlyphIcon(icon, size = 20.dp)
+        Spacer(Modifier.width(Space.xs))
+        Text(label, maxLines = 1, overflow = TextOverflow.Clip, style = MaterialTheme.typography.labelMedium)
     }
 }
 

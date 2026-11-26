@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,10 +65,14 @@ object Images {
     }
 }
 
+/** A server's icon: always a squircle (a rounded square, the rail's and the desktop's shape), wherever it is drawn (#510). */
+@Composable
+fun ServerIcon(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, key: String? = null) = Avatar(media, name, size, modifier, square = true, key = key)
+
 /** A round picture, or the first letter of the name on a colour made from it while there is none. */
 @Composable
 fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, square: Boolean = false, key: String? = null) {
-    val shape = if (square) androidx.compose.ui.graphics.RectangleShape else CircleShape
+    val shape = if (square) RoundedCornerShape(size * 0.3f) else CircleShape
     val px = with(LocalDensity.current) { size.roundToPx() }
     // The picture of this key if it was seen before (the list of the last run has keys, no pictures), else fetched.
     val bitmap by produceState<ImageBitmap?>(null, media?.key() ?: key, px) {

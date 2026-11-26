@@ -97,11 +97,12 @@ fun Root(model: AppModel) {
                             val listsDrawn = open == null || at < 0.999f
                             if (listsDrawn) {
                                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(0, it.positionInWindow().x) }) {
-                                    if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
-                                    else if (reorderOpen) ReorderScreen(model)
-                                    else if (newOpen) NewScreen(model)
-                                    else if (inboxOpen) InboxScreen(model)
-                                    else if (securityOpen && shown != null) SecurityScreen(model, shown)
+                                    // A pushed screen goes back with a swipe either way (#507).
+                                    if (settingsOpen) SwipeBack(Modifier.fillMaxSize()) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
+                                    else if (reorderOpen) SwipeBack(Modifier.fillMaxSize()) { ReorderScreen(model) }
+                                    else if (newOpen) SwipeBack(Modifier.fillMaxSize()) { NewScreen(model) }
+                                    else if (inboxOpen) SwipeBack(Modifier.fillMaxSize()) { InboxScreen(model) }
+                                    else if (securityOpen && shown != null) SwipeBack(Modifier.fillMaxSize()) { SecurityScreen(model, shown) }
                                     else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
                                 }
                             }

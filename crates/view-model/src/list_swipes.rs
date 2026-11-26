@@ -112,6 +112,13 @@ impl LastChats {
     }
 }
 
+/// The channel a server opens on when none was opened there yet (#506), as the desktop picks it (`Shell::pick_scope`): the first room the
+/// list shows that is a text channel (not a voice channel, whose click joins its call). `voice` is each listed room's voice flag, in list
+/// order (invitations and spaces are not in it); the answer is the index.
+pub fn default_channel(voice: &[bool]) -> Option<usize> {
+    voice.iter().position(|v| !v)
+}
+
 /// The screen edge a chat sits at: it comes in from there when it opens and goes back out to it when it closes (#464). The rule is that
 /// whatever a swipe opens or closes moves the way the finger moves: a DM opens with a swipe right, so it comes in from the left edge and
 /// a swipe left sends it back there; a server channel opens with a swipe left, so it sits at the right edge.
@@ -161,6 +168,14 @@ mod tests {
         last.opened("!dm:x", true, None);
         last.opened("!chan:x", false, None);
         last
+    }
+
+    #[test]
+    fn a_server_opens_on_its_first_text_channel_never_a_voice_one() {
+        assert_eq!(default_channel(&[false, true]), Some(0));
+        assert_eq!(default_channel(&[true, false, false]), Some(1));
+        assert_eq!(default_channel(&[true, true]), None);
+        assert_eq!(default_channel(&[]), None);
     }
 
     #[test]

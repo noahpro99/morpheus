@@ -60,6 +60,7 @@ fun RoomPageHost(app: AppModel) {
     val page = request ?: return
     BackHandler { app.closePage() }
     androidx.compose.runtime.key(page) {
+        SwipeBack(Modifier.fillMaxSize()) {
         when (page.kind) {
             "invite" -> InvitePage(app, page)
             "create" -> CreatePage(app, page)
@@ -82,6 +83,7 @@ fun RoomPageHost(app: AppModel) {
             "profile" -> ProfilePage(app, page)
             "full-profile" -> FullProfilePage(app, page)
             "report-user" -> ReportUserPage(app, page)
+        }
         }
     }
 }
@@ -243,7 +245,7 @@ private fun OverviewPage(app: AppModel, page: PageRequest) {
     PageFrame(app, "Server overview", "page-overview") {
         overview?.let { o ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                Avatar(o.avatar, o.name, Size.avatarXl, square = true)
+                ServerIcon(o.avatar, o.name, Size.avatarXl)
                 Column {
                     Text(o.name, Modifier.testTag("overview-name"), style = MaterialTheme.typography.titleLarge)
                     Text(t("%{count} members", "count" to o.members.toString()), Modifier.testTag("overview-members"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)

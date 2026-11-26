@@ -10,6 +10,7 @@
 //!    it one (a ListItem's slots, a Button, a dialog's title and text, ...).
 //! 3. No emoji or symbol characters as icons (icons are drawables; [`EMOJI_ALLOWED`] lists the exceptions).
 //! 4. No hand-made radio, switch, checkbox, search field, or clickable box posing as a button.
+//! 6. A server's icon is always a squircle: `ServerIcon`, never `Avatar(.., square = ..)` outside Avatar.kt, never a CircleShape (#510).
 //! 5. No back button: no back or arrow-left icon, no `navigationIcon`, no "Back" label (#481). Android has system back (the
 //!    gesture and the button), and a screen's `BackHandler` must reach the same place; [`BACK_ALLOWED`] lists what is not a back button.
 
@@ -42,7 +43,9 @@ const GIVES_A_TEXT_STYLE: &[&str] = &[
 ];
 
 /// `Text(` calls right without a style anywhere else: (file, the line's code, why).
-const TEXT_WITHOUT_STYLE_IN: &[(&str, &str, &str)] = &[];
+const TEXT_WITHOUT_STYLE_IN: &[(&str, &str, &str)] = &[
+    ("ui/RoomScreen.kt", "Text(title ?: t(\"Message\")", "the composer's label: the TextField gives it a style that animates between the field text and the floating label, and an explicit style would stop the shrink"),
+];
 
 /// Files where emoji or symbol characters are right: (file, the text, why).
 const EMOJI_ALLOWED: &[(&str, &str, &str)] = &[
@@ -355,6 +358,15 @@ fn violations() -> (Vec<String>, Used) {
                 continue;
             }
             out.push(format!("{file}:{}: emoji or symbol character: icons are drawables (R.drawable.ic_lucide_*): {}", n + 1, line.trim()));
+        }
+
+        // 6. Server icons.
+        if file != "ui/Avatar.kt" {
+            for (n, line) in code_str.lines().enumerate() {
+                if line.contains("Avatar(") && line.contains("square = ") {
+                    out.push(format!("{file}:{}: a server's icon is drawn with ServerIcon (a squircle), not Avatar(square = ..): {}", n + 1, line.trim()));
+                }
+            }
         }
 
         // 5. Back buttons.

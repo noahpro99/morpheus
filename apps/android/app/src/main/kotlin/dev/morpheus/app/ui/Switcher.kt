@@ -72,7 +72,7 @@ fun QuickFind(model: AppModel, modifier: Modifier = Modifier) {
 @Composable
 private fun Leading(hit: uniffi.morpheus_ffi.SwitcherHit) {
     when (hit.kind) {
-        SwitcherKind.SERVER -> Avatar(hit.avatar, hit.label, 40.dp, square = true, key = hit.avatarKey)
+        SwitcherKind.SERVER -> ServerIcon(hit.avatar, hit.label, 40.dp, key = hit.avatarKey)
         SwitcherKind.DM -> Avatar(hit.avatar, hit.label, 40.dp, key = hit.avatarKey)
         SwitcherKind.CHANNEL -> GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash)
         SwitcherKind.ACTION, SwitcherKind.SETTING -> GlyphIcon(

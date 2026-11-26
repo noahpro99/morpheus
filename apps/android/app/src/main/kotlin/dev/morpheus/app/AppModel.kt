@@ -505,8 +505,16 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     val slide = ChatSlide()
 
     /** What a swipe along `list` would do now (the last chats are kept across launches). */
-    fun swipeStep(list: uniffi.morpheus_ffi.SwipeList, fingerLeft: Boolean): uniffi.morpheus_ffi.SwipeStep =
-        uniffi.morpheus_ffi.listSwipe(_lastChats.value, list, fingerLeft, _scopeKey.value)
+    fun swipeStep(list: uniffi.morpheus_ffi.SwipeList, fingerLeft: Boolean): uniffi.morpheus_ffi.SwipeStep {
+        val step = uniffi.morpheus_ffi.listSwipe(_lastChats.value, list, fingerLeft, _scopeKey.value)
+        // A server nothing was opened in yet opens its default channel (#506), the desktop's pick (view-model default_channel).
+        if (step is uniffi.morpheus_ffi.SwipeStep.Nothing && list == uniffi.morpheus_ffi.SwipeList.SERVERS && fingerLeft) {
+            val server = sidebar.value?.scopes?.firstOrNull { it.key == _scopeKey.value && it.kind == uniffi.morpheus_ffi.ScopeKind.SERVER }
+            val rooms = server?.sections?.flatMap { it.rooms }.orEmpty()
+            uniffi.morpheus_ffi.defaultChannel(rooms.map { it.isVoice })?.let { return uniffi.morpheus_ffi.SwipeStep.Open(rooms[it.toInt()].id) }
+        }
+        return step
+    }
 
     /** The rail entry (server) a channel belongs to: the one shown when it is in that, else the first that lists it (#499). */
     private fun serverOf(roomId: String): String {

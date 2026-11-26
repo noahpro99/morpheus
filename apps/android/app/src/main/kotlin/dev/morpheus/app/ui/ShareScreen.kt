@@ -109,7 +109,7 @@ private fun ColumnScope.Pick(share: Share, targets: List<ShareTarget>, query: St
             ListRow(
                 target.name, "share-target-${target.name}",
                 supporting = target.server ?: if (target.isDm) t("Direct message") else t("Room"),
-                leading = { Avatar(target.avatar, target.name, 36.dp, square = !target.isDm && target.server == null) },
+                leading = { if (!target.isDm && target.server == null) ServerIcon(target.avatar, target.name, 36.dp) else Avatar(target.avatar, target.name, 36.dp) },
             ) { onPick(target) }
         }
     }

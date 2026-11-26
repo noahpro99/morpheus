@@ -896,5 +896,7 @@
   "%{count} mentions": "%{count} menciones",
   "Start one from the search bar.": "Empieza una desde la barra de búsqueda.",
   "Join a server or start a conversation from the search bar.": "Únete a un servidor o empieza una conversación desde la barra de búsqueda.",
-  "Swipe left or right to go between your DMs and your servers": "Desliza a izquierda o derecha para ir de tus mensajes directos a tus servidores"
+  "Swipe left or right to go between your DMs and your servers": "Desliza a izquierda o derecha para ir de tus mensajes directos a tus servidores",
+  "Pins": "Fijados",
+  "Info": "Info"
 }

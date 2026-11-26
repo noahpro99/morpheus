@@ -83,7 +83,7 @@ private fun Bell(model: AppModel) {
 @Composable
 fun ServerButton(scope: ScopeItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
     IconButton(onClick, modifier.size(Size.target).semantics { contentDescription = scope.title }.testTag("server-button")) {
-        if (scope.kind == ScopeKind.SERVER) Avatar(scope.avatar, scope.title, 32.dp, square = true, key = scope.avatarKey)
+        if (scope.kind == ScopeKind.SERVER) ServerIcon(scope.avatar, scope.title, 32.dp, key = scope.avatarKey)
         else GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = ComposerColours.hint(MaterialTheme.colorScheme))
     }
 }

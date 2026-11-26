@@ -223,11 +223,14 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
 fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
     val bar by model.sidebar.collectAsState()
     val scope = bar?.scopes?.firstOrNull { it.kind == ScopeKind.DMS }
+    // The DM a swipe right would open is marked like a server's last channel (#509); it follows the record, so it changes as soon as another is viewed.
+    val record by model.lastChats.collectAsState()
+    val lastDm = remember(record) { (model.swipeStep(uniffi.morpheus_ffi.SwipeList.DMS, fingerLeft = false) as? uniffi.morpheus_ffi.SwipeStep.Open)?.room }
     Column(Modifier.fillMaxSize().background(Palette.Surface)) {
         if (scope == null) {
             Column(Modifier.weight(1f).fillMaxWidth().padding(top = Space.xl)) { SkeletonRows(8) }
         } else {
-            ChannelList(scope, emptyList(), model, onOpenRoom, Modifier.weight(1f).fillMaxWidth(), null)
+            ChannelList(scope, emptyList(), model, onOpenRoom, Modifier.weight(1f).fillMaxWidth(), lastDm)
         }
         ListSearchBar(model, t("Search DMs")) { MeButton(model) }
     }
@@ -308,7 +311,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                     contentAlignment = Alignment.Center,
                 ) {
                     when (scope.kind) {
-                        ScopeKind.SERVER -> Avatar(scope.avatar, scope.title, 48.dp, square = true, key = scope.avatarKey)
+                        ScopeKind.SERVER -> ServerIcon(scope.avatar, scope.title, 48.dp, key = scope.avatarKey)
                         else -> GlyphIcon(
                             when (scope.kind) {
                                 ScopeKind.FAVORITES -> dev.morpheus.app.R.drawable.ic_lucide_star
@@ -362,7 +365,18 @@ private fun ChannelList(
             PullDown(Modifier.fillMaxSize().testTag("rooms-list")) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true, contentPadding = PaddingValues(vertical = Space.lg)) {
                 for ((index, section) in scope.sections.withIndex()) {
-                    items(section.rooms, key = { it.id }) { room -> RoomRow(room, onOpenRoom, model, room.id == selectedRoom) }
+                    items(section.rooms, key = { it.id }) { room ->
+                        RoomRow(
+                            room, room.id == selectedRoom,
+                            onOpen = { if (room.isVoice) model.startCall(room.id, room.name) else onOpenRoom(room) },
+                            onMenu = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } },
+                            callName = { id ->
+                                val names by model.callNames.collectAsState()
+                                LaunchedEffect(id) { model.wantName(id) }
+                                model.nameOf(id, names)
+                            },
+                        )
+                    }
                     section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
                 }
                 if (invites.isNotEmpty()) {
@@ -375,16 +389,19 @@ private fun ChannelList(
     }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+/**
+ * A channel or a DM on a list: as wide as the list (M3 ListItem: its press, its selection and its tap target span the row; a count sits in the trailing
+ * slot, so a name never runs under it), at least 48 dp tall (a DM 60). `callName` names someone in the room's call.
+ */
 @Composable
-private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel, selected: Boolean) {
+fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
-    Box(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs / 2).clip(RoundedCornerShape(Radius.md)).background(if (selected) Palette.Raised else Color.Transparent)) {
+    Box(Modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent)) {
         Column {
             ListRow(
                 room.name, "room-${room.name}",
-                // As tall as the rows always were: 60 dp for a person, 48 for a channel.
-                modifier = Modifier.height(if (room.isDm) 60.dp else 44.dp).padding(end = 96.dp).semantics { if (selected) stateDescription = t("Last opened") },
+                // 60 dp for a person, 48 (the touch target) for a channel.
+                modifier = Modifier.height(if (room.isDm) 60.dp else Size.target).semantics { if (selected) stateDescription = t("Last opened") },
                 strong = unread, quiet = !unread,
                 leading = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
@@ -397,14 +414,19 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                         if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
                     }
                 },
-                onLongClick = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } },
-            ) { if (room.isVoice) model.startCall(room.id, room.name) else onOpen(room) }
+                trailing = if (room.highlights > 0UL || room.unread > 0UL) ({
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                        if (room.highlights > 0UL) MentionPill(room.highlights, "mention-${room.name}")
+                        if (room.unread > 0UL) UnreadBadge(room.unread, "badge-${room.name}", muted = room.muted)
+                    }
+                }) else null,
+                onLongClick = onMenu,
+                onClick = onOpen,
+            )
             if (room.call.isNotEmpty()) {
-                val names by model.callNames.collectAsState()
                 Column(Modifier.padding(start = 44.dp, bottom = Space.sm)) {
                     for (member in room.call) {
-                        LaunchedEffect(member.userId) { model.wantName(member.userId) }
-                        val name = model.nameOf(member.userId, names)
+                        val name = callName(member.userId)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                             Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                             if (member.muted || member.deafened) GlyphIcon(
@@ -415,13 +437,6 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                     }
                 }
             }
-        }
-        Row(
-            Modifier.align(Alignment.CenterEnd).padding(end = Space.md),
-            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-        ) {
-            if (room.highlights > 0UL) MentionPill(room.highlights, "mention-${room.name}")
-            if (room.unread > 0UL) UnreadBadge(room.unread, "badge-${room.name}", muted = room.muted)
         }
     }
 }

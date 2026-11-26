@@ -2,6 +2,7 @@ package dev.morpheus.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,10 +71,15 @@ fun SettingsScreen(app: AppModel) {
 
     // What went wrong is said in a toast.
     LaunchedEffect(problem) { problem?.let { Toasts.say(it, "settings-error", long = true) } }
+    // A page rests at its end; one opened by a search hit shows its start, where the setting is (the page scrolls from the bottom, so the start is the far end).
+    val pageScroll = remember(page) { androidx.compose.foundation.ScrollState(0) }
+    val anchor by app.settingsAnchor.collectAsState()
+    LaunchedEffect(page, anchor, pageScroll.maxValue) { if (anchor != null && pageScroll.maxValue > 0) pageScroll.scrollTo(pageScroll.maxValue) }
     ScreenScaffold("settings-screen", { TopBar(t("Settings"), titleTag = "settings-title") }) { inner ->
         if (page == null) SettingsGroups(app, t, Modifier.padding(inner)) else Column(
-            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(vertical = Space.lg),
-            verticalArrangement = Arrangement.spacedBy(Space.md),
+            Modifier.fillMaxSize().padding(inner).verticalScroll(pageScroll, reverseScrolling = true).padding(vertical = Space.lg),
+            // A page rests at the bottom, near the thumb (#482): a short one sits low with room above, a long one starts scrolled to its end.
+            verticalArrangement = Arrangement.spacedBy(Space.md, Alignment.Bottom),
         ) {
             if (page == "Appearance") {
             Heading(t("Appearance"))
@@ -201,14 +207,15 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
     val hits = remember(query) { if (query.isBlank()) emptyList() else uniffi.morpheus_ffi.searchSettings(query).filter { it.group in supported } }
     val groups = remember { uniffi.morpheus_ffi.settingsGroups().filter { it.key in supported } }
     Column(modifier.fillMaxWidth().testTag("settings-groups")) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+        // Bottom-up (#482): the first group is the lowest, just above the search bar, and the rest stack upward; the list rests at the bottom.
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth(), reverseLayout = true) {
             if (query.isNotBlank()) {
-                if (hits.isEmpty()) Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
-                for (hit in hits) {
+                if (hits.isEmpty()) item { Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge) }
+                items(hits, key = { it.group + "/" + it.anchor }) { hit ->
                     ListRow(t(hit.label), "settings-hit-${hit.anchor}", trailing = { Text(t(groups.firstOrNull { it.key == hit.group }?.label ?: hit.group), style = MaterialTheme.typography.bodyMedium) }) { app.openSettingsPage(hit.group, hit.anchor) }
                 }
             } else {
-                for (group in groups) {
+                items(groups, key = { it.key }) { group ->
                     val icon = glyphDrawable(group.glyph)
                     ListRow(
                         t(group.label), "settings-group-${group.key.lowercase()}",
