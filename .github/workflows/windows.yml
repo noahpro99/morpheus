@@ -106,6 +106,23 @@ jobs:
           grep -q "^Hardware video: " "$out"
           grep -q "^Hardware decoder: " "$out"
 
+      # Toasts show as Morpheus, and a click reaches the app (#523): the process
+      # has the app's AppUserModelID, a shortcut made as the installer's carries
+      # it, the registry entry names the app and its icon for runs with no
+      # shortcut, and a second launch hands its link to the running app.
+      - name: App identity
+        run: |
+          out="$RUNNER_TEMP/app-id-self-test.txt"
+          MORPHEUS_APP_ID_SELF_TEST="$out" \
+            target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe
+          cat "$out"
+          grep -q "^process app id: dev.morpheus.Morpheus$" "$out"
+          grep -q "^shortcut app id: dev.morpheus.Morpheus$" "$out"
+          grep -q "^registry name: Morpheus$" "$out"
+          grep -q "^registry icon exists: true$" "$out"
+          grep -q "^single instance: ok$" "$out"
+          ! grep -q "^shortcut error:\|^registry error:" "$out"
+
       # The GPU diagnostics name the adapter that draws (#277): the app's
       # window opened for a few seconds on the runner (software adapter: WARP).
       - name: GPU named

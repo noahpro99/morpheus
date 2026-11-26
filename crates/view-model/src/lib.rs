@@ -41,6 +41,7 @@ pub mod sidebar;
 pub mod ui_zoom;
 pub mod voice_panel;
 pub mod url_scheme;
+pub mod win_toast;
 pub mod invites;
 pub mod keys;
 pub mod last_place;

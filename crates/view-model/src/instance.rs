@@ -25,10 +25,13 @@ impl Request {
     }
 }
 
-/// The first Matrix link among a program's arguments.
+/// The first Matrix link among a program's arguments: given as one, or as a
+/// Windows toast's click (`morpheus-notify:`), which carries one.
 pub fn link_in_args(args: impl IntoIterator<Item = String>) -> Option<String> {
-    args.into_iter()
-        .find(|arg| morpheus_core::parse_matrix_link(arg).is_some())
+    args.into_iter().find_map(|arg| {
+        crate::win_toast::target_of(&arg)
+            .or_else(|| morpheus_core::parse_matrix_link(&arg).is_some().then_some(arg))
+    })
 }
 
 #[cfg(test)]
@@ -48,5 +51,7 @@ mod tests {
         let args = ["--hidden", "matrix:u/bob:localhost"].map(String::from);
         assert_eq!(link_in_args(args).as_deref(), Some("matrix:u/bob:localhost"));
         assert_eq!(link_in_args(["--hidden".to_owned()]), None);
+        let click = crate::win_toast::launch_arg("!r:x", Some("$e"));
+        assert_eq!(link_in_args([click]).as_deref(), Some("matrix:roomid/r:x/e/e"));
     }
 }

@@ -29,7 +29,7 @@ use windows::{
 };
 
 /// What names the app to the shell.
-pub const APP_ID: &str = "dev.morpheus.Morpheus";
+pub const APP_ID: &str = crate::view_model::win_toast::APP_ID;
 
 /// Name this process's windows `APP_ID`. First thing, before any window.
 pub fn set_app_id() {
@@ -75,4 +75,36 @@ pub fn ensure_start_menu_shortcut(launcher: &Path, shortcut: &Path) -> windows::
         file.Save(&HSTRING::from(shortcut.as_os_str()), true)?;
     }
     Ok(())
+}
+
+/// The AppUserModelID this process has, as the shell reports it.
+pub fn process_app_id() -> Option<String> {
+    // SAFETY: the call returns a string the shell allocated; it is read, then
+    // freed with CoTaskMemFree as documented.
+    unsafe {
+        let id = windows::Win32::UI::Shell::GetCurrentProcessExplicitAppUserModelID().ok()?;
+        let text = id.to_string().ok();
+        windows::Win32::System::Com::CoTaskMemFree(Some(id.0 as *const _));
+        text
+    }
+}
+
+/// The AppUserModelID stored in the shortcut at `shortcut`.
+pub fn shortcut_app_id(shortcut: &Path) -> Option<String> {
+    use windows::Win32::System::Com::STGM_READ;
+    // SAFETY: COM calls on this thread; the string from PropVariantToStringAlloc
+    // is read, then freed with CoTaskMemFree.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let file: IPersistFile = link.cast().ok()?;
+        file.Load(&HSTRING::from(shortcut.as_os_str()), STGM_READ).ok()?;
+        let store: IPropertyStore = link.cast().ok()?;
+        let value = store.GetValue(&PKEY_AppUserModel_ID).ok()?;
+        let raw = &value.Anonymous.Anonymous;
+        if raw.vt != VT_LPWSTR {
+            return None;
+        }
+        raw.Anonymous.pwszVal.to_string().ok()
+    }
 }

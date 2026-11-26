@@ -104,6 +104,8 @@ mod win_badge;
 mod win_sys;
 #[cfg(target_os = "windows")]
 mod win_shell;
+#[cfg(target_os = "windows")]
+mod win_notify;
 mod zoom;
 // The view-models live in their own crate; the old module path stays valid.
 use morpheus_view_model as view_model;
@@ -999,6 +1001,14 @@ fn main() {
         let _ = std::fs::write(out, text);
         std::process::exit(0);
     }
+    // CI's check of the app's Windows identity (windows.yml).
+    #[cfg(target_os = "windows")]
+    if let Some(out) = std::env::var_os("MORPHEUS_APP_ID_SELF_TEST") {
+        let text = windows_app_id_self_test();
+        eprint!("{text}");
+        let _ = std::fs::write(out, text);
+        std::process::exit(0);
+    }
     // CI's screenshot of the title bar (apple.yml): a window on a bare shell.
     if let Some(seconds) = titlebar_shot::requested() {
         titlebar_shot::run(seconds);
@@ -1181,6 +1191,66 @@ mod dioxus_data {
     }
 }
 
+/// What `MORPHEUS_APP_ID_SELF_TEST` writes: the process's AppUserModelID, a
+/// shortcut made as the installer's is and read back, the registry entry that
+/// names the app for toasts, and a toast shown under it.
+#[cfg(target_os = "windows")]
+fn windows_app_id_self_test() -> String {
+    let mut text = String::new();
+    win_shell::set_app_id();
+    text += &*format!("process app id: {}\n", win_shell::process_app_id().unwrap_or_default());
+    let dir = std::env::temp_dir().join("morpheus-app-id-self-test");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let shortcut = dir.join("Morpheus.lnk");
+    let exe = std::env::current_exe().unwrap_or_default();
+    match win_shell::ensure_start_menu_shortcut(&exe, &shortcut) {
+        Ok(()) => {
+            text += &*format!(
+                "shortcut app id: {}\n",
+                win_shell::shortcut_app_id(&shortcut).unwrap_or_default()
+            );
+        }
+        Err(err) => text += &*format!("shortcut error: {err}\n"),
+    }
+    let icon = dir.join("morpheus.ico");
+    let _ = std::fs::write(&icon, include_bytes!("../icons/icon.ico"));
+    match win_notify::register_identity(&icon) {
+        Ok(()) => {
+            let (name, uri) = win_notify::registered_identity().unwrap_or_default();
+            text += &*format!("registry name: {name}\nregistry icon exists: {}\n", std::path::Path::new(&uri).is_file());
+        }
+        Err(err) => text += &*format!("registry error: {err}\n"),
+    }
+    // A second launch (a toast's click) reaches the running one with its link.
+    let probe = dir.join("instance");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let first = instance::claim(&probe, None);
+    instance::listen(move |request| {
+        let _ = tx.send(request);
+    });
+    let link = "matrix:roomid/room:example.org/e/event";
+    let second = instance::claim(&probe, Some(link));
+    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
+    let handed = matches!(&got, Ok(view_model::instance::Request::Open(l)) if l == link);
+    text += &*format!(
+        "single instance: {}\n",
+        if first && !second && handed { "ok" } else { "broken" }
+    );
+    let launch = view_model::win_toast::launch_arg("!room:example.org", Some("$event"));
+    let toast = view_model::win_toast::Toast {
+        title: "Morpheus",
+        body: "app id self-test",
+        launch: Some(&launch),
+        ..Default::default()
+    };
+    match win_notify::show(&toast) {
+        Ok(()) => text += "toast: shown\n",
+        Err(err) => text += &*format!("toast error: {err}\n"),
+    }
+    text
+}
+
 /// Windows: the app's AppUserModelID, and (when this is the stable install
 /// made by the launcher) the Start menu shortcut to the launcher with it.
 #[cfg(target_os = "windows")]
@@ -1190,6 +1260,19 @@ fn set_up_windows_shell() {
         || std::env::var_os("MORPHEUS_UPDATE_SELF_TEST").is_some()
     {
         return;
+    }
+    // Toasts: the app's name and icon (for runs with no shortcut), and a click on
+    // one starts the installed app with its target.
+    let icon = data_dir().join("morpheus.ico");
+    if !icon.is_file() {
+        let _ = std::fs::write(&icon, include_bytes!("../icons/icon.ico"));
+    }
+    let _ = win_notify::register_identity(&icon);
+    if let Ok(front) = morpheus_core::install_layout::front_exe()
+        && view_model::url_scheme::exe_kind(&front, cfg!(debug_assertions))
+            == view_model::url_scheme::ExeKind::Installed
+    {
+        win_notify::register_click_protocol(&front);
     }
     let (Some(local), Some(roaming), Ok(front)) = (
         std::env::var_os("LOCALAPPDATA"),

@@ -33,6 +33,20 @@ pub fn show(
     image: Option<PathBuf>,
     sound: Option<&'static str>,
 ) {
+    show_for(title, body, icon, image, sound, None);
+}
+
+/// As [`show`], a click on it opening `launch` (a `win_toast::launch_arg`): the
+/// room, or the message, it is about. Only Windows toasts carry one; a click
+/// with none brings the window to the front.
+pub fn show_for(
+    title: String,
+    body: String,
+    icon: Option<PathBuf>,
+    image: Option<PathBuf>,
+    sound: Option<&'static str>,
+    launch: Option<String>,
+) {
     eprintln!("morpheus-desktop: notification: {title}");
     if std::env::var_os("MORPHEUS_E2E_PORT").is_some() {
         let line = serde_json::json!({
@@ -41,6 +55,7 @@ pub fn show(
             "icon": icon,
             "image": image,
             "sound": sound,
+            "launch": launch,
         });
         let written = std::fs::OpenOptions::new()
             .create(true)
@@ -55,6 +70,25 @@ pub fn show(
         return;
     }
     std::thread::spawn(move || {
+        #[cfg(target_os = "windows")]
+        {
+            let launch = launch
+                .unwrap_or_else(|| format!("{}:", crate::view_model::win_toast::PROTOCOL));
+            let toast = crate::view_model::win_toast::Toast {
+                title: &title,
+                body: &body,
+                icon: icon.as_deref(),
+                image: image.as_deref(),
+                launch: Some(&launch),
+                ringing: sound.is_some(),
+            };
+            if let Err(err) = crate::win_notify::show(&toast) {
+                eprintln!("morpheus-desktop: desktop notification failed: {err}");
+            }
+            return;
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = &launch;
         let mut notification = notify_rust::Notification::new();
         notification.appname("Morpheus").summary(&title).body(&body);
         if let Some(sound) = sound {
@@ -70,6 +104,11 @@ pub fn show(
             eprintln!("morpheus-desktop: desktop notification failed: {err}");
         }
     });
+}
+
+/// What a click on the toast of `room` (and its message) opens.
+fn launch_for(room: &OwnedRoomId, event: Option<&str>) -> String {
+    crate::view_model::win_toast::launch_arg(room.as_str(), event)
 }
 
 /// Run `future` on a small runtime of its own, as the threads here need one
@@ -190,32 +229,36 @@ pub fn spawn_notifier(session: Session, redraw: impl Fn() + Send + 'static) {
                         continue;
                     }
                     if crate::locks::is_locked(&notice.room_id) {
-                        show(
+                        show_for(
                             "Morpheus".into(),
                             crate::view_model::locks::NOTIFICATION.into(),
                             None,
                             None,
                             None,
+                            Some(launch_for(&notice.room_id, Some(&notice.event_id))),
                         );
                         continue;
                     }
                     if crate::streamer::notifications_hidden() {
-                        show(
+                        show_for(
                             "Morpheus".into(),
                             ts("Someone sent a message").into(),
                             None,
                             None,
                             None,
+                            Some(launch_for(&notice.room_id, Some(&notice.event_id))),
                         );
                         continue;
                     }
+                    let launch = launch_for(&notice.room_id, Some(&notice.event_id));
                     let ready = notices::ready(&session, notice, &dir).await;
-                    show(
+                    show_for(
                         ready.text.title,
                         ready.text.body,
                         ready.icon,
                         ready.image,
                         None,
+                        Some(launch),
                     );
                 }
             });
@@ -282,7 +325,7 @@ pub fn spawn_ring_watcher(session: Session) {
                                 let hidden = settings::notification_content(&dir)
                                     == settings::NotificationContent::Hidden
                                     || crate::streamer::notifications_hidden();
-                                show(
+                                show_for(
                                     if crate::locks::is_locked(&call.room_id) {
                                         crate::locks::locked_call()
                                     } else {
@@ -295,6 +338,7 @@ pub fn spawn_ring_watcher(session: Session) {
                                     None,
                                     None,
                                     Some(RING_SOUND),
+                                    Some(launch_for(&call.room_id, None)),
                                 );
                             }
                             let log = std::env::var_os("MORPHEUS_E2E_PORT")
