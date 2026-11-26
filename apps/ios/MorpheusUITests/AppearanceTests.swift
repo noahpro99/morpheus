@@ -15,6 +15,7 @@ final class AppearanceTests: XCTestCase {
             let app = XCUIApplication()
             app.launchArguments += ["-reset"] + configuration.args
             app.launchEnvironment["MORPHEUS_HOMESERVER"] = "http://localhost:8008"
+            app.launchEnvironment["MORPHEUS_FILE_SESSION_STORE"] = "1"
             app.launch()
             let user = app.textFields["sign-in-username"]
             XCTAssertTrue(user.waitForExistence(timeout: 20), configuration.name)

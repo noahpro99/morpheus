@@ -9,6 +9,7 @@ class MorpheusTestCase: XCTestCase {
         continueAfterFailure = false
         app.launchArguments += ["-reset"]
         app.launchEnvironment["MORPHEUS_HOMESERVER"] = "http://localhost:8008"
+        app.launchEnvironment["MORPHEUS_FILE_SESSION_STORE"] = "1"
         app.launch()
     }
 

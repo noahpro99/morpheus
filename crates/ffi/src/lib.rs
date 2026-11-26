@@ -143,11 +143,29 @@ pub trait SyncListener: Send + Sync {
 
 /// Where the session's secrets go: iPhones have the keychain; on Android (and in
 /// tests) an encrypted file in the app's private folder, as the Dioxus app had it.
+/// `MORPHEUS_FILE_SESSION_STORE` forces the file store on iPhones too: the simulator's unsigned test builds have no keychain
+/// entitlement (the iOS XCUITests set it).
 fn store_kind() -> morpheus_core::SessionStoreKind {
-    if cfg!(target_os = "ios") {
+    store_kind_for(cfg!(target_os = "ios"), std::env::var_os("MORPHEUS_FILE_SESSION_STORE").is_some())
+}
+
+fn store_kind_for(ios: bool, force_file: bool) -> morpheus_core::SessionStoreKind {
+    if ios && !force_file {
         morpheus_core::SessionStoreKind::Keyring
     } else {
         morpheus_core::SessionStoreKind::File
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    #[test]
+    fn iphones_use_the_keychain_unless_the_file_store_is_forced() {
+        assert!(matches!(store_kind_for(true, false), morpheus_core::SessionStoreKind::Keyring));
+        assert!(matches!(store_kind_for(true, true), morpheus_core::SessionStoreKind::File));
+        assert!(matches!(store_kind_for(false, false), morpheus_core::SessionStoreKind::File));
     }
 }
 
