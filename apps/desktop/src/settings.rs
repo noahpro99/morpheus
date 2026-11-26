@@ -85,10 +85,10 @@ pub struct HistoryRestore(pub crate::view_model::theme_history::Look);
 
 impl EventEmitter<HistoryRestore> for SettingsView {}
 
-/// A look's pin in the theme history was toggled.
-pub struct HistoryPin(pub crate::view_model::theme_history::Look);
+/// The Share theme button put the theme code on the clipboard: the shell says so in a toast.
+pub struct ThemeCodeCopied;
 
-impl EventEmitter<HistoryPin> for SettingsView {}
+impl EventEmitter<ThemeCodeCopied> for SettingsView {}
 
 /// A streamer mode choice was kept: the shell draws again.
 pub struct StreamerChanged;
@@ -204,7 +204,9 @@ pub struct SettingsView {
     /// The frosted-glass setting in the account's prefs (the shell tells us).
     pub glass: crate::view_model::glass::Glass,
     /// The looks used lately, as shown (the shell tells us).
-    pub history: Vec<crate::view_model::theme_history::Entry>,
+    pub history: crate::view_model::theme_history::ThemeHistory,
+    /// The theme row's horizontal scroll: a vertical wheel over it scrolls it sideways.
+    pub(crate) theme_row_scroll: gpui::ScrollHandle,
     /// The custom colour as hue, saturation and value: kept apart so a grey keeps its hue
     /// while the sliders move.
     hsv: (f32, f32, f32),
@@ -484,7 +486,8 @@ impl SettingsView {
             theme: Theme::Dark,
             custom: None,
             glass: Default::default(),
-            history: Vec::new(),
+            history: Default::default(),
+            theme_row_scroll: gpui::ScrollHandle::new(),
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
             colour_input,

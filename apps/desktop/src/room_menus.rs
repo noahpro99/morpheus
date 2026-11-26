@@ -450,7 +450,9 @@ impl Shell {
             MenuAction::ApplyTheme(text) => {
                 self.open_settings(crate::view_model::keys::SettingsFocus::Appearance, cx);
                 if let Some(settings) = &self.settings {
-                    settings.update(cx, |settings, cx| settings.show_theme_code(&text, cx));
+                    settings.update(cx, |settings, cx| {
+                        settings.show_theme_code(&text, cx)
+                    });
                 }
             }
             // The rest is for messages.
@@ -531,7 +533,7 @@ impl Shell {
     }
 
     pub fn show_history(&mut self, cx: &mut Context<Self>) {
-        let shown = self.prefs.theme_history().shown();
+        let shown = self.prefs.theme_history();
         if let Some(settings) = &self.settings {
             settings.update(cx, |settings, cx| {
                 settings.history = shown;

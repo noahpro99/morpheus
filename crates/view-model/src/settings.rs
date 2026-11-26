@@ -156,7 +156,7 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
     ),
     entry(
         "Theme",
-        "appearance dark light midnight colours colors",
+        "appearance dark light midnight colours colors themes recent custom history material you picker swatch",
         SettingsPage::Appearance,
         "theme",
     ),
@@ -1037,6 +1037,9 @@ mod tests {
             ("bridge bot", "bridge-bot"),
             ("changelog", "patch-notes"),
             ("preview", "theme-preview"),
+            ("recent themes", "theme"),
+            ("custom", "theme"),
+            ("share theme", "theme-share"),
         ] {
             assert!(
                 find_settings(query, true).iter().any(|e| e.anchor == anchor),

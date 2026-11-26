@@ -445,13 +445,8 @@ impl Shell {
         .detach();
         cx.subscribe(
             &settings,
-            |this, _, pin: &crate::settings::HistoryPin, cx| {
-                let mut history = this.prefs.theme_history();
-                if history.toggle_pin(pin.0) {
-                    this.prefs.set_theme_history(&history);
-                    this.save_prefs(cx);
-                    this.show_history(cx);
-                }
+            |this, _, _: &crate::settings::ThemeCodeCopied, cx| {
+                this.toast(crate::view_model::i18n::t("Theme code copied"), cx)
             },
         )
         .detach();

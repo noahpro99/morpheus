@@ -379,67 +379,50 @@ impl SettingsView {
     }
 
     pub(super) fn appearance_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let options = Theme::ALL.into_iter().map(|theme_choice| {
-            let selected = theme_choice == self.theme && self.custom.is_none();
-            let (side, chat) = theme::swatch_of(theme_choice);
-            let swatch = div()
-                .flex()
-                .w(px(120.0))
-                .h(px(72.0))
-                .rounded(px(theme::RADIUS))
-                .overflow_hidden()
-                .child(div().w(relative_36()).h_full().bg(rgb(side)))
-                .child(div().flex_1().h_full().bg(rgb(chat)));
-            div()
-                .id(ElementId::from(SharedString::from(format!(
-                    "theme-{}",
-                    theme_choice.key()
-                ))))
-                .flex()
-                .flex_col()
-                .gap(px(8.0))
-                .p(px(8.0))
-                .rounded(px(theme::RADIUS_LG))
-                .border_2()
-                .border_color(if selected {
-                    rgb(theme::accent())
-                } else {
-                    theme::fill_elevated()
-                })
-                .bg(theme::fill_elevated())
-                .cursor_pointer()
-                .child(swatch)
-                .child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(t(theme_choice.label()))
-                        .e2e("span", "theme-name")
-                        .text(t(theme_choice.label())),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.theme = theme_choice;
-                    this.set_custom_shown(None, cx);
-                    cx.emit(ThemeChosen(theme_choice));
-                    cx.notify();
-                }))
-                .e2e(
-                    "button",
-                    if selected {
-                        "theme-option selected"
-                    } else {
-                        "theme-option"
-                    },
-                )
-                .attr("data-theme", theme_choice.key())
-        }).collect::<Vec<_>>();
-        let custom_tile = self.custom_tile(cx);
+        use crate::view_model::{
+            theme_history::Look,
+            theme_row::{ThemeRowKind, theme_row},
+        };
+        // One row (#490): the built-in themes, the recent custom colours, then Custom.
+        let items = theme_row(Look { theme: self.theme, colour: self.custom }, &self.history, false, false);
+        let options = items
+            .into_iter()
+            .filter_map(|item| match item.kind {
+                ThemeRowKind::Builtin => Some(self.theme_tile(item.theme, item.selected, cx)),
+                ThemeRowKind::Recent => item
+                    .colour
+                    .map(|colour| self.recent_tile(item.theme, colour, item.selected, cx)),
+                ThemeRowKind::Custom => Some(self.custom_tile(cx)),
+                ThemeRowKind::MaterialYou => None,
+            })
+            .collect::<Vec<_>>();
         let row = div()
+            .id("theme-options")
             .flex()
-            .flex_wrap()
+            .flex_row()
             .gap(px(12.0))
+            .overflow_x_scroll()
+            .track_scroll(&self.theme_row_scroll)
+            .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, window, cx| {
+                // A mouse wheel only turns vertically: over a row that overflows it scrolls the
+                // row sideways (a touchpad's sideways swipe already does).
+                let delta = event.delta.pixel_delta(window.line_height());
+                let max = this.theme_row_scroll.max_offset().width;
+                if max > gpui::px(0.0) && delta.y.abs() > delta.x.abs() {
+                    let mut at = this.theme_row_scroll.offset();
+                    at.x = (at.x + delta.y).clamp(-max, gpui::px(0.0));
+                    this.theme_row_scroll.set_offset(at);
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .children(options)
-            .child(custom_tile)
             .e2e("div", "theme-options");
+        // The colour menu hangs under the row (absolute, so it takes no room in the page).
+        let row = div()
+            .relative()
+            .child(row)
+            .children(self.custom_popover(cx).map(|popover| div().absolute().top(gpui::relative(1.0)).left(px(0.0)).child(popover)));
         let vim_on = crate::vim::enabled();
         let vim = choice(
             "vim-mode".into(),
@@ -1805,96 +1788,80 @@ impl SettingsView {
             .into_any_element()
     }
 
-    /// The colour menu's recent colours: the looks used lately, to restore or pin.
-    fn history_row(&self, cx: &mut Context<Self>) -> AnyElement {
-        let items = self.history.iter().map(|entry| {
-            let look = entry.look;
-            let (side, chat) = match look.colour {
-                Some(c) => {
-                    let p = crate::view_model::theme::derive(c);
-                    (p.bg_sidebar, p.bg_chat)
-                }
-                None => theme::swatch_of(look.theme),
-            };
-            let key = look
-                .colour
-                .map(|c| format!("{c:06x}"))
-                .unwrap_or_else(|| look.theme.key().to_owned());
-            let swatch = div()
-                .flex()
-                .w(px(72.0))
-                .h(px(44.0))
-                .rounded(px(theme::RADIUS_SM))
-                .overflow_hidden()
-                .child(div().w(relative_36()).h_full().bg(rgb(side)))
-                .child(div().flex_1().h_full().bg(rgb(chat)));
-            let pin_label = if entry.pinned { ts("Pinned") } else { ts("Pin") };
-            let pin = div()
-                .id(ElementId::from(SharedString::from(format!("history-pin-{key}"))))
-                .px(px(6.0))
-                .rounded(px(theme::RADIUS_SM))
-                .text_size(px(11.0))
-                .cursor_pointer()
-                .text_color(rgb(if entry.pinned {
-                    theme::accent()
-                } else {
-                    theme::text_muted()
-                }))
-                .child(pin_label)
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.emit(super::HistoryPin(look));
-                    cx.stop_propagation();
-                }))
-                .e2e("button", "history-pin")
-                .text(pin_label);
-            div()
-                .id(ElementId::from(SharedString::from(format!("history-{key}"))))
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(px(4.0))
-                .p(px(6.0))
-                .rounded(px(theme::RADIUS))
-                .border_2()
-                .border_color(if entry.pinned {
-                    rgb(theme::accent())
-                } else {
-                    theme::fill_elevated()
-                })
-                .bg(theme::fill_elevated())
-                .cursor_pointer()
-                .child(swatch)
-                .child(pin)
-                .on_click(cx.listener(move |_, _, _, cx| cx.emit(super::HistoryRestore(look))))
-                .e2e(
-                    "button",
-                    if entry.pinned {
-                        "history-item pinned"
-                    } else {
-                        "history-item"
-                    },
-                )
-                .attr("data-colour", key)
-                .attr("data-theme", look.theme.key())
-        });
-        let body: AnyElement = if self.history.is_empty() {
-            muted("Themes and colours you use show up here.", "muted").into_any_element()
-        } else {
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(10.0))
-                .children(items)
-                .e2e("div", "history-items")
-                .into_any_element()
-        };
+    /// A tile of the theme row: the swatch, the label under it, and a ring while selected.
+    /// The label sits on the tile's own fill, so it takes the theme's text colour.
+    fn tile_frame(
+        id: String,
+        selected: bool,
+        swatch: gpui::Div,
+        label: String,
+    ) -> gpui::Stateful<gpui::Div> {
         div()
+            .id(ElementId::from(SharedString::from(id)))
+            .flex_none()
             .flex()
             .flex_col()
-            .gap(px(6.0))
-            .child(muted("Recent colours: click one to bring it back; pin the ones to keep.", "muted"))
-            .child(body)
-            .e2e("div", "theme-history")
+            .gap(px(8.0))
+            .p(px(8.0))
+            .rounded(px(theme::RADIUS_LG))
+            .border_2()
+            .border_color(if selected { rgb(theme::accent()) } else { theme::fill_elevated() })
+            .bg(theme::fill_elevated())
+            .cursor_pointer()
+            .child(swatch)
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(label.clone())
+                    .e2e("span", "theme-name")
+                    .text(&label),
+            )
+    }
+
+    fn two_halves(side: u32, chat: u32) -> gpui::Div {
+        div()
+            .flex()
+            .w(px(120.0))
+            .h(px(72.0))
+            .rounded(px(theme::RADIUS))
+            .overflow_hidden()
+            .child(div().w(relative_36()).h_full().bg(rgb(side)))
+            .child(div().flex_1().h_full().bg(rgb(chat)))
+    }
+
+    /// A built-in theme of the row.
+    fn theme_tile(&self, theme_choice: Theme, selected: bool, cx: &mut Context<Self>) -> AnyElement {
+        let (side, chat) = theme::swatch_of(theme_choice);
+        Self::tile_frame(
+            format!("theme-{}", theme_choice.key()),
+            selected,
+            Self::two_halves(side, chat),
+            t(theme_choice.label()).to_string(),
+        )
+        .on_click(cx.listener(move |this, _, _, cx| {
+            this.theme = theme_choice;
+            this.set_custom_shown(None, cx);
+            cx.emit(ThemeChosen(theme_choice));
+            cx.notify();
+        }))
+        .e2e("button", if selected { "theme-option selected" } else { "theme-option" })
+        .attr("data-theme", theme_choice.key())
+        .into_any_element()
+    }
+
+    /// A recent custom colour of the row: clicking it applies it.
+    fn recent_tile(&self, base: Theme, colour: u32, selected: bool, cx: &mut Context<Self>) -> AnyElement {
+        let p = crate::view_model::theme::derive(colour);
+        let key = format!("{colour:06x}");
+        let look = crate::view_model::theme_history::Look { theme: base, colour: Some(colour) };
+        Self::tile_frame(format!("recent-{key}"), selected, Self::two_halves(p.bg_sidebar, p.bg_chat), format!("#{key}"))
+            .on_click(cx.listener(move |_, _, _, cx| cx.emit(super::HistoryRestore(look))))
+            .e2e(
+                "button",
+                if selected { "theme-option recent selected" } else { "theme-option recent" },
+            )
+            .attr("data-colour", key)
+            .attr("data-base", base.key())
             .into_any_element()
     }
 
@@ -2193,6 +2160,10 @@ impl SettingsView {
         let typed = self.import_input.read(cx).value().to_owned();
         self.import = (!typed.trim().is_empty())
             .then(|| crate::view_model::theme_share::SharedTheme::decode(&typed));
+        if matches!(self.import, Some(Ok(_))) {
+            // The preview is under the Share buttons: out of the way of the menu.
+            self.set_colour_open(false, cx);
+        }
         self.share_note = None;
         cx.notify();
     }
@@ -2204,6 +2175,9 @@ impl SettingsView {
             .unwrap_or_else(|| text.to_owned());
         self.import_input.update(cx, |input, cx| input.set_value(&code, cx));
         self.read_import(cx);
+        if matches!(self.import, Some(Err(_))) {
+            self.set_colour_open(true, cx);
+        }
         self.redraw_inputs(cx);
     }
 
@@ -2261,7 +2235,11 @@ impl SettingsView {
         };
         let code = parsed.as_ref().map(|t| t.encode()).unwrap_or_default();
         self.import_input.update(cx, |input, cx| input.set_value(&code, cx));
+        let readable = parsed.is_ok();
         self.import = Some(parsed);
+        if readable {
+            self.set_colour_open(false, cx);
+        }
         self.share_note = None;
         self.redraw_inputs(cx);
         cx.notify();
@@ -2295,36 +2273,26 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// Appearance's sharing: the look as a code to copy or save, a box to paste one, a
-    /// button to open a file, and the preview of what was read, applied only on request.
+    /// Appearance's sharing (#490): a Share theme button that copies the theme code to the
+    /// clipboard (the shell says so in a toast; the code itself is not shown) and one that
+    /// saves it to a file. Pasting or opening a code is under Custom.
     fn share_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let code = self.shared_now().encode();
-        let copied = code.clone();
-        let code_row = div()
+        let buttons = div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap(px(10.0))
             .child(
-                div()
-                    .font_family(theme::MONO)
-                    .px(px(10.0))
-                    .py(px(6.0))
-                    .rounded(px(theme::RADIUS_SM))
-                    .bg(theme::fill_input())
-                    .child(code.clone())
-                    .e2e("code", "theme-code")
-                    .text(&code),
-            )
-            .child(
-                button("theme-copy", "Copy", Kind::Secondary, "")
-                    .child(icon("copy", 16.0).text_color(rgb(theme::text())))
-                    .child(t("Copy"))
-                    .on_click(move |_, _, cx| {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied.clone()))
-                    })
+                button("theme-copy", "Share theme", Kind::Secondary, "")
+                    .child(icon("share-2", 16.0).text_color(rgb(theme::text())))
+                    .child(t("Share theme"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let code = this.shared_now().encode();
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(code));
+                        cx.emit(super::ThemeCodeCopied);
+                    }))
                     .e2e("button", "secondary theme-copy")
-                    .text(t("Copy")),
+                    .text(t("Share theme")),
             )
             .child(
                 button("theme-save", "Save to file", Kind::Secondary, "")
@@ -2334,12 +2302,29 @@ impl SettingsView {
                     .e2e("button", "secondary theme-save")
                     .text(t("Save to file")),
             );
+        let mut children = vec![
+            muted(
+                "Copies your theme as a code (the theme, custom colour and glass) to send to a friend in a message or a file; they can paste it under Custom, or choose Apply this theme on the message.",
+                "muted",
+            )
+            .into_any_element(),
+            buttons.into_any_element(),
+        ];
+        if let Some(note) = &self.share_note {
+            children.push(muted(note, "muted theme-note").into_any_element());
+        }
+        children.extend(self.import_preview(cx));
+        section("Share a theme", "theme-share", children, self.hl("theme-share"))
+    }
+
+    /// Under Custom: a box to paste a theme code and a button to open a file.
+    fn import_block(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let import_row = div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap(px(10.0))
-            .child(div().w(px(320.0)).child(self.import_input.clone()))
+            .child(div().w(px(180.0)).child(self.import_input.clone()))
             .child(
                 button("theme-open", "Open file", Kind::Secondary, "")
                     .child(icon("folder-open", 16.0).text_color(rgb(theme::text())))
@@ -2350,71 +2335,63 @@ impl SettingsView {
             )
             .e2e("div", "theme-import");
         let mut children = vec![
-            muted(
-                "Your theme as a code (the theme, custom colour and glass). Send it to a friend in a message or a file; they can paste it below, or choose Apply this theme on the message.",
-                "muted",
-            )
-            .into_any_element(),
-            code_row.into_any_element(),
+            muted("Or paste a theme code, or open a theme file.", "muted").into_any_element(),
             import_row.into_any_element(),
         ];
-        if let Some(note) = &self.share_note {
-            children.push(muted(note, "muted theme-note").into_any_element());
+        if let Some(Err(err)) = &self.import {
+            children.push(note(&err.message(), "theme-import-error", theme::danger()).into_any_element());
         }
-        match &self.import {
-            None => {}
-            Some(Err(err)) => children.push(
-                note(&err.message(), "theme-import-error", theme::danger()).into_any_element(),
-            ),
-            Some(Ok(shared)) => {
-                let p = shared.palette();
-                let summary = shared.summary();
-                children.push(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(8.0))
-                        .child(muted(&crate::view_model::i18n::tf("Preview: %{summary}. Nothing changes until you apply it.", &[("summary", &summary.to_string())]), "muted"))
-                        .child(
-                            div()
-                                .child(preview(p))
-                                .e2e("div", "theme-import-preview")
-                                .attr("data-bg", format!("{:06x}", p.bg_chat)),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap(px(10.0))
-                                .child(
-                                    button("theme-apply", "Apply", Kind::Primary, "")
-                                        .child(icon("check", 16.0).text_color(rgb(theme::on_accent_solid())))
-                                        .child(t("Apply"))
-                                        .on_click(cx.listener(|this, _, _, cx| this.apply_import(cx)))
-                                        .e2e("button", "primary theme-apply")
-                                        .text(t("Apply")),
-                                )
-                                .child(
-                                    button("theme-cancel", "Cancel", Kind::Secondary, "")
-                                        .child(t("Cancel"))
-                                        .on_click(cx.listener(|this, _, _, cx| this.cancel_import(cx)))
-                                        .e2e("button", "secondary theme-cancel")
-                                        .text(t("Cancel")),
-                                ),
-                        )
-                        .into_any_element(),
-                );
-            }
-        }
-        section("Share a theme", "theme-share", children, self.hl("theme-share"))
+        children
     }
 
-    /// The Custom tile (#354): same size as the theme tiles, with a large palette icon. It opens
-    /// the colour menu under it and is selected while a custom colour is in use.
+    /// What a pasted code or opened file holds, below the Share buttons: a preview, applied
+    /// only on request. (An unreadable one is told in the Custom menu, where it was entered.)
+    fn import_preview(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let Some(Ok(shared)) = &self.import else {
+            return None;
+        };
+        let p = shared.palette();
+        let summary = shared.summary();
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.0))
+                .child(muted(&crate::view_model::i18n::tf("Preview: %{summary}. Nothing changes until you apply it.", &[("summary", &summary.to_string())]), "muted"))
+                .child(
+                    div()
+                        .child(preview(p))
+                        .e2e("div", "theme-import-preview")
+                        .attr("data-bg", format!("{:06x}", p.bg_chat)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(10.0))
+                        .child(
+                            button("theme-apply", "Apply", Kind::Primary, "")
+                                .child(icon("check", 16.0).text_color(rgb(theme::on_accent_solid())))
+                                .child(t("Apply"))
+                                .on_click(cx.listener(|this, _, _, cx| this.apply_import(cx)))
+                                .e2e("button", "primary theme-apply")
+                                .text(t("Apply")),
+                        )
+                        .child(
+                            button("theme-cancel", "Cancel", Kind::Secondary, "")
+                                .child(t("Cancel"))
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_import(cx)))
+                                .e2e("button", "secondary theme-cancel")
+                                .text(t("Cancel")),
+                        )
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// The Custom item of the theme row (#354, #490): same size as the theme tiles, with a
+    /// large palette icon. A button that opens the colour menu; it is never the selected one
+    /// (the custom colour in use is its own tile in the row).
     fn custom_tile(&self, cx: &mut Context<Self>) -> AnyElement {
-        use crate::view_model::theme::on_colour;
-        let selected = self.custom.is_some();
-        let fill = self.custom.map(crate::view_model::theme::derive).map(|p| p.bg_sidebar);
-        let ink = fill.map(on_colour).unwrap_or_else(theme::text_muted);
         let swatch = div()
             .flex()
             .items_center()
@@ -2422,39 +2399,18 @@ impl SettingsView {
             .w(px(120.0))
             .h(px(72.0))
             .rounded(px(theme::RADIUS))
-            .bg(match fill {
-                Some(c) => rgb(c).into(),
-                None => theme::fill_elevated(),
-            })
+            .bg(theme::fill_elevated())
             .border_1()
             .border_color(rgba(theme::edge()))
             .child(
                 div()
                     .id("theme-custom-icon")
-                    .child(icon("palette", 40.0).text_color(rgb(ink)))
+                    .child(icon("palette", 40.0).text_color(rgb(theme::text_muted())))
                     .tip(super::colour_field::tip())
                     .e2e("div", "custom-palette-icon")
                     .attr("data-tip", super::colour_field::tip()),
             );
-        let tile = div()
-            .id("theme-custom")
-            .flex()
-            .flex_col()
-            .gap(px(8.0))
-            .p(px(8.0))
-            .rounded(px(theme::RADIUS_LG))
-            .border_2()
-            .border_color(if selected { rgb(theme::accent()) } else { theme::fill_elevated() })
-            .bg(theme::fill_elevated())
-            .cursor_pointer()
-            .child(swatch)
-            .child(
-                div()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(t("Custom"))
-                    .e2e("span", "theme-name")
-                    .text(t("Custom")),
-            )
+        Self::tile_frame("theme-custom".into(), self.colour_open, swatch, t("Custom").to_string())
             .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
                 // The press that closed the menu (outside it, on this tile) is this click's
                 // own and must not open it again. Any later click is a fresh one (#359: a
@@ -2465,16 +2421,15 @@ impl SettingsView {
                 let open = !this.colour_open && !closed_by_this;
                 this.set_colour_open(open, cx);
             }))
-            .e2e(
-                "button",
-                if selected {
-                    "theme-option custom colour-field-button selected"
-                } else {
-                    "theme-option custom colour-field-button"
-                },
-            )
-            .attr("data-theme", "custom");
-        let popover = self.colour_open.then(|| {
+            .e2e("button", "theme-option custom colour-field-button")
+            .attr("data-theme", "custom")
+            .into_any_element()
+    }
+
+    /// The colour menu under the row while Custom is open: the hex box, the picker, and the
+    /// theme-code entry.
+    fn custom_popover(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.colour_open.then(|| {
             let grid = self.colour_grid_view(cx);
             let content = div()
                 .flex()
@@ -2483,7 +2438,7 @@ impl SettingsView {
                 .child(div().w(px(180.0)).child(self.colour_input.clone()))
                 .child(self.hsv_sliders(cx))
                 .child(grid)
-                .child(self.history_row(cx))
+                .children(self.import_block(cx))
                 .into_any_element();
             let this = cx.entity().downgrade();
             let closer = this.clone();
@@ -2503,8 +2458,7 @@ impl SettingsView {
                         .ok();
                 },
             )
-        });
-        div().relative().child(tile).children(popover).into_any_element()
+        })
     }
 
     /// The picker's grid of colours.
