@@ -1,0 +1,23 @@
+# The UniFFI binding generator on its own, so generating the Kotlin bindings
+# does not build crates/ffi (and matrix-sdk, aws-lc, ...) for the host. It reads the
+# metadata out of the finished Android library. Its own workspace and lock file:
+# scripts/android-ffi.sh builds it once into target/uniffi-bindgen and checks that
+# the version below is the one crates/ffi uses (Cargo.lock).
+[package]
+name = "uniffi-bindgen-tool"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/main.rs"
+
+[dependencies]
+uniffi = { version = "=0.32.2", features = ["cli"] }
+
+[workspace]
+
+[profile.dev]
+opt-level = 0
+debug = false

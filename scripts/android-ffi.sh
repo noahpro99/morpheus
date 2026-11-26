@@ -24,6 +24,7 @@ esac
 rm -rf "$out/jniLibs" "$out/kotlin"
 mkdir -p "$out/jniLibs" "$out/kotlin"
 first=""
+strip=${ANDROID_NDK_HOME:+$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip}
 for abi in ${abis//,/ }; do
     case "$abi" in
         arm64-v8a) triple=aarch64-linux-android ;;
@@ -32,18 +33,35 @@ for abi in ${abis//,/ }; do
     esac
     cargo build -p morpheus-ffi --target "$triple" --profile "$profile"
     mkdir -p "$out/jniLibs/$abi"
-    cp "target/$triple/$profile_dir/libmorpheus_ffi.so" "$out/jniLibs/$abi/"
-    first=${first:-$out/jniLibs/$abi/libmorpheus_ffi.so}
+    lib="target/$triple/$profile_dir/libmorpheus_ffi.so"
+    if [ "$profile" = android-dev ] && [ -x "$strip" ]; then
+        # The symbol table (56 MB of 186) is only for backtraces; the library in jniLibs does without. The unstripped one
+        # in target/ stays: UniFFI's metadata (the bindings below) is read from its symbols.
+        "$strip" --strip-all -o "$out/jniLibs/$abi/libmorpheus_ffi.so" "$lib"
+    else
+        cp "$lib" "$out/jniLibs/$abi/"
+    fi
+    first=${first:-$lib}
 done
 
-# The bindings are read from the library's own metadata (any ABI will do).
-cargo run -q -p morpheus-ffi --features bindgen --bin uniffi-bindgen -- \
-    generate --library "$first" --language kotlin --no-format --out-dir "$out/kotlin"
+# The bindings are read from the library's own metadata (any ABI will do). The
+# generator is a small crate of its own (tools/uniffi-bindgen), so no host build
+# of crates/ffi (matrix-sdk, aws-lc, ...) happens here and the host target trees
+# of the other shells are left alone. Its binary stays in target/uniffi-bindgen
+# (cargo has nothing to do when it is there).
+want=$(awk '/^name = "uniffi"$/ {getline; gsub(/[^0-9.]/, "", $0); print $0; exit}' Cargo.lock)
+have=$(sed -nE 's/^uniffi = .*"=([0-9.]+)".*/\1/p' tools/uniffi-bindgen/Cargo.toml)
+[ "$want" = "$have" ] || { echo "tools/uniffi-bindgen pins uniffi $have but Cargo.lock has $want: update its Cargo.toml and lock" >&2; exit 1; }
+bindgen_dir=target/uniffi-bindgen
+CARGO_TARGET_DIR=$bindgen_dir cargo build -q --manifest-path tools/uniffi-bindgen/Cargo.toml
+"$bindgen_dir/debug/uniffi-bindgen" generate --library "$first" --language kotlin --no-format --out-dir "$out/kotlin"
 
 # WebRTC's Java classes (calls) come with the build of its native half; the
 # app compiles against them and ships them. The same jar serves every ABI.
 mkdir -p "$out/libs"
-case "$first" in */x86_64/*) flavour=android-x64 ;; *) flavour=android-arm64 ;; esac
-jar=$(find target -name libwebrtc.jar -path "*/$flavour-release-webrtc*" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -n 1 | cut -d" " -f2- || true)
+case "$first" in *x86_64-linux-android*) flavour=android-x64 ;; *) flavour=android-arm64 ;; esac
+# It sits in the download folder of the build script of this profile (a search of all of target/ took 20 s).
+jar=$(ls -t "target/$profile_dir"/build/*/out/livekit_webrtc/livekit/"$flavour"-release-webrtc*/*/libwebrtc.jar 2>/dev/null | head -n 1 || true)
+[ -n "$jar" ] || jar=$(find "target/$profile_dir" -name libwebrtc.jar -path "*/$flavour-release-webrtc*" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -n 1 | cut -d" " -f2- || true)
 [ -n "$jar" ] || { echo "libwebrtc.jar was not built" >&2; exit 1; }
 cp "$jar" "$out/libs/libwebrtc.jar"

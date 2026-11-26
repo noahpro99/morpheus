@@ -189,3 +189,20 @@ roborazzi {
 tasks.withType<Test>().configureEach {
     systemProperty("jna.library.path", (if (rustPrebuilt != null) File(rustPrebuilt, "lib") else repoRoot.resolve("target/debug")).absolutePath)
 }
+
+// Gradle updates the APK in place (an incremental package): each rebuild leaves the old copy of the changed library
+// inside as dead space, and the debug APK grew past 385 MB for a 190 MB library (a slow `adb install` too). Once the
+// file is half as big again as what it holds (the libraries and 20 MB for the rest), it is deleted before the package
+// task looks at it: with its output gone Gradle packages whole again. (Deleting it inside the task is too late and
+// leaves an APK with only what changed.)
+for (variant in listOf("Debug", "Release")) {
+    val trim = tasks.register("trim${variant}Apk") {
+        val apks = layout.buildDirectory.dir("outputs/apk/${variant.lowercase()}")
+        val libs = rustOut.map { it.dir("jniLibs") }
+        doLast {
+            val held = libs.get().asFile.walkTopDown().filter { it.isFile }.sumOf { it.length() } + 20_000_000L
+            apks.get().asFile.listFiles { f -> f.extension == "apk" }?.filter { it.length() > held * 3 / 2 }?.forEach { it.delete() }
+        }
+    }
+    tasks.matching { it.name == "package$variant" }.configureEach { dependsOn(trim) }
+}
