@@ -240,6 +240,17 @@ class TestBridge(private val app: Application) {
                     .put("text", it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString())
             })
         }
+        // The ongoing call notification (#494): its action titles and importance; or fire the action with this title, as a tap in the shade would.
+        "call_notification" -> {
+            val manager = app.getSystemService(android.app.NotificationManager::class.java)
+            val n = manager.activeNotifications.firstOrNull { it.id == CallService.ID }?.notification ?: error("no call notification")
+            val titles = (n.actions ?: emptyArray()).map { it.title.toString() }
+            request.optString("fire").takeIf { it.isNotEmpty() }?.let { want ->
+                (n.actions ?: emptyArray()).first { it.title.toString() == want }.actionIntent.send()
+            }
+            JSONObject().put("actions", JSONArray(titles)).put("importance", manager.getNotificationChannel(n.channelId).importance)
+                .put("big_content", n.extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT) != null)
+        }
         "gain" -> {
             // What a person's voice plays at now, and the kept microphone and speaker volumes.
             val morpheus = (app as MorpheusApp).morpheus

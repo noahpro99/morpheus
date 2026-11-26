@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,17 +60,25 @@ fun QuickFind(model: AppModel, modifier: Modifier = Modifier) {
     // The best result stays at the bottom, in view, as the query changes.
     val list = rememberLazyListState()
     LaunchedEffect(query, hits.map { it.id + it.label }) { list.scrollToItem(0) }
+    // The results may be scrolled until the last one is about half way down the screen, where a thumb reaches (#511): half the list's height of room above it.
+    var half by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding().testTag("switcher")) {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("switcher-results"), state = list, reverseLayout = true) {
-            items(hits, key = { it.kind.name + it.id + it.label }) { hit ->
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth().onSizeChanged { half = it.height / 2f }.testTag("switcher-results"), state = list, reverseLayout = true,
+            contentPadding = PaddingValues(top = with(androidx.compose.ui.platform.LocalDensity.current) { half.toDp() }),
+        ) {
+            itemsIndexed(hits, key = { _, it -> it.kind.name + it.id + it.label }) { index, hit ->
                 ListRow(
                     hit.label, "switcher-hit-${hit.label}",
+                    // The best match, at the bottom, is the one the keyboard's action opens (#514).
+                    selected = index == 0,
+                    modifier = Modifier.semantics { if (index == 0) stateDescription = t("Best match") },
                     supporting = hit.detail.takeIf { it.isNotEmpty() },
                     leading = { Leading(hit) },
                 ) { model.pickSwitcherHit(hit) }
             }
         }
-        SearchField(query, { query = it }, t("Search everything"), "switcher-input", Modifier.padding(horizontal = Space.md, vertical = Space.sm), focus = focus)
+        SearchField(query, { query = it }, t("Search everything"), "switcher-input", Modifier.padding(horizontal = Space.md, vertical = Space.sm), focus = focus, onSearch = { hits.firstOrNull()?.let { model.pickSwitcherHit(it) } })
     }
 }
 

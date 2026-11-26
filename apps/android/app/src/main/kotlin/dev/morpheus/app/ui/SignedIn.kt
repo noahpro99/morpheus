@@ -243,7 +243,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.railItem + Space.lg).toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    PullDown(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail")) {
+    Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail")) {
     LazyColumn(
         Modifier.fillMaxSize(), reverseLayout = true,
         // The first server is at the bottom, near the thumb (#503); the same 16 dp under it as under the channel list, so its bottom item is level with the list's.
@@ -362,7 +362,7 @@ private fun ChannelList(
             // Every list is anchored at the bottom, near the thumb: the first room is the lowest, later ones go up, and a short list rests at the
             // bottom (#471, #503). The list is laid out from the bottom, so a section's rooms come before its heading (drawn above them), and the
             // invitations come last (they are at the top).
-            PullDown(Modifier.fillMaxSize().testTag("rooms-list")) {
+            Box(Modifier.fillMaxSize().testTag("rooms-list")) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true, contentPadding = PaddingValues(vertical = Space.lg)) {
                 for ((index, section) in scope.sections.withIndex()) {
                     items(section.rooms, key = { it.id }) { room ->
@@ -394,9 +394,9 @@ private fun ChannelList(
  * slot, so a name never runs under it), at least 48 dp tall (a DM 60). `callName` names someone in the room's call.
  */
 @Composable
-fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String) {
+fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
-    Box(Modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent)) {
+    Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent)) {
         Column {
             ListRow(
                 room.name, "room-${room.name}",
@@ -408,7 +408,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                         if (room.isDm) {
                             Avatar(room.avatar, room.name, Size.avatar, key = room.avatarKey)
                         } else {
-                            GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp)
                         if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
@@ -517,32 +517,3 @@ fun InviteCard(invite: InviteItem, model: AppModel, modifier: Modifier = Modifie
 }
 
 
-/**
- * A list that can be pulled down past its top and stays there, up to half its height: the top item is then
- * about half way up the screen, where a thumb reaches. A drag up gives the pull back before the list scrolls.
- * A launch is not pulled: it starts at the top.
- */
-@Composable
-private fun PullDown(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    var pull by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    var most by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val connection = remember {
-        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                if (pull <= 0f || available.y >= 0f) return androidx.compose.ui.geometry.Offset.Zero
-                val used = minOf(pull, -available.y)
-                pull -= used
-                return androidx.compose.ui.geometry.Offset(0f, -used)
-            }
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                if (available.y <= 0f || most <= 0f) return androidx.compose.ui.geometry.Offset.Zero
-                val used = minOf(available.y, most - pull)
-                pull += used
-                return androidx.compose.ui.geometry.Offset(0f, used)
-            }
-        }
-    }
-    Box(modifier.clipToBounds().onSizeChanged { most = it.height / 2f }.nestedScroll(connection)) {
-        Box(Modifier.fillMaxSize().graphicsLayer { translationY = pull }) { content() }
-    }
-}

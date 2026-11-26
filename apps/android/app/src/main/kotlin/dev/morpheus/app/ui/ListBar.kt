@@ -49,8 +49,11 @@ fun ListSearchBar(model: AppModel, hint: String, modifier: Modifier = Modifier, 
     val muted = ComposerColours.hint(scheme)
     // A pill that is not a text field: a text field takes the focus when a window over it closes (a sheet, a page) and would open the
     // switcher by itself. The taps are read by pointerInput (a clickable would merge the bell and the picture into the bar's node).
+    androidx.compose.foundation.layout.Column(modifier) {
+    // The call going is a strip right above the bar (#473); the list above it is shortened by it.
+    CallStrip(model)
     Row(
-        modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm).height(SearchBarHeight).clip(CircleShape)
+        Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm).height(SearchBarHeight).clip(CircleShape)
             .background(ComposerColours.fill(scheme))
             .pointerInput(Unit) { detectTapGestures(onTap = { model.openSwitcher() }) }
             .semantics { role = Role.Button; contentDescription = hint; onClick { model.openSwitcher(); true } }
@@ -64,6 +67,7 @@ fun ListSearchBar(model: AppModel, hint: String, modifier: Modifier = Modifier, 
             Bell(model)
             extra?.invoke()
         }
+    }
     }
 }
 

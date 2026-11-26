@@ -82,7 +82,6 @@ fun Root(model: AppModel) {
                     val going = call
                     if (going != null && callOpen) CallScreen(model.calls, going)
                     else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
-                        if (going != null) CallBar(model.calls, going)
                         Box(Modifier.weight(1f)) {
                             // The room covers the lists and the lists under it stay exactly where they are (they are only drawn while the room is
                             // moving or not open; #394). It comes from its own edge (a DM from the left, a channel from the right: the way the finger

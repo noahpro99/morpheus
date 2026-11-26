@@ -55,6 +55,7 @@ import uniffi.morpheus_ffi.RoomDetails
 
 /** The page a sheet item opened, over whatever is on screen. */
 @Composable
+@Suppress("ModifierMissing") // a host: it draws whatever page is asked for over the screen, with no layout of its own
 fun RoomPageHost(app: AppModel) {
     val request by app.page.collectAsState()
     val page = request ?: return

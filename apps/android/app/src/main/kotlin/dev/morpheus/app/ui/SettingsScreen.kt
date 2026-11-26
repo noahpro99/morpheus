@@ -83,11 +83,12 @@ fun SettingsScreen(app: AppModel) {
         ) {
             if (page == "Appearance") {
             Heading(t("Appearance"))
+            val context = androidx.compose.ui.platform.LocalContext.current
             Row(Modifier.padding(horizontal = Space.lg).testTag("setting-theme"), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 for (choice in app.morpheus.themes()) {
-                    val chosen = look.theme == choice.key && look.colour == null
+                    val chosen = look.theme == choice.key && look.colour == null && !(MaterialYou.enabled && MaterialYou.offered())
                     OutlinedCard(
-                        { attempt { app.useAppearance(app.morpheus.setTheme(choice.key)) } },
+                        { attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.setTheme(choice.key)) } },
                         Modifier.testTag("theme-${choice.key}"),
                         border = BorderStroke(2.dp, if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
                     ) { Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -100,7 +101,6 @@ fun SettingsScreen(app: AppModel) {
                 }
             }
             if (MaterialYou.offered()) {
-                val context = androidx.compose.ui.platform.LocalContext.current
                 ToggleRow(t("Material You"), MaterialYou.enabled, "theme-material-you", supporting = t("Use the colours of your wallpaper (Android 12 and up)")) { MaterialYou.set(context, it) }
             }
             var colour by remember { mutableStateOf("") }
@@ -110,7 +110,7 @@ fun SettingsScreen(app: AppModel) {
             )
             Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedTextField(colour, { colour = it }, Modifier.weight(1f).testTag("colour-input"), placeholder = { Text("2a4d8f") }, singleLine = true)
-                Button({ attempt { app.useAppearance(app.morpheus.setCustomColour(colour)) } }, Modifier.testTag("colour-apply"), enabled = colour.isNotBlank()) { Text(t("Use")) }
+                Button({ attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.setCustomColour(colour)) } }, Modifier.testTag("colour-apply"), enabled = colour.isNotBlank()) { Text(t("Use")) }
             }
             val clipboard = LocalClipboardManager.current
             val code = remember(look) { app.morpheus.themeCode() }
@@ -125,7 +125,7 @@ fun SettingsScreen(app: AppModel) {
             LaunchedEffect(offered) { offered?.let { pasted = it; app.themeCodeTried() } }
             Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedTextField(pasted, { pasted = it }, Modifier.weight(1f).testTag("code-input"), placeholder = { Text(t("Paste a theme code.")) }, singleLine = true)
-                Button({ attempt { app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }
+                Button({ attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }
             }
 
             Heading(t("Time format"))

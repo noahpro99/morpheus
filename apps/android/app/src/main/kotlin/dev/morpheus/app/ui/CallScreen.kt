@@ -32,6 +32,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -85,7 +90,38 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
     BackHandler { if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }
     val speaker by calls.speaker.collectAsState()
     var panel by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("call-screen")) {
+    // A swipe down minimises the call to its strip (#474): the screen follows the finger, a short slow drag springs back. A drag the call's own
+    // lists or sliders take (they consume it first) is theirs.
+    val drop = remember { androidx.compose.animation.core.Animatable(0f) }
+    var height by remember { mutableFloatStateOf(1f) }
+    var speed by remember { mutableFloatStateOf(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Column(
+        Modifier.fillMaxSize()
+            .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
+            .offset { androidx.compose.ui.unit.IntOffset(0, drop.value.toInt()) }
+            .pointerInput(snapshot.phase) {
+                detectVerticalDragGestures(
+                    onDragStart = { speed = 0f },
+                    onDragEnd = {
+                        val goes = drop.value > height * 0.2f || speed > 1200f
+                        scope.launch {
+                            if (goes && snapshot.phase != CallPhase.FAILED) {
+                                drop.animateTo(height, Motion.slide())
+                                calls.show(false)
+                                drop.snapTo(0f)
+                            } else drop.animateTo(0f, Motion.slide())
+                        }
+                    },
+                    onDragCancel = { scope.launch { drop.animateTo(0f, Motion.slide()) } },
+                ) { change, amount ->
+                    val dt = (change.uptimeMillis - change.previousUptimeMillis).coerceAtLeast(1L)
+                    speed = amount / dt * 1000f
+                    scope.launch { drop.snapTo((drop.value + amount).coerceAtLeast(0f)) }
+                }
+            }
+            .background(Palette.Surface).testTag("call-screen"),
+    ) {
         Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 28.dp) }
             Column(Modifier.weight(1f)) {
@@ -107,6 +143,8 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
         val person = panel?.let { id -> snapshot.people.firstOrNull { it.userId == id } }
         if (panel == SETTINGS_PANEL) {
             CallSettings(calls) { panel = null }
+        } else if (panel == OUTPUT_PANEL) {
+            OutputPanel(calls) { panel = null }
         } else if (panel != null && person != null) {
             PersonVolumePanel(calls, person) { panel = null }
         } else {
@@ -119,7 +157,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                 items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card) { panel = it } }
             }
         }
-        Controls(calls, snapshot, speaker) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
+        Controls(calls, snapshot, speaker, openOutput = { panel = if (panel == OUTPUT_PANEL) null else OUTPUT_PANEL }) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
     }
 }
 
@@ -193,7 +231,7 @@ private fun VideoPicture(calls: CallModel, card: CallCard) {
 }
 
 @Composable
-private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean, openSettings: () -> Unit) {
+private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean, openOutput: () -> Unit, openSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Palette.Background).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -207,11 +245,12 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
         Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_headphones, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
         if (snapshot.canSendVideo) Control(dev.morpheus.app.R.drawable.ic_lucide_video, t("Camera"), "call-camera", snapshot.camera) { calls.toggleCamera() }
         if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_lucide_refresh_cw, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
-        Control(if (speaker) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_phone, t("Speaker"), "call-speaker", speaker) { calls.toggleSpeaker() }
+        Control(if (speaker) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_phone, t("Speaker"), "call-speaker", speaker) { openOutput() }
         Control(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Call settings"), "call-settings", false) { openSettings() }
         androidx.compose.material3.FilledIconButton(
             { calls.hangUp() },
             Modifier.size(48.dp).semantics { contentDescription = t("Hang up") }.testTag("call-hangup"),
+            shape = RoundedCornerShape(Radius.md),
             colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
         ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_phone_off) }
     }
@@ -220,9 +259,12 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
 @Composable
 private fun Control(@androidx.annotation.DrawableRes icon: Int, description: String, tag: String, on: Boolean, onClick: () -> Unit) {
     // On: the primary colour with its on-colour; off: the raised surface with the text colour.
+    // A rounded square like the desktop's call buttons (#495), a little rounder while on: the corner morphs on the M3 spatial spring.
+    val corner by androidx.compose.animation.core.animateDpAsState(if (on) Radius.lg else Radius.md, androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.Standard), label = "corner")
     androidx.compose.material3.FilledIconToggleButton(
         on, { onClick() },
         Modifier.size(48.dp).semantics { contentDescription = description }.testTag(tag),
+        shape = RoundedCornerShape(corner),
         colors = androidx.compose.material3.IconButtonDefaults.filledIconToggleButtonColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface,
             checkedContainerColor = MaterialTheme.colorScheme.primary, checkedContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -230,10 +272,19 @@ private fun Control(@androidx.annotation.DrawableRes icon: Int, description: Str
     ) { GlyphIcon(icon) }
 }
 
+/** The call strip (#473): above the list's search bar and above a chat's composer, while a call goes and its screen is not open. */
+@Composable
+fun CallStrip(model: dev.morpheus.app.AppModel) {
+    val call by model.calls.snapshot.collectAsState()
+    val open by model.calls.open.collectAsState()
+    val going = call
+    if (going != null && !open) CallBar(model.calls, going)
+}
+
 /** The call going, as a bar over the rest of the app: back to it, mute, hang up. */
 @Composable
 fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
-    androidx.compose.material3.Surface(onClick = { calls.show(true) }, Modifier.fillMaxWidth().testTag("call-bar"), color = Palette.Accent) {
+    androidx.compose.material3.Surface(onClick = { calls.show(true) }, Modifier.fillMaxWidth().padding(horizontal = Space.md).testTag("call-bar"), color = Palette.Accent, shape = RoundedCornerShape(Radius.md)) {
     Row(
         Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -252,6 +303,7 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
 }
 
 private const val SETTINGS_PANEL = "settings"
+private const val OUTPUT_PANEL = "output"
 
 /** A volume from 0 to 2 as a percentage, in steps of a tenth. */
 private fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
@@ -287,19 +339,36 @@ private fun ColumnScope.PersonVolumePanel(calls: CallModel, person: CallPerson, 
     }
 }
 
-/** The call's own volumes and where its sound goes. */
+/** The call's own settings: the microphone volume. The sound's volume is the system's (the volume keys, #496). */
 @Composable
 private fun ColumnScope.CallSettings(calls: CallModel, close: () -> Unit) {
     val kept = remember { calls.volumes() }
-    var tick by remember { mutableIntStateOf(0) }
     Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("call-settings-panel")) {
-        VolumeRow(t("Output volume"), "output-volume", kept.output) { calls.setOutputVolume(it) }
         VolumeRow(t("Microphone volume"), "input-volume", kept.input) { calls.setInputVolume(it) }
-        Text(t("Sound goes to"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+        TextButton(close, Modifier.testTag("call-settings-close")) { Text(t("Close")) }
+    }
+}
+
+/** Where the call's sound goes (#496): every output there is as a radio row, the current one chosen; a headset coming or going updates the list. */
+@Composable
+private fun ColumnScope.OutputPanel(calls: CallModel, close: () -> Unit) {
+    var tick by remember { mutableIntStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val audio = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        val watch = object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>?) { tick++ }
+            override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>?) { tick++ }
+        }
+        audio.registerAudioDeviceCallback(watch, null)
+        onDispose { audio.unregisterAudioDeviceCallback(watch) }
+    }
+    Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("output-panel")) {
+        Text(t("Sound goes to"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         tick
         for (route in calls.routes()) {
             ChoiceRow(route.label, route.on, "route-${route.key}") { calls.chooseRoute(route.key); tick++ }
         }
-        TextButton(close, Modifier.testTag("call-settings-close")) { Text(t("Close")) }
+        TextButton(close, Modifier.testTag("output-close")) { Text(t("Close")) }
     }
 }

@@ -252,6 +252,8 @@ fun ScreenScaffold(tag: String, topBar: @Composable () -> Unit, modifier: Modifi
 fun SearchField(
     query: String, onQuery: (String) -> Unit, hint: String, tag: String, modifier: Modifier = Modifier,
     focus: androidx.compose.ui.focus.FocusRequester? = null, trailing: (@Composable () -> Unit)? = null,
+    /** The keyboard's action key (#514). */
+    onSearch: () -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     val fill = ComposerColours.fill(scheme)
@@ -269,7 +271,7 @@ fun SearchField(
     androidx.compose.material3.DockedSearchBar(
         inputField = {
             androidx.compose.material3.SearchBarDefaults.InputField(
-                query = query, onQueryChange = onQuery, onSearch = {}, expanded = false, onExpandedChange = {},
+                query = query, onQueryChange = onQuery, onSearch = { onSearch() }, expanded = false, onExpandedChange = {},
                 modifier = Modifier.testTag(tag)
                     .semantics { contentDescription = hint }
                     .then(if (focus != null) Modifier.focusRequester(focus) else Modifier),

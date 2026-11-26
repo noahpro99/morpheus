@@ -219,6 +219,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     TextButton({ model.discard(item.id) }, Modifier.testTag("send-discard")) { Text(t("Discard")) }
                 }
             }
+            // The call going is a strip above the composer (#473).
+            CallStrip(app)
             val problem by model.error.collectAsState()
             // Over the composer, so it stays a line above it (a toast would cover the send button).
             problem?.let {
@@ -264,8 +266,8 @@ private fun Timeline(
     onImage: (MediaHandle) -> Unit,
     onFile: (MediaHandle, String) -> Unit,
     onFull: (MessageItem) -> Unit,
-    isDm: Boolean,
     onPull: () -> Unit,
+    isDm: Boolean,
 ) {
     val state = rememberLazyListState()
     // A pull down at the newest message (the finger moving down while the list rests at the bottom) brings the button row back (#502).
@@ -330,9 +332,6 @@ private fun Timeline(
     Box(modifier) {
     // Nothing yet: placeholders where the messages will be.
     if (rows.isEmpty()) Column(Modifier.align(Alignment.BottomStart).padding(bottom = Space.lg)) { SkeletonRows(7) }
-    // No stretch at the ends (#470): it held the list in its pulled state when a page of older messages arrived under it, and
-    // the next drags up went into the stretch instead of the list.
-    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
     LazyColumn(Modifier.fillMaxSize().nestedScroll(pullDown).testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
@@ -372,7 +371,6 @@ private fun Timeline(
         // Older messages on their way (#501): skeleton rows above the oldest, so scrolling up never meets a blank edge. They are the last item of
         // this bottom-up list, past the one the list is anchored on (#470), so their coming and going moves nothing the person is reading.
         if (waitingForOlder) item(key = "older-skeleton") { Box(Modifier.padding(vertical = Space.md).testTag("older-skeleton")) { SkeletonRows(3) } }
-    }
     }
     if (dividerAt >= 0 && !dividerShowing) {
         val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -610,7 +608,8 @@ private fun Composer(
         if (!focused) dismissed = false
     }
     val composing = (focused && !dismissed) || text.isNotEmpty()
-    LaunchedEffect(composing, text) { onComposing(composing) }
+    val composingChanged by androidx.compose.runtime.rememberUpdatedState(onComposing)
+    LaunchedEffect(composing, text) { composingChanged(composing) }
     var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     LaunchedEffect(text) { suggestions = model.suggest(text) }
     LaunchedEffect(text) { if (text.isNotBlank()) model.typing() }

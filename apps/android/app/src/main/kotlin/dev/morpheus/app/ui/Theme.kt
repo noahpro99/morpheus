@@ -92,13 +92,19 @@ object MaterialYou {
     private const val FILE = "look"
     private const val KEY = "material_you"
 
-    /** Whether it is on (the person's choice; only in effect where it is offered). */
+    /** Whether it is on: the person's choice, which is kept; with none made, on where it is offered (Android 12 and up, #515). */
     var enabled by mutableStateOf(false)
         private set
 
+    /** The default: a stored choice wins, else Material You wherever it is offered. */
+    fun resolve(stored: Boolean?, sdk: Int = android.os.Build.VERSION.SDK_INT): Boolean = stored ?: offered(sdk)
+
     /** Read the choice and make the scheme it asks for (at start, and when the system's dark mode changes). */
     fun refresh(context: Context) {
-        enabled = try { context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(KEY, false) } catch (_: Exception) { false }
+        enabled = try {
+            val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            resolve(if (prefs.contains(KEY)) prefs.getBoolean(KEY, false) else null)
+        } catch (_: Exception) { resolve(null) }
         apply(context)
     }
 
@@ -138,6 +144,9 @@ object Palette {
     val Text: Color get() = scheme.onSurface
     val Muted: Color get() = scheme.onSurfaceVariant
     val Danger: Color get() = scheme.error
+
+    /** The call colour (the core's `green`, the same in every theme): a voice channel's speaker while people are in its call (#513). */
+    val Green: Color = Color(0xFF23A559)
     val OnDanger: Color get() = scheme.onError
     val IsLight: Boolean get() = if (dynamic != null) scheme.background.luminance() > 0.5f else fixedLight
 

@@ -78,7 +78,12 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     )
 
     private fun changed(snapshot: CallSnapshot) {
+        val before = _snapshot.value
         _snapshot.value = snapshot
+        // The notification's Mute and Deafen say what the call is now.
+        if (before != null && (before.muted != snapshot.muted || before.deafened != snapshot.deafened) && snapshot.phase != CallPhase.ENDED) {
+            CallService.update(context, snapshot.roomId, snapshot.roomName, snapshot.muted, snapshot.deafened)
+        }
         if (snapshot.phase == CallPhase.CONNECTED && !routed) {
             routed = true
             route(_speaker.value)
@@ -203,7 +208,12 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     /** The places to pick from now (a headset appears when it is plugged in or connected). */
     fun routes(): List<Route> {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val chosen = if (_speaker.value) "speaker" else "earpiece"
+        // The device the system is using says what is chosen (a headset picked from here or by the system unticks both).
+        val now = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.communicationDevice?.type else null
+        val chosen = if (now == null) { if (_speaker.value) "speaker" else "earpiece" }
+        else if (now == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) "speaker"
+        else if (now == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) "earpiece"
+        else ""
         val out = mutableListOf(
             Route("speaker", t("Loudspeaker"), chosen == "speaker"),
             Route("earpiece", t("Earpiece"), chosen == "earpiece"),
