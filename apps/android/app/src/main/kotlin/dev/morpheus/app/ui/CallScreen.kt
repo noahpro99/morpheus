@@ -87,7 +87,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
     var panel by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().background(Palette.Surface).testTag("call-screen")) {
         Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { Text("⌄", fontSize = 26.sp) }
+            TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 28.dp) }
             Column(Modifier.weight(1f)) {
                 Text(snapshot.roomName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("call-title"))
                 Text(
@@ -97,7 +97,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                         CallPhase.FAILED -> t("Not connected")
                         CallPhase.ENDED -> t("Ended")
                     },
-                    Modifier.testTag("call-state"), color = Palette.Muted, fontSize = 12.sp,
+                    Modifier.testTag("call-state"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall,
                 )
             }
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted) }
@@ -140,7 +140,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
             CardKind.PERSON -> Avatar(card.avatar, card.name, 64.dp)
             CardKind.CAMERA, CardKind.SCREEN -> VideoPicture(calls, card)
             CardKind.UNWATCHED_SCREEN -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(t("%{name}'s screen", "name" to card.name), color = Palette.Muted, fontSize = 13.sp)
+                Text(t("%{name}'s screen", "name" to card.name), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 Button({ calls.watch(card.userId, true) }, Modifier.testTag("watch-${card.name}")) { Text(t("Watch")) }
             }
         }
@@ -158,7 +158,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
             if (card.speaking) Box(Modifier.size(8.dp).clip(CircleShape).background(speakingGreen).testTag("speaking-${card.name}"))
             Text(
                 if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) t("%{name}'s screen", "name" to card.name) else card.name,
-                color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (card.kind != CardKind.SCREEN && card.kind != CardKind.UNWATCHED_SCREEN) {
                 if (person?.deafened == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_headphone_off, Modifier.testTag("deafened-${card.name}"), size = 16.dp, tint = Color.White)
@@ -241,7 +241,7 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
             Text(snapshot.roomName, color = Palette.OnAccent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 if (snapshot.phase == CallPhase.CONNECTED) t("In a call") else t("Connecting…"),
-                color = Palette.OnAccent, fontSize = 12.sp, modifier = Modifier.testTag("call-bar-state"),
+                color = Palette.OnAccent, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("call-bar-state"),
             )
         }
         IconAction(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "bar-mute", { calls.toggleMute() }, tint = onColour(Palette.Accent))
@@ -259,7 +259,7 @@ private fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
 private fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float) -> Unit) {
     var value by remember { mutableFloatStateOf(steps(start)) }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(label, color = Palette.Muted, fontSize = 13.sp)
+        Text(label, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_minus, t("Less"), "$tag-less", { value = steps(value - 0.1f); onChange(value) })
             Text("${Math.round(value * 100)}%", Modifier.testTag("$tag-label"))
@@ -293,7 +293,7 @@ private fun ColumnScope.CallSettings(calls: CallModel, close: () -> Unit) {
     Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("call-settings-panel")) {
         VolumeRow(t("Output volume"), "output-volume", kept.output) { calls.setOutputVolume(it) }
         VolumeRow(t("Microphone volume"), "input-volume", kept.input) { calls.setInputVolume(it) }
-        Text(t("Sound goes to"), color = Palette.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        Text(t("Sound goes to"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
         tick
         for (route in calls.routes()) {
             ChoiceRow(route.label, route.on, "route-${route.key}") { calls.chooseRoute(route.key); tick++ }

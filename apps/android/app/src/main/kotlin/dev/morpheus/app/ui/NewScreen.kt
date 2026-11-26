@@ -115,7 +115,7 @@ fun NewScreen(app: AppModel) {
 @Composable
 private fun OneField(hint: String, placeholder: String, button: String, busy: Boolean, onSubmit: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
-    Text(hint, color = Palette.Muted, fontSize = 14.sp)
+    Text(hint, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
     OutlinedTextField(
         text, { text = it },
         Modifier.fillMaxWidth().testTag("new-input"),
@@ -142,7 +142,7 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
         }
     }
     SearchField(term, { term = it }, t("Search public rooms"), "directory-search")
-    failure?.let { Text(it, color = Palette.Danger, fontSize = 14.sp) }
+    failure?.let { Text(it, color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
     val listed = rooms
     if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted)
     LazyColumn(Modifier.testTag("directory")) {
@@ -197,7 +197,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
     LaunchedEffect(failure) { failure?.let { Toasts.say(it, "friend-error", long = true) } }
     val list = friends
     if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted)
-    if (list != null && list.isNotEmpty()) Text(t("All friends — %{count}", "count" to list.size.toString()), color = Palette.Muted, fontSize = 12.sp)
+    if (list != null && list.isNotEmpty()) Text(t("All friends — %{count}", "count" to list.size.toString()), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
     LazyColumn(Modifier.testTag("friends")) {
         items(list.orEmpty(), key = { it.userId }) { friend ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

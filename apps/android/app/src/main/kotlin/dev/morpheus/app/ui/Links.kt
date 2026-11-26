@@ -1,5 +1,6 @@
 package dev.morpheus.app.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -63,7 +64,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false
         }
     }
     if (body.segments.none { it.url != null }) {
-        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), style = Type.body, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), style = MaterialTheme.typography.bodyLarge, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
         return
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -87,7 +88,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false
             .semantics { if (sending) stateDescription = "sending" }
             .testTag("msg-body"),
         onTextLayout = { layout = it },
-        style = Type.body,
+        style = MaterialTheme.typography.bodyLarge,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
     )
@@ -111,11 +112,11 @@ fun PreviewCardView(model: RoomModel, url: String, eventId: String) {
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Row {
-            Text(shown.site ?: "", Modifier.weight(1f), color = Palette.Muted, fontSize = 12.sp, maxLines = 1)
+            Text(shown.site ?: "", Modifier.weight(1f), color = Palette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_x, Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.semantics { contentDescription = t("Dismiss preview") }.testTag("preview-dismiss"), size = 18.dp, tint = Palette.Muted)
         }
         shown.title?.let { Text(it, Modifier.testTag("preview-title"), color = Palette.Accent, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-        shown.description?.let { Text(it, Modifier.testTag("preview-description"), fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+        shown.description?.let { Text(it, Modifier.testTag("preview-description"), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }
         bitmap?.let {
             androidx.compose.foundation.Image(it, null, Modifier.fillMaxWidth().padding(top = 4.dp).testTag("preview-image"), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
         }

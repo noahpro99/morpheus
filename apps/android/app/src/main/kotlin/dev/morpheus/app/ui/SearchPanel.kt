@@ -52,7 +52,7 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
         }
     }) { inner ->
       Column(Modifier.fillMaxSize().padding(inner)) {
-        Text(t("Searches the messages this device has loaded."), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = Palette.Muted, fontSize = 12.sp)
+        Text(t("Searches the messages this device has loaded."), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
         val found = hits
         if (found != null && found.isEmpty()) Text(t("No messages found."), Modifier.padding(16.dp).testTag("search-none"), color = Palette.Muted)
         LazyColumn(Modifier.fillMaxSize().testTag("search-results"), verticalArrangement = Arrangement.spacedBy(2.dp)) {

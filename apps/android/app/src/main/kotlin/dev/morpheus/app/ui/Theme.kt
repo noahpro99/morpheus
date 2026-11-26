@@ -151,14 +151,8 @@ object Palette {
     }
 }
 
-/** The type scale as Material 3 roles: title, heading, body, secondary, caption and the small-caps label. */
-private val MorpheusTypography = Typography().let {
-    it.copy(
-        titleLarge = Type.title, titleMedium = Type.heading, titleSmall = Type.bodyStrong,
-        bodyLarge = Type.body, bodyMedium = Type.secondary, bodySmall = Type.caption,
-        labelLarge = Type.secondary.copy(fontWeight = FontWeight.Medium), labelMedium = Type.caption, labelSmall = Type.label,
-    )
-}
+/** The type scale is Material 3's own (m3.material.io, Typography): display, headline, title, body and label roles at the spec's sizes. */
+private val MorpheusTypography = Typography()
 
 /** The corner radii as Material 3 shapes. */
 private val MorpheusShapes = Shapes(
@@ -206,16 +200,6 @@ object Size {
     val avatarXl = 88.dp
 }
 
-/** The type scale: title, heading, body, secondary, caption and the small-caps label. */
-object Type {
-    val title = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
-    val heading = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-    val body = TextStyle(fontSize = 16.sp, lineHeight = 22.sp)
-    val bodyStrong = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-    val secondary = TextStyle(fontSize = 14.sp, lineHeight = 19.sp)
-    val caption = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
-    val label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-}
 
 /** Black or white, whichever reads on `fill` (the core's `on_colour`, the one rule every screen follows). */
 fun onColour(fill: Color): Color {

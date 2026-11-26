@@ -62,7 +62,7 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
                     ?: Text(t("Starting…"), color = Palette.Muted, modifier = Modifier.testTag("verify-starting"))
             } else if (newKey != null) {
                 Text(t("Your recovery key. Keep it somewhere safe: it is shown only once."))
-                Text(newKey.orEmpty(), Modifier.testTag("new-recovery-key"), fontSize = 16.sp)
+                Text(newKey.orEmpty(), Modifier.testTag("new-recovery-key"), style = MaterialTheme.typography.bodyLarge)
                 Button({ model.keySaved() }, Modifier.testTag("key-saved")) { Text(t("I have saved it")) }
             } else if (current == null) {
                 Text(t("Loading…"), color = Palette.Muted)
@@ -122,8 +122,8 @@ private fun Panel(panel: VerificationPanel, onAction: (uniffi.morpheus_ffi.Verif
             FlowRow(Modifier.testTag("verify-emoji"), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (emoji in panel.emojis) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(4.dp)) {
-                        Text(emoji.symbol, fontSize = 32.sp)
-                        Text(emoji.name, fontSize = 11.sp, color = Palette.Muted)
+                        Text(emoji.symbol, style = MaterialTheme.typography.headlineLarge)
+                        Text(emoji.name, style = MaterialTheme.typography.labelSmall, color = Palette.Muted)
                     }
                 }
             }

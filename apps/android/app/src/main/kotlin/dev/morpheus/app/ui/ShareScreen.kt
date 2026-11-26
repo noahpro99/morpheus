@@ -100,7 +100,7 @@ private fun ColumnScope.Pick(share: Share, targets: List<ShareTarget>, query: St
         runCatching { focus.requestFocus() }
         keyboard?.show()
     }
-    Text(summary(share), Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("share-summary"), color = Palette.Muted, style = Type.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(summary(share), Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("share-summary"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     // Reversed: the first item (the best match, or the newest conversation) is at the bottom, nearest the search bar.
     // The best match stays at the bottom, in view, as the query or the list changes (a list that grew kept its place and left it below the bar).
     val list = androidx.compose.foundation.lazy.rememberLazyListState()

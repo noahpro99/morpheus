@@ -56,10 +56,10 @@ fun SignInScreen(model: AppModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(72.dp).clip(RoundedCornerShape(Radius.lg)).background(Palette.Accent), contentAlignment = Alignment.Center) {
-            Text("M", style = Type.title.copy(fontSize = 36.sp), color = onColour(Palette.Accent))
+            Text("M", style = MaterialTheme.typography.headlineLarge, color = onColour(Palette.Accent))
         }
-        Text(t("Morpheus"), style = Type.title.copy(fontSize = 30.sp))
-        Text(t("Sign in with your Matrix account"), style = Type.secondary, color = Palette.Muted, modifier = Modifier.padding(bottom = Space.md))
+        Text(t("Morpheus"), style = MaterialTheme.typography.headlineMedium)
+        Text(t("Sign in with your Matrix account"), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, modifier = Modifier.padding(bottom = Space.md))
         val field = Modifier.fillMaxWidth().widthIn(max = 480.dp)
         OutlinedTextField(
             homeserver, { homeserver = it },

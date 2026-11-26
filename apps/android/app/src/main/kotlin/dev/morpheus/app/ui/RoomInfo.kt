@@ -65,29 +65,33 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
     Box(Modifier.fillMaxSize().testTag("room-info")) {
         LaunchedEffect(problem) { problem?.let { Toasts.say(it, "info-error", long = true) } }
         ScreenScaffold("room-info-screen", { TopBar(t("Room details"), backTag = "info-back", onBack = { onClose() }) }) { inner ->
-            LazyColumn(Modifier.fillMaxSize().padding(inner).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LazyColumn(Modifier.fillMaxSize().padding(inner)) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 12.dp)) {
-                        Text(title, Modifier.testTag("info-name"), style = Type.title)
-                        room.topic?.let { Text(it, Modifier.testTag("info-topic"), color = Palette.Muted) }
-                        Text(
-                            if (room.isEncrypted) "🔒 End-to-end encrypted" else "Not encrypted",
-                            Modifier.testTag("info-encryption"), color = Palette.Muted, fontSize = 13.sp,
-                        )
-                        SmallHeading(t("Notifications"), Modifier.padding(top = Space.lg))
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.xs), modifier = Modifier.padding(top = Space.md)) {
+                        Text(title, Modifier.padding(horizontal = Space.lg).testTag("info-name"), style = MaterialTheme.typography.titleLarge)
+                        room.topic?.let { Text(it, Modifier.padding(horizontal = Space.lg).testTag("info-topic"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge) }
+                        // A real lock icon (not an emoji) before the line; the icon and text take the on-surface variant colour.
+                        Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                            GlyphIcon(if (room.isEncrypted) dev.morpheus.app.R.drawable.ic_lucide_lock else dev.morpheus.app.R.drawable.ic_lucide_lock_open, Modifier.testTag("info-lock"), size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (room.isEncrypted) t("End-to-end encrypted") else t("Not encrypted"),
+                                Modifier.testTag("info-encryption"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        SmallHeading(t("Notifications"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
                         for ((key, words) in listOf("all" to "All messages", "mentions" to "Only mentions", "mute" to "Muted")) {
                             ChoiceRow(t(words), mode == key, "room-notify-$key") {
                                 mode = key
                                 model.setNotifyMode(key)
                             }
                         }
-                        SmallHeading(t("Members"), Modifier.padding(top = Space.lg))
-                        if (members == null && problem == null) Text(t("Loading…"), color = Palette.Muted)
+                        SmallHeading(t("Members"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
+                        if (members == null && problem == null) Text(t("Loading…"), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 items(members.orEmpty()) { row ->
                     when (row) {
-                        is MemberRow.Heading -> Text(row.title, Modifier.padding(top = 8.dp).testTag("member-heading"), color = Palette.Muted, fontSize = 13.sp)
+                        is MemberRow.Heading -> Text(row.title, Modifier.padding(start = Space.lg, end = Space.lg, top = Space.sm).testTag("member-heading"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
                         is MemberRow.Member -> ListRow(
                             row.member.name, "member-${row.member.name}",
                             leading = { Avatar(row.member.avatar, row.member.name, 36.dp) },
@@ -103,7 +107,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                     }
                 }
                 item {
-                    Column(Modifier.padding(vertical = 20.dp)) {
+                    Column(Modifier.padding(horizontal = Space.lg, vertical = Space.xl)) {
                         androidx.compose.material3.FilledTonalButton(
                             {
                                 if (!sure) {
@@ -122,7 +126,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                             Modifier.testTag("leave-room"),
                             // A destructive action reads as one: the error container (the scheme's own pair), not the accent.
                             colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
-                        ) { Text(if (sure) "Tap again to leave" else "Leave room") }
+                        ) { Text(if (sure) t("Tap again to leave") else t("Leave room")) }
                     }
                 }
             }
@@ -171,15 +175,15 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Avatar(card.avatar, card.name, 56.dp)
                 Column {
-                    Text(card.name, Modifier.testTag("card-name"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text(card.userId, Modifier.testTag("card-id"), color = Palette.Muted, fontSize = 13.sp)
+                    Text(card.name, Modifier.testTag("card-name"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(card.userId, Modifier.testTag("card-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_lucide_ellipsis, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
-            card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, fontSize = 13.sp) }
+            card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, style = MaterialTheme.typography.bodyMedium) }
             card.status?.let { Text(it, color = Palette.Muted) }
-            Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, fontSize = 12.sp)
-            Text(card.mutualRooms.joinToString(", "), maxLines = 3, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+            Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
+            Text(card.mutualRooms.joinToString(", "), maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             if (!card.isMe) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button({
@@ -213,7 +217,7 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
                     label = { Text(t("Note")) }, placeholder = { Text(t("Only you can see this")) },
                 )
             }
-            problem?.let { Text(it, color = Palette.Danger, fontSize = 13.sp) }
+            problem?.let { Text(it, color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }

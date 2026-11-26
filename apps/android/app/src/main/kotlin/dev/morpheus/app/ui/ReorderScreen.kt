@@ -74,14 +74,17 @@ fun ReorderScreen(app: AppModel) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            "📁 ${row.name}",
+                        Row(
                             Modifier.weight(1f).testTag("folder-${row.name}").combinedClickable(onClick = {}, onLongClick = { app.openSheet(row.name) { app.morpheus.folderMenuRows(row.folderId.orEmpty(), row.name) } }),
-                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        ) {
+                            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_folder, size = 20.dp)
+                            Text(row.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                         TextButton({ renaming = row }, Modifier.testTag("folder-rename-${row.name}")) { Text(t("Rename")) }
-                        TextButton({ move(at, -1) }, Modifier.testTag("folder-up-${row.name}"), enabled = at > 0) { Text("▲") }
-                        TextButton({ move(at, 1) }, Modifier.testTag("folder-down-${row.name}"), enabled = at < rows.size - 1) { Text("▼") }
+                        TextButton({ move(at, -1) }, Modifier.testTag("folder-up-${row.name}"), enabled = at > 0) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_up, size = 20.dp) }
+                        TextButton({ move(at, 1) }, Modifier.testTag("folder-down-${row.name}"), enabled = at < rows.size - 1) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 20.dp) }
                     }
                     if (renaming?.key == row.key) {
                         // The name asked for in a dialog.
@@ -115,13 +118,13 @@ private fun ServerLine(app: AppModel, server: ScopeItem, id: String, folders: Li
         Avatar(server.avatar, server.title, 40.dp)
         Text(server.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (!inFolder) {
-            TextButton({ move(-1) }, Modifier.testTag("server-up-${server.title}"), enabled = canUp) { Text("▲") }
-            TextButton({ move(1) }, Modifier.testTag("server-down-${server.title}"), enabled = canDown) { Text("▼") }
+            TextButton({ move(-1) }, Modifier.testTag("server-up-${server.title}"), enabled = canUp) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_up, size = 20.dp) }
+            TextButton({ move(1) }, Modifier.testTag("server-down-${server.title}"), enabled = canDown) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 20.dp) }
         } else {
             TextButton({ app.moveOutOfFolder(id) }, Modifier.testTag("server-out-${server.title}")) { Text(t("Take out")) }
         }
         Box {
-            TextButton({ menu = true }, Modifier.testTag("server-folder-${server.title}")) { Text("📁") }
+            TextButton({ menu = true }, Modifier.testTag("server-folder-${server.title}")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_folder_plus, size = 20.dp) }
             // Where the server goes: a dropdown menu.
             androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
                 androidx.compose.material3.DropdownMenuItem({ Text(t("New folder")) }, { menu = false; app.moveToFolder(id, null) }, Modifier.testTag("folder-new"))

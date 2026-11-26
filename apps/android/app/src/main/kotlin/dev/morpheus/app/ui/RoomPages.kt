@@ -1,5 +1,6 @@
 package dev.morpheus.app.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -105,7 +106,7 @@ private fun InvitePage(app: AppModel, page: PageRequest) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     PageFrame(app, "Invite people", "page-invite") {
-        Text(t("Enter a full Matrix ID like @name:server"), color = Palette.Muted, style = Type.secondary)
+        Text(t("Enter a full Matrix ID like @name:server"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(typed, { typed = it }, Modifier.fillMaxWidth().testTag("invite-input"), singleLine = true, placeholder = { Text("@name:server") })
         Button({
             scope.launch {
@@ -206,9 +207,9 @@ private fun PrivacyPage(app: AppModel, page: PageRequest) {
                 SectionHeader(t("Encryption"))
                 when (i.encrypted) {
                     null -> Text("…", color = Palette.Muted)
-                    true -> Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = Type.body)
+                    true -> Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = MaterialTheme.typography.bodyLarge)
                     false -> {
-                        Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = Type.body)
+                        Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = MaterialTheme.typography.bodyLarge)
                         TextButton({ confirming = true }, Modifier.testTag("privacy-encrypt")) { Text(t("Turn on encryption")) }
                         // Turning it on cannot be undone: a dialog says so first.
                         if (confirming) ConfirmDialog(
@@ -242,11 +243,11 @@ private fun OverviewPage(app: AppModel, page: PageRequest) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 Avatar(o.avatar, o.name, Size.avatarXl, square = true)
                 Column {
-                    Text(o.name, Modifier.testTag("overview-name"), style = Type.title)
-                    Text(t("%{count} members", "count" to o.members.toString()), Modifier.testTag("overview-members"), color = Palette.Muted, style = Type.secondary)
+                    Text(o.name, Modifier.testTag("overview-name"), style = MaterialTheme.typography.titleLarge)
+                    Text(t("%{count} members", "count" to o.members.toString()), Modifier.testTag("overview-members"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            o.topic?.takeIf { it.isNotBlank() }?.let { Text(it, Modifier.testTag("overview-topic"), style = Type.body) }
+            o.topic?.takeIf { it.isNotBlank() }?.let { Text(it, Modifier.testTag("overview-topic"), style = MaterialTheme.typography.bodyLarge) }
             val rooms = sidebar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }.orEmpty()
             val first = o.channels.firstOrNull { it.joined && !it.voice }?.let { c -> rooms.firstOrNull { it.id == c.id } }
             if (first != null) Button({ app.closePage(); app.open(first) }, Modifier.testTag("overview-start")) { Text(t("Start chatting")) }
@@ -276,8 +277,8 @@ private fun ReactionsPage(app: AppModel, page: PageRequest) {
     PageFrame(app, "View reactions", "page-reactions") {
         for (reaction in message?.reactions.orEmpty()) {
             Column(Modifier.fillMaxWidth().testTag("reaction-${reaction.key}"), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                Text("${reaction.key}  ${reaction.count}", style = Type.heading)
-                Text(reaction.senders.joinToString(", ") { People.nameOf(it, names) }, Modifier.testTag("reaction-people-${reaction.key}"), color = Palette.Muted, style = Type.secondary)
+                Text("${reaction.key}  ${reaction.count}", style = MaterialTheme.typography.titleMedium)
+                Text(reaction.senders.joinToString(", ") { People.nameOf(it, names) }, Modifier.testTag("reaction-people-${reaction.key}"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -330,7 +331,7 @@ private fun ReportPage(app: AppModel, page: PageRequest) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     PageFrame(app, "Report message", "page-report") {
-        Text(t("Tell the admins of the server what is wrong with this message."), color = Palette.Muted, style = Type.secondary)
+        Text(t("Tell the admins of the server what is wrong with this message."), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(reason, { reason = it }, Modifier.fillMaxWidth().testTag("report-reason"), label = { Text(t("Reason")) })
         Button({
             scope.launch {
@@ -364,7 +365,7 @@ private fun CropPicture(frame: uniffi.morpheus_ffi.CropFrame, onUse: (ByteArray)
     var framePx by remember { mutableStateOf(1f) }
     val scope = rememberCoroutineScope()
     Column(Modifier.testTag("crop"), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        Text(t("Drag the picture and zoom to choose what shows."), color = Palette.Muted, style = Type.secondary)
+        Text(t("Drag the picture and zoom to choose what shows."), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         androidx.compose.foundation.layout.Box(
             Modifier
                 .fillMaxWidth()
@@ -426,7 +427,7 @@ private fun rememberPicturePicker(onSquare: (ByteArray) -> Unit): PicturePicker 
 private class PicturePicker(val pick: () -> Unit, val frame: uniffi.morpheus_ffi.CropFrame?, val error: String?, val cancel: () -> Unit, val use: (ByteArray) -> Unit) {
     @Composable
     fun Show() {
-        error?.let { Text(it, Modifier.testTag("page-error"), color = Palette.Danger, style = Type.secondary) }
+        error?.let { Text(it, Modifier.testTag("page-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
         frame?.let { CropPicture(it, use, cancel) }
     }
 }
@@ -437,8 +438,8 @@ private fun LeavePage(app: AppModel, page: PageRequest) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     PageFrame(app, "Leave server", "page-leave") {
-        Text(info.title, Modifier.testTag("leave-title"), style = Type.heading)
-        Text(info.body, Modifier.testTag("leave-body"), color = Palette.Muted, style = Type.body)
+        Text(info.title, Modifier.testTag("leave-title"), style = MaterialTheme.typography.titleMedium)
+        Text(info.body, Modifier.testTag("leave-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
         Button({
             scope.launch {
                 try { app.morpheus.leaveServer(page.roomId); app.closePage(); app.selectTab(dev.morpheus.app.Tab.Servers) } catch (e: Exception) { error = e.message }
@@ -454,7 +455,7 @@ private fun CategoryPage(app: AppModel, page: PageRequest) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     PageFrame(app, "Create category", "page-category") {
-        Text(app.morpheus.createCategoryBlurb(), color = Palette.Muted, style = Type.secondary)
+        Text(app.morpheus.createCategoryBlurb(), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("category-name"), singleLine = true, label = { Text(t("Name")) })
         Button({
             scope.launch { try { app.morpheus.createCategory(page.roomId, name); app.closePage() } catch (e: Exception) { error = e.message } }
@@ -470,7 +471,7 @@ private fun CreateServerPage(app: AppModel) {
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     PageFrame(app, "Create server", "page-create-server") {
-        Text(app.morpheus.createServerBlurb(), color = Palette.Muted, style = Type.secondary)
+        Text(app.morpheus.createServerBlurb(), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("server-name"), singleLine = true, label = { Text(t("Name")) })
         Button({
             busy = true
@@ -509,7 +510,7 @@ private fun NicknamePage(app: AppModel, page: PageRequest) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(page.roomId) { try { text = app.morpheus.nicknameOf(page.roomId) } catch (_: Exception) {} }
     PageFrame(app, "Set nickname", "page-nickname") {
-        Text(app.morpheus.nicknameBlurb(page.extra), Modifier.testTag("nickname-blurb"), color = Palette.Muted, style = Type.secondary)
+        Text(app.morpheus.nicknameBlurb(page.extra), Modifier.testTag("nickname-blurb"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().testTag("nickname-input"), singleLine = true, label = { Text(t("Nickname")) })
         Button({
             busy = true
@@ -530,8 +531,8 @@ private fun FullProfilePage(app: AppModel, page: PageRequest) {
         if (profile != null) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Avatar(profile.avatar, profile.name, Size.avatarXl)
-                Text(profile.name, Modifier.testTag("full-profile-name"), style = Type.title)
-                Text(profile.userId, Modifier.testTag("full-profile-id"), color = Palette.Muted, style = Type.secondary)
+                Text(profile.name, Modifier.testTag("full-profile-name"), style = MaterialTheme.typography.titleLarge)
+                Text(profile.userId, Modifier.testTag("full-profile-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 profile.status?.let { Text(it, Modifier.testTag("full-profile-status")) }
                 if (profile.isMe) Text(t("This is you"), Modifier.testTag("full-profile-me"), color = Palette.Muted)
             }
@@ -554,7 +555,7 @@ private fun ReportUserPage(app: AppModel, page: PageRequest) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     PageFrame(app, "Report user profile", "page-report-user") {
-        Text(t("Tell the admins of the server what is wrong with this person's profile."), color = Palette.Muted, style = Type.secondary)
+        Text(t("Tell the admins of the server what is wrong with this person's profile."), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(reason, { reason = it }, Modifier.fillMaxWidth().testTag("report-user-reason"), label = { Text(t("Reason")) })
         Button({
             scope.launch { try { ok = app.morpheus.reportUser(page.roomId, reason); error = null } catch (e: Exception) { error = e.sentence(); ok = null } }
@@ -576,7 +577,7 @@ private fun ProfilePage(app: AppModel, page: PageRequest) {
         try { app.morpheus.serverProfile(page.roomId).let { blurb = it.blurb; name = it.name } } catch (e: Exception) { error = e.message }
     }
     PageFrame(app, "Edit per-server profile", "page-profile") {
-        Text(blurb, Modifier.testTag("profile-blurb"), color = Palette.Muted, style = Type.secondary)
+        Text(blurb, Modifier.testTag("profile-blurb"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("profile-name"), singleLine = true, label = { Text(t("Name")) })
         TextButton({ picker.pick() }, Modifier.testTag("profile-picture")) { Text(if (square == null) t("Choose a picture…") else t("Picture chosen")) }
         picker.Show()
@@ -597,7 +598,7 @@ private fun UnlockPage(app: AppModel, page: PageRequest) {
     val sidebar by app.sidebar.collectAsState()
     val words = remember { app.morpheus.lockWords() }
     PageFrame(app, page.extra.ifEmpty { "Locked" }, "page-unlock") {
-        Text(words.lockedTitle, Modifier.testTag("unlock-title"), style = Type.heading)
+        Text(words.lockedTitle, Modifier.testTag("unlock-title"), style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
             password, { password = it }, Modifier.fillMaxWidth().testTag("unlock-input"), singleLine = true, label = { Text(t("Password")) },
             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -625,7 +626,7 @@ private fun LockSetPage(app: AppModel, page: PageRequest) {
     val scope = rememberCoroutineScope()
     val words = remember { app.morpheus.lockWords() }
     PageFrame(app, "Lock with a password…", "page-lock-set") {
-        Text(words.blurb, color = Palette.Muted, style = Type.secondary)
+        Text(words.blurb, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         val hide = androidx.compose.ui.text.input.PasswordVisualTransformation()
         OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth().testTag("lock-password"), singleLine = true, label = { Text(t("Password")) }, visualTransformation = hide)
         OutlinedTextField(again, { again = it }, Modifier.fillMaxWidth().testTag("lock-again"), singleLine = true, label = { Text(t("Password again")) }, visualTransformation = hide)
@@ -647,7 +648,7 @@ private fun LockRemovePage(app: AppModel, page: PageRequest) {
             password, { password = it }, Modifier.fillMaxWidth().testTag("lock-remove-password"), singleLine = true, label = { Text(t("Password")) },
             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
         )
-        Text(words.forgot, color = Palette.Muted, style = Type.secondary)
+        Text(words.forgot, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         Button({
             scope.launch { try { app.morpheus.removeLock(page.roomId, password); app.closePage() } catch (e: Exception) { error = e.message } }
         }, Modifier.testTag("lock-remove-submit")) { Text(t("Remove lock…")) }

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -234,7 +235,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 isDm = isDm,
             )
             typingLine?.let {
-                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, fontSize = 12.sp)
+                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
             }
             replyingTo?.let { reply ->
                 ComposerBanner(dev.morpheus.app.R.drawable.ic_lucide_reply, t("Replying to %{name}: %{text}", "name" to reply.senderName.toString(), "text" to summary(reply.body)), "reply-bar", "reply-banner", t("Cancel reply"), "reply-cancel") { model.replyTo(null) }
@@ -247,8 +248,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             for (item in unsent) {
                 Row(Modifier.fillMaxWidth().background(Palette.Raised).padding(start = Space.lg).testTag("send-failed"), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(t("Not sent: %{text}", "text" to (item.text ?: t("a change"))), Modifier.testTag("send-failed-text"), color = Palette.Danger, style = Type.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(item.reason, color = Palette.Muted, style = Type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(t("Not sent: %{text}", "text" to (item.text ?: t("a change"))), Modifier.testTag("send-failed-text"), color = Palette.Danger, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(item.reason, color = Palette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     TextButton({ model.retry(item.id) }, Modifier.testTag("send-retry")) { Text(t("Retry")) }
                     TextButton({ model.discard(item.id) }, Modifier.testTag("send-discard")) { Text(t("Discard")) }
@@ -257,7 +258,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             val problem by model.error.collectAsState()
             // Over the composer, so it stays a line above it (a toast would cover the send button).
             problem?.let {
-                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = Type.secondary)
+                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
             Composer(model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, onAttach = { picker.launch("*/*") }) { model.send(it) }
         } } }
@@ -270,8 +271,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
 
 private fun summary(body: MessageBody): String = when (body) {
     is MessageBody.Text -> body.text
-    is MessageBody.Image -> "🖼 ${body.caption}"
-    is MessageBody.File -> "📎 ${body.name}"
+    is MessageBody.Image -> body.caption
+    is MessageBody.File -> body.name
     is MessageBody.Other -> body.summary
 }
 
@@ -342,7 +343,7 @@ private fun Timeline(
                     Text(
                         t("Ignored message · Show"),
                         Modifier.fillMaxWidth().clickable { revealed = revealed + row.message.key }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("ignored-fold"),
-                        color = Palette.Muted, fontSize = 13.sp,
+                        color = Palette.Muted, style = MaterialTheme.typography.bodyMedium,
                     )
                 } else MessageRow(row.message, model, onActions, onThread, onImage, onFile, onFull, lit != null && lit == row.message.eventId)
                 is TimelineRow.Date -> Row(
@@ -351,7 +352,7 @@ private fun Timeline(
                     horizontalArrangement = Arrangement.spacedBy(Space.md),
                 ) {
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
-                    Text(dayLabel(row.timestampMs.toLong(), rememberNow()), Modifier.testTag("date-divider"), color = Palette.Muted, style = Type.caption.copy(fontWeight = FontWeight.SemiBold))
+                    Text(dayLabel(row.timestampMs.toLong(), rememberNow()), Modifier.testTag("date-divider"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
                 }
                 TimelineRow.Start -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
@@ -366,7 +367,7 @@ private fun Timeline(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("new-divider"),
                     textAlign = TextAlign.Center,
                     color = Palette.Danger,
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -389,7 +390,11 @@ private fun Timeline(
         androidx.compose.material3.ExtendedFloatingActionButton(
             { scope.launch { state.animateScrollToItem(0) } },
             Modifier.align(Alignment.BottomCenter).padding(bottom = Space.lg).testTag("jump-present"),
-        ) { Text(t("Jump to present ↓")) }
+        ) {
+            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 24.dp)
+            Spacer(Modifier.width(Space.sm))
+            Text(t("Jump to present"))
+        }
     }
     }
 }
@@ -449,24 +454,30 @@ private fun MessageRow(
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(whenSent(message.timestampMs.toLong(), rememberNow()), Modifier.testTag("msg-time"), color = Palette.Muted, style = Type.caption)
+                    Text(whenSent(message.timestampMs.toLong(), rememberNow()), Modifier.testTag("msg-time"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
             message.replyTo?.let { reply ->
-                Text(
-                    "↩ ${reply.senderName ?: ""}: ${reply.summary ?: "…"}",
+                Row(
                     Modifier
                         .padding(vertical = 2.dp)
                         .clip(RoundedCornerShape(Radius.sm))
                         .background(Palette.Raised)
                         .drawBehind { drawRect(Palette.Accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
-                        .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
-                        .testTag("msg-reply"),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = Palette.Muted,
-                    style = Type.secondary,
-                )
+                        .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                ) {
+                    GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_reply, size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${reply.senderName ?: ""}: ${reply.summary ?: "…"}",
+                        Modifier.testTag("msg-reply"),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
             when (val body = message.body) {
                 is MessageBody.Text -> {
@@ -479,16 +490,21 @@ private fun MessageRow(
                 }
                 is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
                 is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
-                is MessageBody.File -> Text(
-                    (when (body.kind) { FileKind.VIDEO -> "🎞 "; FileKind.AUDIO -> "🎵 "; else -> "📎 " }) +
-                        body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }),
+                is MessageBody.File -> Row(
                     Modifier
                         .padding(vertical = 2.dp)
                         .background(Palette.Raised, RoundedCornerShape(8.dp))
                         .pointerInput(body) { detectTapGestures { onFile(body.media, body.name) } }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .testTag("msg-file"),
-                )
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    GlyphIcon(
+                        when (body.kind) { FileKind.VIDEO -> dev.morpheus.app.R.drawable.ic_lucide_play; FileKind.AUDIO -> dev.morpheus.app.R.drawable.ic_lucide_audio_lines; else -> dev.morpheus.app.R.drawable.ic_lucide_paperclip },
+                        size = 20.dp,
+                    )
+                    Text(body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }), Modifier.testTag("msg-file"))
+                }
             }
             message.thread?.let { chip ->
                 Text(
@@ -499,7 +515,7 @@ private fun MessageRow(
                         .semantics { onClick("Open thread") { message.eventId?.let(onThread); true } }
                         .testTag("thread-chip"),
                     color = Palette.Accent,
-                    fontSize = 13.sp,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (message.readBy.isNotEmpty()) {
@@ -508,7 +524,7 @@ private fun MessageRow(
                 Text(
                     t("Seen by %{names}", "names" to message.readBy.joinToString(", ") { People.nameOf(it, names) }),
                     Modifier.padding(top = 2.dp).testTag("read-by"),
-                    color = Palette.Muted, fontSize = 11.sp,
+                    color = Palette.Muted, style = MaterialTheme.typography.labelSmall,
                 )
             }
             val dismissed by model.dismissed.collectAsState()
@@ -530,7 +546,7 @@ private fun MessageRow(
                                 }
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                                 .testTag("reaction-${reaction.key}"),
-                            style = Type.secondary,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
@@ -602,7 +618,7 @@ private fun Composer(model: RoomModel, draftKey: String, editing: MessageItem?, 
             maxLines = 5,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             shape = RoundedCornerShape(28.dp),
-            textStyle = Type.body,
+            textStyle = MaterialTheme.typography.bodyLarge,
             colors = androidx.compose.material3.TextFieldDefaults.colors(
                 focusedContainerColor = fill, unfocusedContainerColor = fill, disabledContainerColor = fill,
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,

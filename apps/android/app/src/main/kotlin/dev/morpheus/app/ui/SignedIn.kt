@@ -480,7 +480,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                         LaunchedEffect(member.userId) { model.wantName(member.userId) }
                         val name = model.nameOf(member.userId, names)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                            Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = Type.secondary)
+                            Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                             if (member.muted || member.deafened) GlyphIcon(
                                 if (member.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_mic_off,
                                 Modifier.testTag("in-call-muted-${room.name}-$name"), size = 14.dp, tint = Palette.Muted,
@@ -515,20 +515,20 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
     Column(Modifier.fillMaxSize().background(Palette.Surface).verticalScroll(rememberScrollState()).testTag("profile-pane")) {
         Column(Modifier.fillMaxWidth().background(Palette.Background).padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
             Avatar(own?.avatar, name, Size.avatarXl, key = ownKey)
-            Text(name, Modifier.padding(top = Space.md).testTag("profile-name"), style = Type.title)
+            Text(name, Modifier.padding(top = Space.md).testTag("profile-name"), style = MaterialTheme.typography.titleLarge)
             Text(
                 state.account.userId,
                 Modifier.padding(top = Space.xs).testTag("account"),
-                maxLines = 1, overflow = TextOverflow.Ellipsis, style = Type.secondary, color = Palette.Muted,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = Palette.Muted,
             )
             Row(
                 Modifier.padding(top = Space.md).clip(CircleShape).background(Palette.Raised).padding(horizontal = Space.md, vertical = Space.xs),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(if (online) Color(0xFF3BA55D) else Palette.Muted))
-                Text(if (online) t("Online") else t("Offline"), Modifier.testTag("profile-status"), style = Type.secondary)
+                Text(if (online) t("Online") else t("Offline"), Modifier.testTag("profile-status"), style = MaterialTheme.typography.bodyMedium)
             }
-            if (status.isNotBlank()) Text(status, Modifier.padding(top = Space.sm).testTag("profile-status-message"), style = Type.secondary, color = Palette.Muted)
+            if (status.isNotBlank()) Text(status, Modifier.padding(top = Space.sm).testTag("profile-status-message"), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
         }
         SectionHeader(t("Account"))
         ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_smile, t("Set status"), "status-button") { model.openPage(dev.morpheus.app.PageRequest("status", "")) }
@@ -565,8 +565,8 @@ private fun InviteCard(invite: InviteItem, model: AppModel) {
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Column(Modifier.padding(Space.md), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            Text(invite.name, style = Type.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(invite.line, color = MaterialTheme.colorScheme.onSurfaceVariant, style = Type.secondary, modifier = Modifier.testTag("invite-line"))
+            Text(invite.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(invite.line, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("invite-line"))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 androidx.compose.material3.Button({ model.answerInvite(invite.id, true) }, Modifier.testTag("invite-accept-${invite.name}")) { Text(t("Accept")) }
                 TextButton({ model.answerInvite(invite.id, false) }, Modifier.testTag("invite-decline-${invite.name}")) { Text(t("Decline")) }

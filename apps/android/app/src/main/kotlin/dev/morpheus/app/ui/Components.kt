@@ -69,7 +69,7 @@ private fun Pill(text: String, fill: Color, content: Color, tag: String, modifie
         modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).clip(CircleShape).background(fill).padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, Modifier.testTag(tag), color = content, style = Type.caption.copy(fontWeight = FontWeight.Bold))
+        Text(text, Modifier.testTag(tag), color = content, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -161,8 +161,8 @@ fun EmptyState(@androidx.annotation.DrawableRes icon: Int, title: String, body: 
         Box(Modifier.size(72.dp).clip(CircleShape).background(Palette.Raised), contentAlignment = Alignment.Center) {
             GlyphIcon(icon, size = 32.dp, tint = Palette.Muted)
         }
-        Text(title, Modifier.padding(top = Space.lg), style = Type.heading, color = Palette.Text)
-        Text(body, Modifier.padding(top = Space.xs), style = Type.secondary, color = Palette.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(title, Modifier.padding(top = Space.lg), style = MaterialTheme.typography.titleMedium, color = Palette.Text)
+        Text(body, Modifier.padding(top = Space.xs), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 

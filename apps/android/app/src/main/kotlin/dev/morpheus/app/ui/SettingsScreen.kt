@@ -72,12 +72,12 @@ fun SettingsScreen(app: AppModel) {
     LaunchedEffect(problem) { problem?.let { Toasts.say(it, "settings-error", long = true) } }
     ScreenScaffold("settings-screen", { TopBar(t("Settings"), backTag = "settings-back", onBack = { app.closeSettings() }, titleTag = "settings-title") }) { inner ->
         if (page == null) SettingsGroups(app, t, Modifier.padding(inner)) else Column(
-            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(vertical = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
             if (page == "Appearance") {
             Heading(t("Appearance"))
-            Row(Modifier.testTag("setting-theme"), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.padding(horizontal = Space.lg).testTag("setting-theme"), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 for (choice in app.morpheus.themes()) {
                     val chosen = look.theme == choice.key && look.colour == null
                     OutlinedCard(
@@ -100,24 +100,24 @@ fun SettingsScreen(app: AppModel) {
             var colour by remember { mutableStateOf("") }
             Text(
                 if (look.colour != null) "${t("Custom colour")} #${look.colour}" else t("Custom colour"),
-                Modifier.testTag("custom-colour-label"), color = Palette.Muted, fontSize = 13.sp,
+                Modifier.padding(horizontal = Space.lg).testTag("custom-colour-label"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
             )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedTextField(colour, { colour = it }, Modifier.weight(1f).testTag("colour-input"), placeholder = { Text("2a4d8f") }, singleLine = true)
                 Button({ attempt { app.useAppearance(app.morpheus.setCustomColour(colour)) } }, Modifier.testTag("colour-apply"), enabled = colour.isNotBlank()) { Text(t("Use")) }
             }
             val clipboard = LocalClipboardManager.current
             val code = remember(look) { app.morpheus.themeCode() }
-            Text(t("Theme code"), color = Palette.Muted, fontSize = 13.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(code, Modifier.weight(1f).testTag("theme-code"), fontSize = 13.sp)
+            Text(t("Theme code"), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
+                Text(code, Modifier.weight(1f).testTag("theme-code"), style = MaterialTheme.typography.bodyMedium)
                 TextButton({ clipboard.setText(AnnotatedString(code)) }, Modifier.testTag("code-copy")) { Text(t("Copy")) }
             }
             // A message that carried a theme code opened this page with the code ready to use.
             val offered by app.themeCodeToTry.collectAsState()
             var pasted by remember { mutableStateOf(offered ?: "") }
             LaunchedEffect(offered) { offered?.let { pasted = it; app.themeCodeTried() } }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedTextField(pasted, { pasted = it }, Modifier.weight(1f).testTag("code-input"), placeholder = { Text(t("Paste a theme code.")) }, singleLine = true)
                 Button({ attempt { app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }
             }
@@ -144,7 +144,7 @@ fun SettingsScreen(app: AppModel) {
             val shown = defaults
             if (shown != null) {
                 for ((dm, label, current) in listOf(Triple(true, "Direct messages", shown.dms), Triple(false, "Group rooms", shown.rooms))) {
-                    Text(t(label), color = Palette.Muted, fontSize = 13.sp)
+                    Text(t(label), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                     for ((mode, words) in listOf("all" to "All messages", "mentions" to "Only mentions")) {
                         ChoiceRow(t(words), current == mode, "notify-${if (dm) "dms" else "rooms"}-$mode") {
                             scope.launch {
@@ -172,13 +172,13 @@ fun SettingsScreen(app: AppModel) {
 
             if (page == "Bridges") {
             Heading(t("Bridges"))
-            Button({ app.openBridges() }, Modifier.testTag("settings-bridges")) { Text(t("Connect a network")) }
+            Button({ app.openBridges() }, Modifier.padding(horizontal = Space.lg).testTag("settings-bridges")) { Text(t("Connect a network")) }
             }
 
             if (page == "Account") {
             Heading(t("Account"))
-            Text(account?.userId.orEmpty(), Modifier.testTag("settings-account"), color = Palette.Muted)
-            Button({ app.signOut() }, Modifier.testTag("settings-sign-out")) { Text(t("Sign out")) }
+            Text(account?.userId.orEmpty(), Modifier.padding(horizontal = Space.lg).testTag("settings-account"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button({ app.signOut() }, Modifier.padding(horizontal = Space.lg).testTag("settings-sign-out")) { Text(t("Sign out")) }
             }
         }
     }
@@ -188,7 +188,7 @@ private fun argb(v: UInt) = Color(0xFF000000.toInt() or v.toInt())
 
 @Composable
 private fun Heading(text: String) {
-    SmallHeading(text, Modifier.padding(top = Space.lg))
+    SmallHeading(text, Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
 }
 
 /** What the phone has under each of the desktop's groups. */

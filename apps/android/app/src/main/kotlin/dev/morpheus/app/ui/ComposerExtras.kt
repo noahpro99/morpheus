@@ -1,5 +1,6 @@
 package dev.morpheus.app.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,12 +59,12 @@ fun SuggestionStrip(items: List<SuggestionItem>, onPick: (SuggestionItem) -> Uni
             ) {
                 when (item.kind) {
                     SuggestionKind.EMOJI -> {
-                        Text(item.label, fontSize = 22.sp)
-                        Text(item.detail.orEmpty(), color = Palette.Muted, fontSize = 12.sp)
+                        Text(item.label, style = MaterialTheme.typography.titleLarge)
+                        Text(item.detail.orEmpty(), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                     }
                     SuggestionKind.CUSTOM -> {
                         item.media?.let { CustomEmojiImage(it, 28) }
-                        Text(":${item.label}:", color = Palette.Muted, fontSize = 13.sp)
+                        Text(":${item.label}:", color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                     }
                     SuggestionKind.MEMBER -> Text("@${item.label}")
                 }
@@ -95,7 +96,7 @@ fun EmojiPanel(model: RoomModel, onPick: (String) -> Unit) {
         LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.fillMaxWidth()) {
             for (pack in custom) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(pack.name, Modifier.padding(8.dp), color = Palette.Muted, fontSize = 12.sp)
+                    Text(pack.name, Modifier.padding(8.dp), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 gridItems(pack.emotes, key = { "c-" + pack.name + it.shortcode }) { emote ->
                     Box(
@@ -106,13 +107,13 @@ fun EmojiPanel(model: RoomModel, onPick: (String) -> Unit) {
             }
             for (section in sections) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(section.heading, Modifier.padding(8.dp), color = Palette.Muted, fontSize = 12.sp)
+                    Text(section.heading, Modifier.padding(8.dp), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 gridItems(section.cells, key = { section.heading + it }) { glyph ->
                     Box(
                         Modifier.size(44.dp).clickable { onPick(glyph) }.testTag("emoji-$glyph"),
                         contentAlignment = Alignment.Center,
-                    ) { Text(glyph, fontSize = 24.sp) }
+                    ) { Text(glyph, style = MaterialTheme.typography.headlineSmall) }
                 }
             }
         }
