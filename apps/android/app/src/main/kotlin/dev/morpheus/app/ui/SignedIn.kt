@@ -266,21 +266,16 @@ private fun RowScope.TabItem(
 ) {
     var lastTap by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     val on = me == current
-    // A press shows the ripple (the state layer) though the tap is read by hand (a clickable would merge the icon into the item).
-    val presses = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    // No ripple or state layer on a press (it flashed behind the buttons, #466): the selected indicator is what moves. It grows on the item being
+    // selected and shrinks on the one being left, in step with the list slide (Material 3 NavigationBar indicator motion, #465 tokens).
+    val grow by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, Motion.slide(), label = "indicator")
     Column(
         Modifier
             .weight(1f).fillMaxHeight()
-            .indication(presses, androidx.compose.material3.ripple())
             // Taps by pointerInput, not clickable: that would merge the icon and avatar into one node (the tests look inside).
             .pointerInput(onClick, onLong, onSecondTap) {
                 // A tap acts at once (no wait to see whether a second comes); a second one close behind it is the double tap.
                 detectTapGestures(
-                    onPress = { at ->
-                        val press = androidx.compose.foundation.interaction.PressInteraction.Press(at)
-                        presses.emit(press)
-                        presses.emit(if (tryAwaitRelease()) androidx.compose.foundation.interaction.PressInteraction.Release(press) else androidx.compose.foundation.interaction.PressInteraction.Cancel(press))
-                    },
                     onLongPress = onLong?.let { long -> { long() } },
                     onTap = {
                         val now = android.os.SystemClock.uptimeMillis()
@@ -296,9 +291,12 @@ private fun RowScope.TabItem(
     ) {
         Box(contentAlignment = Alignment.TopEnd) {
             Box(
-                Modifier.height(32.dp).width(64.dp).clip(CircleShape).background(if (on) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
+                Modifier.height(32.dp).width(64.dp),
                 contentAlignment = Alignment.Center,
-            ) { icon(on) }
+            ) {
+                Box(Modifier.height(32.dp).width(64.dp * grow).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer).testTag("$tag-indicator"))
+                icon(on)
+            }
             if (mentions > 0UL) MentionPill(mentions, "$tag-badge", Modifier.padding(end = Space.xs))
             else if (dot) Box(Modifier.padding(top = 4.dp, end = 14.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).testTag("$tag-dot"))
         }
