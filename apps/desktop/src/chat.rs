@@ -269,6 +269,10 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             // column.
             if let Some(input) = &shell.search_input {
                 const REST_W: f32 = 144.0;
+                // A pill: its search glyph and clear button are circles on the end cap (#505).
+                const SEARCH_R: f32 = 14.0;
+                const SEARCH_ICON: f32 = 16.0;
+                const SEARCH_CLEAR: f32 = 22.0;
                 const WIDE_W: f32 = 240.0;
                 let (focused, text) = {
                     let input = input.read(cx);
@@ -292,8 +296,10 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .gap(px(6.0))
                     .h(px(28.0))
                     .pl(px(8.0))
-                    .when(text.is_empty(), |d| d.pr(px(8.0)))
-                    .rounded(px(theme::RADIUS_SM))
+                    .when(text.is_empty(), |d| {
+                        d.pr(px(theme::end_cap_inset(SEARCH_R, SEARCH_ICON)))
+                    })
+                    .rounded(px(SEARCH_R))
                     .bg(theme::fill_input())
                     .text_size(px(0.85 * theme::REM))
                     .text_color(rgb(theme::text()))
@@ -305,19 +311,24 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     })
                     .child(div().flex_1().min_w_0().child(input.clone()))
                     .child(if text.is_empty() {
-                        icon("search", 16.0)
-                            .text_color(rgb(theme::text_muted()))
+                        div()
+                            .size(px(SEARCH_ICON))
+                            .flex_none()
+                            .child(
+                                icon("search", SEARCH_ICON).text_color(rgb(theme::text_muted())),
+                            )
+                            .e2e("span", "search-glyph")
                             .into_any_element()
                     } else {
                         div()
                             .id("search-clear")
                             .flex()
                             .items_center()
-                            .size(px(22.0))
+                            .size(px(SEARCH_CLEAR))
                             .flex_none()
                             .justify_center()
-                            .mr(px(3.0))
-                            .rounded(px(theme::RADIUS_SM))
+                            .mr(px(theme::end_cap_inset(SEARCH_R, SEARCH_CLEAR)))
+                            .rounded_full()
                             .cursor_pointer()
                             .text_color(rgb(clear_colour))
                             .on_hover(bar_hover(cx, "search-clear"))
@@ -335,10 +346,12 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 header = header.child(if was_wide == wide && !wide {
                     bar.w(px(REST_W))
                         .e2e("div", "search-bar")
+                        .attr("radius", theme::radius_attr(SEARCH_R))
                         .into_any_element()
                 } else if was_wide == wide {
                     bar.w(px(WIDE_W))
                         .e2e("div", "search-bar")
+                        .attr("radius", theme::radius_attr(SEARCH_R))
                         .into_any_element()
                 } else {
                     use gpui::{Animation, AnimationExt as _};
@@ -350,6 +363,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                         move |el, delta| el.w(px(from + (target - from) * delta)),
                     )
                     .e2e("div", "search-bar")
+                        .attr("radius", theme::radius_attr(SEARCH_R))
                     .into_any_element()
                 });
             }

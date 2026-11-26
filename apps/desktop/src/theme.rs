@@ -377,6 +377,23 @@ pub const BOTTOM_H: f32 = 50.0;
 /// The gap under the message box, the user panel and the member list: one
 /// shared bottom edge.
 pub const BOTTOM_GAP: f32 = 8.0;
+
+// Concentric shapes (#505): see view_model::concentric. A child at the end of a pill is a
+// circle centred on the end cap; a shape inside a rounded one has radius outer - padding.
+pub use crate::view_model::concentric::{end_cap_inset, inner_radius, pill_radius};
+/// The box, the user pill's row, the search bars: pills, so their ends are half circles.
+pub const BOTTOM_R: f32 = BOTTOM_H / 2.0;
+/// A context menu's padding and border: what its rows are inset by.
+pub const MENU_PAD: f32 = 6.0;
+pub const MENU_BORDER: f32 = 1.0;
+/// A context menu row's highlight: the menu's radius less its padding and border.
+pub fn menu_item_radius() -> f32 {
+    inner_radius(RADIUS_LG, MENU_PAD + MENU_BORDER)
+}
+/// What the test bridge reads a shape's corner radius from (`radius`, px).
+pub fn radius_attr(radius: f32) -> String {
+    format!("{radius}")
+}
 /// `--mono`.
 /// Text on the F3 stats overlay, which always sits on a dark translucent panel
 /// whatever the theme.
@@ -651,6 +668,71 @@ mod source_tests {
             stray.is_empty(),
             "colours that should be tokens:\n{}",
             stray.join("\n")
+        );
+    }
+
+    /// Anything inside a rounded container is concentric with it (#505): an inner corner
+    /// radius is `theme::inner_radius(outer, padding)` (a menu row's is
+    /// `theme::menu_item_radius()`), and a button at the end of a pill is a circle centred on
+    /// the end cap, inset by `theme::end_cap_inset(outer, size)`. A radius typed as a number,
+    /// `.rounded(px(7.0))`, is a hand-picked one that drifts from its container when either
+    /// changes, so the count of them per file may only go down: a new one is flagged, an old
+    /// one that was converted must come off this list. (Padding itself is not flagged: a
+    /// literal `.p(px(..))` is far more often layout than the inset of a rounded shape, and
+    /// no source scan can tell which container a child sits in. The e2e `concentric` checks
+    /// measure the shapes where it matters.)
+    #[test]
+    fn no_new_hand_picked_corner_radius_outside_the_theme() {
+        const ALLOWED: &[(&str, usize)] = &[
+            ("call_ui.rs", 3),
+            ("composer.rs", 1),
+            ("diagnostics.rs", 1),
+            ("emoji_picker.rs", 2),
+            ("invites.rs", 2),
+            ("lightbox.rs", 1),
+            ("login.rs", 1),
+            ("members.rs", 1),
+            ("message.rs", 9),
+            ("noise.rs", 4),
+            ("profile.rs", 3),
+            ("rail.rs", 3),
+            ("room_dialogs.rs", 1),
+            ("room_list.rs", 2),
+            ("settings/pages.rs", 2),
+            ("settings.rs", 2),
+            ("shell.rs", 1),
+            ("titlebar.rs", 1),
+            ("video.rs", 3),
+        ];
+        let mut files = Vec::new();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        sources(&root, &mut files);
+        let mut over = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).expect("source");
+            let found = text
+                .match_indices(".rounded")
+                .filter(|(at, _)| {
+                    let rest = &text[*at..];
+                    let call = rest.find("(px(").map(|i| &rest[i + 4..]);
+                    let name_end = rest[1..].find('(').unwrap_or(0);
+                    rest[..name_end + 1].chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+                        && call.is_some_and(|c| c.starts_with(|c: char| c.is_ascii_digit()))
+                        && rest.find("(px(") == Some(name_end + 1)
+                })
+                .count();
+            let name = file.strip_prefix(&root).expect("under src").to_string_lossy().replace('\\', "/");
+            let allowed = ALLOWED.iter().find(|(n, _)| *n == name).map_or(0, |(_, n)| *n);
+            if found > allowed {
+                over.push(format!("{name}: {found} hand-picked radii, {allowed} allowed"));
+            } else if found < allowed {
+                over.push(format!("{name}: {found} left, {allowed} listed: lower the list"));
+            }
+        }
+        assert!(
+            over.is_empty(),
+            "corner radii go through theme::inner_radius / menu_item_radius / the RADIUS consts:\n{}",
+            over.join("\n")
         );
     }
 }

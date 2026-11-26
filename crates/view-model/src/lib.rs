@@ -20,6 +20,7 @@ pub mod avatar_color;
 pub mod calls;
 pub mod connection_quality;
 pub mod composer;
+pub mod concentric;
 pub mod crop;
 pub mod diffs;
 pub mod emoji;

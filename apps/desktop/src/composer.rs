@@ -244,7 +244,7 @@ impl Composer {
             Some(row) => div()
                 .flex_shrink()
                 .min_w_0()
-                .w(px((row - 94.0 - label).max(40.0)))
+                .w(px((row - tools_width() - label).max(40.0)))
                 .child(self.input.clone())
                 .into_any_element(),
             None => self.input.clone().into_any_element(),
@@ -1044,6 +1044,19 @@ fn slot(child: impl IntoElement) -> impl IntoElement {
         .child(child)
 }
 
+/// A button beside the box is a circle: its centre is the centre of the end cap of the pill.
+const TOOL: f32 = 36.0;
+
+/// The box's side padding: what puts a tool button's centre on the end cap's.
+fn side_pad() -> f32 {
+    theme::end_cap_inset(theme::BOTTOM_R, TOOL)
+}
+
+/// The room the buttons, their gaps and the padding take from the row.
+fn tools_width() -> f32 {
+    2.0 * TOOL + 2.0 * 6.0 + 2.0 * side_pad()
+}
+
 /// A 36 px button beside the box (attach, emoji); `enabled` false marks it
 /// `[disabled]`.
 fn tool_button(
@@ -1057,11 +1070,11 @@ fn tool_button(
     let tagged = div()
         .id(id)
         .flex_none()
-        .size(px(36.0))
+        .size(px(TOOL))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(theme::RADIUS_SM))
+        .rounded_full()
         .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
         .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
@@ -1069,7 +1082,8 @@ fn tool_button(
         .on_click(on_click)
         .tip(title.to_owned())
         .e2e("button", classes)
-        .attr("title", title);
+        .attr("title", title)
+        .attr("radius", theme::radius_attr(TOOL / 2.0));
     if enabled {
         tagged
     } else {
@@ -1167,15 +1181,14 @@ impl Render for Composer {
                     .shape_line(gpui::SharedString::from(label.clone()), size, &[run], None)
                     .width;
                 let width = f32::from(width).ceil() + 1.0;
-                Some(row.map_or(width, |row| width.min((row - 94.0 - 6.0 - 40.0).max(0.0))))
+                Some(row.map_or(width, |row| width.min((row - tools_width() - 6.0 - 40.0).max(0.0))))
             }
             _ => None,
         };
         let mut row = div()
             .flex()
             .gap(px(6.0))
-            .pl(px(4.0))
-            .pr(px(6.0))
+            .px(px(side_pad()))
             .min_h(px(theme::BOTTOM_H))
             .bg(theme::fill_elevated())
             .text_size(rem(1.0))
@@ -1200,9 +1213,9 @@ impl Render for Composer {
         // whole box they jumped to the middle of every taller one).
         row = row.items_end();
         row = if above {
-            row.rounded_b(px(theme::RADIUS_LG))
+            row.rounded_b(px(theme::BOTTOM_R))
         } else {
-            row.rounded(px(theme::RADIUS_LG))
+            row.rounded(px(theme::BOTTOM_R))
         };
 
         let mut footer = div()
@@ -1216,7 +1229,10 @@ impl Render for Composer {
         if let Some(tiles) = tiles {
             footer = footer.child(tiles);
         }
-        footer = footer.child(row.e2e("div", "composer-row"));
+        footer = footer.child(
+            row.e2e("div", "composer-row")
+                .attr("radius", theme::radius_attr(theme::BOTTOM_R)),
+        );
         if let Some(popup) = self.autocomplete_el(cx) {
             footer = footer.child(popup);
         }

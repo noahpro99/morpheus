@@ -254,7 +254,7 @@ fn panel(
         .flex_col()
         .gap(px(2.0))
         .min_w(px(188.0))
-        .p(px(6.0))
+        .p(px(theme::MENU_PAD))
         .rounded(px(theme::RADIUS_LG))
         .bg(theme::solid_rail())
         .border_1()
@@ -298,6 +298,7 @@ fn panel(
     }
     column
         .e2e("div", "context-menu")
+        .attr("radius", theme::radius_attr(theme::RADIUS_LG))
         .attr("data-alpha", theme::alpha_of(theme::solid_rail()).to_string())
         .attr("role", "menu")
         .focusable(focus)
@@ -329,7 +330,7 @@ pub fn item_base(id: gpui::ElementId) -> gpui::Stateful<gpui::Div> {
         .items_center()
         .gap(px(10.0))
         .py(px(7.0))
-        .rounded(px(theme::RADIUS_SM))
+        .rounded(px(theme::menu_item_radius()))
 }
 
 fn item_el(
@@ -470,6 +471,7 @@ fn item_el(
     }
     el.e2e(if item.has_submenu() { "div" } else { "button" }, &classes)
         .attr("role", "menuitem")
+        .attr("radius", theme::radius_attr(theme::menu_item_radius()))
         .attr("data-lit", lit.to_string())
         .attr("data-bg", item.fill.map_or(String::new(), |f| format!("{f:06x}")))
         .attr("data-color", item.fill.map_or(String::new(), |f| format!("{:06x}", theme::on(f))))
