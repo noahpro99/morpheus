@@ -16,12 +16,17 @@ use crate::{dialogs::key_cap, e2e::E2eExt as _, theme};
 /// The arrow's height; the bubble keeps this much room on the arrow's side.
 const ARROW: f32 = 6.0;
 
+/// How long a tooltip takes to fade in.
+const FADE: std::time::Duration = std::time::Duration::from_millis(120);
+
 /// The label drawn by the button, and its shortcut's keys.
 struct Tip {
     label: SharedString,
     keys: Vec<SharedString>,
     /// Where the arrow's tip was last painted (window coordinates).
     tip: Option<(f32, f32)>,
+    /// When the tooltip appeared: it fades in over [`FADE`] (#517).
+    born: std::time::Instant,
 }
 
 /// "Inbox (Ctrl+I)" is the label "Inbox" and the keys Ctrl and I; any other
@@ -164,13 +169,22 @@ impl Render for Tip {
         }
         let bubble = bubble.e2e("div", "tooltip").text(self.label.to_string());
         // The arrow's strip is on the side facing the button.
-        if right {
+        let root = if right {
             div().flex().flex_row().child(arrow).child(bubble)
         } else if below {
             div().flex().flex_col().child(arrow).child(bubble)
         } else {
             div().flex().flex_col().child(bubble).child(arrow)
+        };
+        // Fade in (ease out), a frame at a time until it is whole.
+        let t = (self.born.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.0);
+        if t < 1.0 {
+            window.request_animation_frame();
         }
+        let opacity = 1.0 - (1.0 - t).powi(3);
+        root.opacity(opacity)
+            .e2e("div", "tooltip-root")
+            .attr("data-opacity", opacity.to_string())
     }
 }
 
@@ -181,6 +195,7 @@ fn view(text: SharedString, side: TooltipSide, window: &mut Window, cx: &mut App
         label: label.into(),
         keys: keys.into_iter().map(SharedString::from).collect(),
         tip: None,
+        born: std::time::Instant::now(),
     })
     .into()
 }
