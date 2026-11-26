@@ -1,0 +1,23 @@
+# The second dev Synapse, for the desktop lane (MORPHEUS_HS_INSTANCE=desk, :8009): the desktop e2e runs use it
+# so they never touch the users and rooms the Android runs use on the main one. No calls here (no SFU, no
+# federation port): the call tests run on the main server. `just hs-up-desk` starts it.
+name: morpheus-desk
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: morpheus-synapse-desk
+    restart: unless-stopped
+    ports:
+      - "8009:8008"
+    volumes:
+      - ./data-desk:/data
+    environment:
+      SYNAPSE_SERVER_NAME: localhost
+      SYNAPSE_REPORT_STATS: "no"
+      UID: ${MORPHEUS_UID:-1000}
+      GID: ${MORPHEUS_GID:-100}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30

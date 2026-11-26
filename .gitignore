@@ -7,3 +7,5 @@
 *.log
 /.claude/worktrees
 /dist
+/dev/homeserver/data-desk
+/dev/homeserver/state-desk

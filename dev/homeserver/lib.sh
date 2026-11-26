@@ -1,8 +1,21 @@
 # Shared helpers for the dev homeserver scripts. Source, don't execute.
 
 HS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HS_URL="${MORPHEUS_HOMESERVER:-http://localhost:8008}"
-COMPOSE_FILE="$HS_DIR/docker-compose.yml"
+# MORPHEUS_HS_INSTANCE=desk selects the second, desktop-lane homeserver (its own Synapse on :8009 with its
+# own data dir and seed markers, so a desktop e2e run and an Android one never share users or rooms).
+# Unset: the main one on :8008 (the only one with calls, and the one the emulator reaches).
+if [[ "${MORPHEUS_HS_INSTANCE:-}" == desk ]]; then
+  HS_URL="${MORPHEUS_HS_DESK_URL:-http://localhost:8009}"  # not MORPHEUS_HOMESERVER: the dev shell exports it as :8008
+  COMPOSE_FILE="$HS_DIR/docker-compose.desk.yml"
+  HS_DATA="$HS_DIR/data-desk"
+  HS_STATE="$HS_DIR/state-desk"
+  mkdir -p "$HS_STATE"
+else
+  HS_URL="${MORPHEUS_HOMESERVER:-http://localhost:8008}"
+  COMPOSE_FILE="$HS_DIR/docker-compose.yml"
+  HS_DATA="$HS_DIR/data"
+  HS_STATE="$HS_DIR"
+fi
 
 compose() {
   if docker compose version >/dev/null 2>&1; then

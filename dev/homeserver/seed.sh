@@ -303,7 +303,7 @@ api "$ALICE" POST "/_matrix/client/v3/rooms/$PROJ_ARCHIVE/forget" '{}' >/dev/nul
 say "$CAROL" "$PROJ_GENERAL" "Welcome to Projects"
 echo "  + Projects (Carol's server): #projects-news, #projects-general, #projects-archive (Alice not in it)"
 
-if [[ ! -f "$HS_DIR/.seeded" ]]; then
+if [[ ! -f "$HS_STATE/.seeded" ]]; then
   echo "profiles:"
   set_avatar "$ALICE" "@alice:localhost" "$PNG_ALICE"
   set_avatar "$BOB" "@bob:localhost" "$PNG_BOB"
@@ -343,7 +343,7 @@ if [[ ! -f "$HS_DIR/.seeded" ]]; then
     "release-notes.txt" "text/plain" "release-notes.txt"
   send_video "$ALICE" "$DEV" "$MP4_TINY" "clip.mp4" "$THUMB_TINY" 160 120 1000 "clip.mp4"
   send_audio "$CAROL" "$DEV" "$M4A_TINY" "voice-note.m4a" 1000 "voice-note.m4a"
-  touch "$HS_DIR/.seeded"
+  touch "$HS_STATE/.seeded"
   echo "  + seeded"
 else
   echo "messages: already seeded (delete dev/homeserver/.seeded to re-seed)"
@@ -351,7 +351,7 @@ fi
 
 # A direct message between alice and bob, flagged on both sides via m.direct
 # so clients treat it as a DM (Synapse's is_direct only marks the invite).
-if [[ ! -f "$HS_DIR/.seeded-dm" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-dm" ]]; then
   echo "dm:"
   DM=$(api "$ALICE" POST /_matrix/client/v3/createRoom \
     '{"is_direct":true, "preset":"trusted_private_chat", "invite":["@bob:localhost"]}' | jq -r .room_id)
@@ -362,26 +362,26 @@ if [[ ! -f "$HS_DIR/.seeded-dm" ]]; then
     "$(jq -nc --arg r "$DM" '{"@alice:localhost":[$r]}')" >/dev/null
   say "$BOB" "$DM" "hey alice, this is our dm"
   say "$ALICE" "$DM" "hi bob"
-  touch "$HS_DIR/.seeded-dm"
+  touch "$HS_STATE/.seeded-dm"
   echo "  + alice <-> bob ($DM)"
 fi
 
 # An encrypted room holding one event no device can decrypt (the ciphertext
 # is made up), so the "waiting for keys" rendering has something to show.
-if [[ ! -f "$HS_DIR/.seeded-encrypted" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-encrypted" ]]; then
   echo "encrypted:"
   ENCRYPTED=$(ensure_room encrypted "encrypted" "Megolm without the keys")
   api "$ALICE" PUT "/_matrix/client/v3/rooms/$ENCRYPTED/state/m.room.encryption" \
     '{"algorithm":"m.megolm.v1.aes-sha2"}' >/dev/null
   api "$BOB" PUT "/_matrix/client/v3/rooms/$ENCRYPTED/send/m.room.encrypted/seed-utd-$(date +%s%N)" \
     '{"algorithm":"m.megolm.v1.aes-sha2","ciphertext":"AwgAEnACgAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","device_id":"SEEDDEVICE","sender_key":"c2VlZC1zZW5kZXIta2V5LXRoYXQtaXMtbm90LXJlYWwAAAAAAAA","session_id":"c2VlZC1zZXNzaW9uLWlkLW5vdC1yZWFsAAAAAAAAAAAAAAAAAAA"}' >/dev/null
-  touch "$HS_DIR/.seeded-encrypted"
+  touch "$HS_STATE/.seeded-encrypted"
   echo "  + #encrypted with one undecryptable event"
 fi
 
 # A room with 150 extra members (admin API, no logins) so the member list's
 # windowing has something to window.
-if [[ ! -f "$HS_DIR/.seeded-crowd" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-crowd" ]]; then
   echo "crowd:"
   CROWD=$(ensure_room crowd "crowd" "150 members for the member list")
   for i in $(seq -w 1 150); do
@@ -389,7 +389,7 @@ if [[ ! -f "$HS_DIR/.seeded-crowd" ]]; then
       "$(jq -nc --arg d "Crowd $i" '{password:"crowd-password", displayname:$d}')" >/dev/null
     api "$ALICE" POST "/_synapse/admin/v1/join/$CROWD" "$(jq -nc --arg u "@crowd$i:localhost" '{user_id:$u}')" >/dev/null
   done
-  touch "$HS_DIR/.seeded-crowd"
+  touch "$HS_STATE/.seeded-crowd"
   echo "  + 150 members joined #crowd"
 fi
 
@@ -437,28 +437,28 @@ for pair in "alice:$ALICE" "bob:$BOB" "carol:$CAROL"; do
 done
 echo "  = pending invites declined"
 
-if [[ ! -f "$HS_DIR/.seeded-firehose" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-firehose" ]]; then
   echo "firehose:"
   FIREHOSE=$(ensure_room firehose "firehose" "600 messages for performance tests")
   for i in $(seq 1 600); do say "$BOB" "$FIREHOSE" "firehose message $i"; done
-  touch "$HS_DIR/.seeded-firehose"
+  touch "$HS_STATE/.seeded-firehose"
   echo "  + 600 messages"
 fi
 
 # A room far longer than a session ever loads at once, for the timeline's
 # windowing (only the rows near the screen are kept in the page).
-if [[ ! -f "$HS_DIR/.seeded-deep" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-deep" ]]; then
   echo "deep:"
   DEEP=$(ensure_room deep "deep" "3000 messages for timeline windowing")
   for i in $(seq 1 3000); do say "$BOB" "$DEEP" "deep message $i"; done
-  touch "$HS_DIR/.seeded-deep"
+  touch "$HS_STATE/.seeded-deep"
   echo "  + 3000 messages"
 fi
 
 # A big public room (3000 members, like a public room on matrix.org) for
 # the big-room stalls (#112): most members have a picture, every tenth one
 # that is gone from the server. Admin API, no logins, 16 at a time.
-if [[ ! -f "$HS_DIR/.seeded-multitude" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-multitude" ]]; then
   echo "multitude:"
   MULTITUDE=$(ensure_room multitude "multitude" "3000 members")
   FACE=$(upload "$ALICE" "$PNG_BOB")
@@ -473,14 +473,14 @@ if [[ ! -f "$HS_DIR/.seeded-multitude" ]]; then
       -H "Authorization: Bearer $ALICE" -H "Content-Type: application/json" \
       -d "{\"user_id\":\"@multi$i:localhost\"}"'
   for i in $(seq 1 30); do say "$BOB" "$MULTITUDE" "multitude message $i for @multi0$(printf %03d "$i")"; done
-  touch "$HS_DIR/.seeded-multitude"
+  touch "$HS_STATE/.seeded-multitude"
   echo "  + 3000 members joined #multitude, 30 messages"
 fi
 
 # Two more #multitude members with odd pictures (#115): one of 3 MB (never
 # fetched whole when a server makes no thumbnails), and one whose picture in
 # the room is gone while their profile's loads (the substitute is remembered).
-if [[ ! -f "$HS_DIR/.seeded-multitude-pictures" ]]; then
+if [[ ! -f "$HS_STATE/.seeded-multitude-pictures" ]]; then
   echo "multitude pictures:"
   MULTITUDE=$(ensure_room multitude "multitude" "3000 members")
   BIG=$( { printf '\x89PNG\r\n\x1a\n'; head -c 3000000 /dev/urandom; } |
@@ -496,7 +496,7 @@ if [[ ! -f "$HS_DIR/.seeded-multitude-pictures" ]]; then
   SUB=$(api "$ALICE" POST "/_synapse/admin/v1/users/@multisub:localhost/login" '{}' | jq -r .access_token)
   api "$SUB" PUT "/_matrix/client/v3/rooms/$MULTITUDE/state/m.room.member/@multisub:localhost" \
     '{"membership":"join","displayname":"A substitute picture","avatar_url":"mxc://localhost/gonesub"}' >/dev/null
-  touch "$HS_DIR/.seeded-multitude-pictures"
+  touch "$HS_STATE/.seeded-multitude-pictures"
   echo "  + a 3 MB picture and a substitute picture in #multitude"
 fi
 

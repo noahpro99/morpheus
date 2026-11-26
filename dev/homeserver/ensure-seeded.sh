@@ -7,7 +7,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-stamp="$HS_DIR/.seeded-stamp"
+stamp="$HS_STATE/.seeded-stamp"
 want=$(cat "$HS_DIR/seed.sh" "$HS_DIR/lib.sh" | sha256sum | cut -d' ' -f1)
 
 status() { curl -s -o /dev/null -w '%{http_code}' "$@" || true; }

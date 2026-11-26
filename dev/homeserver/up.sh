@@ -6,12 +6,22 @@ source "$(dirname "$0")/lib.sh"
 export MORPHEUS_UID MORPHEUS_GID
 MORPHEUS_UID=$(id -u)
 MORPHEUS_GID=$(id -g)
-mkdir -p "$HS_DIR/data"
+mkdir -p "$HS_DATA"
 
-if [[ ! -f "$HS_DIR/data/homeserver.yaml" ]]; then
+# The desktop-lane server starts from a copy of the main one's config (same server name, listeners, room
+# directory rules), signing key and certificate, with an empty database: the main server must have been
+# started once.
+if [[ "${MORPHEUS_HS_INSTANCE:-}" == desk && ! -f "$HS_DATA/homeserver.yaml" ]]; then
+  [[ -f "$HS_DIR/data/homeserver.yaml" ]] || { echo "start the main server first (just hs-up)" >&2; exit 1; }
+  for f in homeserver.yaml localhost.log.config localhost.signing.key tls.crt tls.key; do
+    cp "$HS_DIR/data/$f" "$HS_DATA/$f"
+  done
+fi
+
+if [[ ! -f "$HS_DATA/homeserver.yaml" ]]; then
   echo "generating synapse config…"
   compose run --rm synapse generate >/dev/null
-  cat >>"$HS_DIR/data/homeserver.yaml" <<'YAML'
+  cat >>"$HS_DATA/homeserver.yaml" <<'YAML'
 
 # ---- morpheus dev overrides ----
 enable_registration: true
@@ -36,8 +46,10 @@ rc_invites:
 YAML
 fi
 
-"$HS_DIR/calls-setup.sh"
-"$HS_DIR/directory-setup.sh"
+if [[ "${MORPHEUS_HS_INSTANCE:-}" != desk ]]; then
+  "$HS_DIR/calls-setup.sh"
+  "$HS_DIR/directory-setup.sh"
+fi
 compose up -d
 echo -n "waiting for synapse"
 for _ in $(seq 1 60); do
