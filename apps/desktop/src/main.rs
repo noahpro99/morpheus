@@ -1210,6 +1210,8 @@ fn windows_app_id_self_test(out: &std::path::Path) -> String {
     let exe = std::env::current_exe().unwrap_or_default();
     match win_shell::ensure_start_menu_shortcut(&exe, &shortcut) {
         Ok(()) => {
+            text += "shortcut: made\n";
+            save(&text);
             text += &*format!(
                 "shortcut app id: {}\n",
                 win_shell::shortcut_app_id(&shortcut).unwrap_or_default()
