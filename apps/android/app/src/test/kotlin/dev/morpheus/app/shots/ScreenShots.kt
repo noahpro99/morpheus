@@ -10,6 +10,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
+import com.github.takahirom.roborazzi.RoborazziATFAccessibilityCheckOptions
+import com.github.takahirom.roborazzi.RoborazziATFAccessibilityChecker
+import com.github.takahirom.roborazzi.checkRoboAccessibility
+import com.google.android.apps.common.testing.accessibility.framework.AccessibilityCheckPreset
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.morpheus.app.R
 import dev.morpheus.app.ui.CheckRow
@@ -60,6 +64,14 @@ class ScreenShots(private val light: Boolean) {
         Palette.useScheme(if (light) lightColorScheme() else darkColorScheme(), light)
         compose.setContent { MorpheusTheme { content() } }
         compose.onRoot().captureRoboImage("src/test/screenshots/$name-$mode.png")
+        // The Accessibility Test Framework over the same screen: touch targets of 48 dp, text and image contrast,
+        // content descriptions and the rest of its latest preset. Any error fails the test.
+        compose.onRoot().checkRoboAccessibility(
+            RoborazziATFAccessibilityCheckOptions(
+                RoborazziATFAccessibilityChecker(AccessibilityCheckPreset.LATEST),
+                RoborazziATFAccessibilityChecker.CheckLevel.Error,
+            ),
+        )
     }
 
     @Test

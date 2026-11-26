@@ -75,3 +75,9 @@ jobs:
       - name: Lint, compose-rules, our rules
         working-directory: apps/android
         run: gradle lintDebug detekt -PrustPrebuilt=$GITHUB_WORKSPACE/target/android-checks
+
+      - name: Screenshots and accessibility checks
+        working-directory: apps/android
+        run: gradle verifyRoborazziDebug --tests "*ScreenShots*" -PrustPrebuilt=$GITHUB_WORKSPACE/target/android-checks
+        env:
+          ANDROID_CHECK_PROFILE: release

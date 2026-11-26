@@ -174,6 +174,7 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi:1.33.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.33.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.33.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-accessibility-check:1.33.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
