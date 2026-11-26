@@ -26,9 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentSize
@@ -135,37 +132,18 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
         onDispose { RoomHooks.attach = null }
     }
 
-    val pager = rememberPagerState(initialPage = 1) { 3 }
-    // A swipe onto the chat focuses the composer and shows the keyboard; a swipe off it puts the keyboard away.
+    // A chat opened by a swipe focuses the composer and shows the keyboard; the swipe that leaves it puts the keyboard away.
     val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    // Driven by where the pager is heading, not where it has settled: the keyboard is asked for (or put away) as soon as the
-    // swipe is committed, not after the pane has stopped moving, and a swipe that springs back brings it back (#379).
-    LaunchedEffect(pager, threadRoot) {
+    // A chat that is still coming in under a finger waits for the drag to end: it only takes the focus when the drag went through.
+    LaunchedEffect(threadRoot) {
         if (threadRoot != null) return@LaunchedEffect
-        var first = true
-        // A chat that is still coming in under a finger waits for the drag to end: it only takes the focus when the drag went through.
-        var openedBySwipe = false
-        androidx.compose.runtime.snapshotFlow { pager.targetPage }.collect { page ->
-            if (first) {
-                androidx.compose.runtime.snapshotFlow { app.slide.dragging }.first { !it }
-                openedBySwipe = app.takeSwipeOpened()
-            }
-            if (page == 1) {
-                if (!first || openedBySwipe) {
-                    try { composerFocus.requestFocus() } catch (_: Exception) {}
-                    keyboard?.show()
-                    dev.morpheus.app.AppState.imeShownAt = android.os.SystemClock.uptimeMillis()
-                    dev.morpheus.app.AppState.imeShown++
-                }
-            } else {
-                focusManager.clearFocus()
-                keyboard?.hide()
-                dev.morpheus.app.AppState.imeHiddenAt = android.os.SystemClock.uptimeMillis()
-                dev.morpheus.app.AppState.imeHidden++
-            }
-            first = false
+        androidx.compose.runtime.snapshotFlow { app.slide.dragging }.first { !it }
+        if (app.takeSwipeOpened()) {
+            try { composerFocus.requestFocus() } catch (_: Exception) {}
+            keyboard?.show()
+            dev.morpheus.app.AppState.imeShownAt = android.os.SystemClock.uptimeMillis()
+            dev.morpheus.app.AppState.imeShown++
         }
     }
     BackHandler {
@@ -174,7 +152,6 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             info -> info = false
             viewing != null -> viewing = null
             editing != null -> model.edit(null)
-            pager.currentPage != 1 -> scope.launch { pager.animateScrollToPage(1) }
             else -> onClose()
         }
     }
@@ -191,7 +168,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             if (id.isNotEmpty()) model.jumpTo(id)
         }
         else if (info) RoomInfo(app, model, room, title) { info = false }
-        else if (thread == null) RoomPages(app, model, room, pager, threadRoot == null, isDm) { ScreenScaffold(if (threadRoot == null) "room-screen" else "thread-screen", {
+        else if (thread == null) RoomPages(app, room, threadRoot == null, isDm) { ScreenScaffold(if (threadRoot == null) "room-screen" else "thread-screen", {
             val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
             TopBar(
                 if (threadRoot == null) title else t("Thread"),
@@ -671,106 +648,49 @@ private fun ImageViewer(media: MediaHandle, onClose: () -> Unit) {
 }
 
 /**
- * A room as Discord's phone app has it: the chat in the middle, the channels one swipe to the right
- * (the rail and the list, to pick another room) and the members one swipe to the left. A thread has no panes.
+ * A room as the phone has it: the chat alone, and a swipe either way takes it back to its list (the DMs for a DM, Servers for a
+ * channel), the chat following the finger off the screen (#469, #464). A thread has no swipe. Nothing opens the member list by swipe.
  */
 @Composable
-private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: PagerState, panes: Boolean, isDm: Boolean, chat: @Composable () -> Unit) {
+private fun RoomPages(app: AppModel, room: RoomItem, panes: Boolean, isDm: Boolean, chat: @Composable () -> Unit) {
     if (!panes) {
         chat()
         return
     }
-    // A room picked from the channels pane is the chat to show now.
-    androidx.compose.runtime.LaunchedEffect(room.id) { if (pager.currentPage != 1) pager.scrollToPage(1) }
-    // Quick to settle (a stiff spring, about 200 ms) and quick to switch. One page per gesture, counted from the page the finger went
-    // down on, as Discord does (a drag counted from the page nearest at release went two pages, over the chat: #388).
-    var startPage by remember { mutableIntStateOf(1) }
-    androidx.compose.runtime.LaunchedEffect(pager) {
-        pager.interactionSource.interactions.collect {
-            if (it is androidx.compose.foundation.interaction.DragInteraction.Start) startPage = pager.currentPage
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(pager) {
-        androidx.compose.runtime.snapshotFlow { pager.currentPage }.collect { dev.morpheus.app.AppState.roomPage = it; dev.morpheus.app.AppState.roomPages.add(it) }
-    }
-    // The library's own snap ignored a drag of a third of the width and a quick flick of a fifth (it sprang back to the chat), so
-    // where the pager goes on release is decided here: one page from where the finger went down, if it moved a fifth of a page, or
-    // went a little way at a flick's speed (#318, #388).
-    val fling = object : androidx.compose.foundation.gestures.TargetedFlingBehavior {
-        override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float, onRemainingDistanceUpdated: (Float) -> Unit): Float {
-            val pageSize = pager.layoutInfo.pageSize.coerceAtLeast(1)
-            val moved = (pager.currentPage + pager.currentPageOffsetFraction) - startPage
-            val pagesPerSecond = initialVelocity / pageSize
-            val flicked = kotlin.math.abs(pagesPerSecond) >= 0.25f && pagesPerSecond * moved > 0f && kotlin.math.abs(moved) >= 0.04f
-            val target = if (kotlin.math.abs(moved) >= 0.2f || flicked) startPage + (if (moved > 0f) 1 else -1) else startPage
-            val distance = (target.coerceIn(0, pager.pageCount - 1) - (pager.currentPage + pager.currentPageOffsetFraction)) * pageSize
-            var last = 0f
-            androidx.compose.animation.core.animate(0f, distance, 0f, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 2500f)) { value, _ ->
-                scrollBy(value - last)
-                last = value
-                onRemainingDistanceUpdated(distance - value)
-            }
-            return 0f
-        }
-    }
-    // A DM has no channels or members to page to: a swipe left in it goes back to the DMs (#458; list_swipes), the chat following the finger
-    // off to its edge, the left (#464). A server channel's way back is the pager's first page (the channels pane), and a swipe on from
-    // there goes on to the DMs (below).
     var leaveDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val dragScope = androidx.compose.runtime.rememberCoroutineScope()
-    HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager").then(if (!isDm) Modifier else Modifier.pointerInput(Unit) {
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    Box(Modifier.fillMaxSize().testTag("room-pager").pointerInput(Unit) {
         detectHorizontalDragGestures(
             onDragStart = { leaveDrag = 0f; app.slide.dragging = true },
             onDragEnd = {
-                val leaves = uniffi.morpheus_ffi.swipeCommits(leaveDrag, size.width.toFloat()) && uniffi.morpheus_ffi.chatSwipeLeaves(true, fingerLeft = leaveDrag < 0f)
-                if (leaves) app.selectTab(dev.morpheus.app.Tab.Dms)
+                if (uniffi.morpheus_ffi.swipeCommits(leaveDrag, size.width.toFloat())) {
+                    // Put the keyboard away as the chat goes.
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                    dev.morpheus.app.AppState.imeHiddenAt = android.os.SystemClock.uptimeMillis()
+                    dev.morpheus.app.AppState.imeHidden++
+                    app.selectTab(if (uniffi.morpheus_ffi.chatListIsDms(isDm)) dev.morpheus.app.Tab.Dms else dev.morpheus.app.Tab.Servers)
+                } else app.slide.leaveSign = 0
                 app.slide.dragging = false
             },
-            onDragCancel = { leaveDrag = 0f; app.slide.dragging = false },
+            onDragCancel = { leaveDrag = 0f; app.slide.leaveSign = 0; app.slide.dragging = false },
         ) { _, amount ->
             leaveDrag += amount
-            // Only the swipe that leaves the chat moves it (the other way it stays).
-            val along = if (uniffi.morpheus_ffi.chatSwipeLeaves(true, fingerLeft = leaveDrag < 0f)) kotlin.math.abs(leaveDrag) else 0f
-            dragScope.launch { app.slide.f.snapTo((1f - along / size.width).coerceIn(0f, 1f)) }
+            // The chat goes the way the finger goes, whichever that is.
+            if (leaveDrag != 0f) app.slide.leaveSign = if (leaveDrag < 0f) -1 else 1
+            dragScope.launch { app.slide.f.snapTo((1f - kotlin.math.abs(leaveDrag) / size.width).coerceIn(0f, 1f)) }
         }
-    }).pointerInput(Unit) {
-        // The finger leaving the pager: what the keyboard's lags are measured from (the debug bridge reports them, #379).
+    }.pointerInput(Unit) {
+        // The finger leaving the chat: what the keyboard's lags are measured from (the debug bridge reports them, #379).
         awaitPointerEventScope {
             while (true) {
                 val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                 if (event.changes.none { it.pressed }) dev.morpheus.app.AppState.imeLiftAt = android.os.SystemClock.uptimeMillis()
             }
         }
-    }, userScrollEnabled = !isDm, flingBehavior = fling, key = { it }) { page ->
-        when (page) {
-            // The Servers tab as it is outside a room: its bar is here, the chat has none. A swipe right on from here is the swipe right on
-            // Servers: it goes on to the DMs, the chat leaving to its right (#464).
-            0 -> Column(Modifier.fillMaxSize().testTag("pane-channels").pointerInput(Unit) {
-                awaitPointerEventScope { while (true) {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    var over = 0f
-                    val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, o -> if (o > 0f) { over = o; change.consume() } }
-                    if (slop != null && over > 0f) {
-                        var total = over
-                        app.slide.dragging = true
-                        dragScope.launch { app.slide.f.snapTo((1f - total / size.width).coerceIn(0f, 1f)) }
-                        horizontalDrag(slop.id) { change ->
-                            total += change.positionChange().x
-                            change.consume()
-                            dragScope.launch { app.slide.f.snapTo((1f - kotlin.math.max(total, 0f) / size.width).coerceIn(0f, 1f)) }
-                        }
-                        if (uniffi.morpheus_ffi.swipeCommits(total, size.width.toFloat()) && total > 0f) app.selectTab(dev.morpheus.app.Tab.Dms)
-                        app.slide.dragging = false
-                    }
-                } }
-            }) {
-                ServersPane(app, { app.open(it) }, Modifier.weight(1f), selectedRoom = room.id)
-                BottomBar(app, dev.morpheus.app.Tab.Servers)
-            }
-            1 -> Box(Modifier.fillMaxSize().testTag("chat-page")) { chat() }
-            else -> MembersPane(app, model)
-        }
-    }
+    }) { chat() }
 }
 
 /** The unsent text of each chat and thread, with the cursor or selection it was left with (kept while the app runs). */

@@ -104,7 +104,7 @@ fun Root(model: AppModel) {
                             }
                             val shownRoom = lastRoom
                             if (shownRoom != null && (open != null || at > 0.001f)) {
-                                val sign = if (uniffi.morpheus_ffi.chatEdgeIsLeft(shownRoom.isDm)) -1 else 1
+                                val sign = if (slide.leaveSign != 0) slide.leaveSign else if (uniffi.morpheus_ffi.chatEdgeIsLeft(shownRoom.isDm)) -1 else 1
                                 Box(
                                     Modifier.fillMaxSize()
                                         .layout { m, c -> val p = m.measure(c); layout(p.width, p.height) { p.place((sign * (1f - at) * p.width).toInt(), 0) } }

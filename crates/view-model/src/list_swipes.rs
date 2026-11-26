@@ -7,8 +7,8 @@
 //!
 //! A swipe that would open a chat when none was kept does nothing.
 //!
-//! In an open chat the swipe that leaves it is the opposite of the one that opened it (#458): a DM opens with a swipe right from the
-//! DMs, so a swipe left goes back to the DMs; a server channel opens with a swipe left from Servers, so a swipe right goes back to Servers.
+//! In an open chat a swipe either way leaves it for its list, the chat following the finger (#469; it was only the opposite of the one that
+//! opened it, #458).
 //!
 //! Which way is which is the one pair of constants below.
 
@@ -79,11 +79,6 @@ impl LastChats {
     }
 }
 
-/// In an open chat, does this swipe leave it for its list? A DM goes back on the swipe that leads to the servers, a channel on the one
-/// that leads to the DMs, each the opposite of the swipe that opened it.
-pub fn leaves_chat(is_dm: bool, finger: Finger) -> bool {
-    if is_dm { finger == TOWARDS_SERVERS } else { finger == TOWARDS_DMS }
-}
 
 /// The screen edge a chat sits at: it comes in from there when it opens and goes back out to it when it closes (#464). The rule is that
 /// whatever a swipe opens or closes moves the way the finger moves: a DM opens with a swipe right, so it comes in from the left edge and
@@ -173,8 +168,6 @@ mod tests {
         for is_dm in [true, false] {
             let edge = chat_edge(is_dm);
             // The swipe that sends a chat away moves it towards its own edge.
-            let leaving = if leaves_chat(is_dm, Finger::Left) { Finger::Left } else { Finger::Right };
-            assert_eq!(leaving, edge, "the swipe that closes a chat (dm: {is_dm}) moves it to its edge");
             // The one that opens it moves away from there.
             let opening = if is_dm { TOWARDS_DMS } else { TOWARDS_SERVERS };
             assert_ne!(opening, edge);
@@ -193,14 +186,11 @@ mod tests {
     }
 
     #[test]
-    fn a_swipe_in_a_chat_goes_back_to_its_list_the_way_opposite_to_the_one_that_opened_it() {
-        assert!(leaves_chat(true, Finger::Left));
-        assert!(!leaves_chat(true, Finger::Right));
+    fn a_swipe_in_a_chat_either_way_goes_back_to_its_list() {
+        // Either swipe leaves a chat (#469); it goes back to the list it was opened from.
         assert_eq!(list_of_chat(true), List::Dms);
-        assert!(leaves_chat(false, Finger::Right));
-        assert!(!leaves_chat(false, Finger::Left));
         assert_eq!(list_of_chat(false), List::Servers);
-        // Each is the reverse of the swipe that opens it from its list.
+        // Each list's own swipe still opens its last chat.
         let last = kept();
         assert_eq!(last.swipe(List::Dms, Finger::Right), Step::Open("!dm:x".into()));
         assert_eq!(last.swipe(List::Servers, Finger::Left), Step::Open("!chan:x".into()));

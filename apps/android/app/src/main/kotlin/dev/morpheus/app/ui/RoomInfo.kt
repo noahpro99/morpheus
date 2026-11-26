@@ -53,7 +53,8 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
     var problem by remember { mutableStateOf<String?>(null) }
     var sure by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) {
+    val nicknames by app.nicknameVersion.collectAsState()
+    LaunchedEffect(nicknames) {
         try {
             members = model.members()
         } catch (e: Exception) {
@@ -95,6 +96,10 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                         is MemberRow.Member -> ListRow(
                             row.member.name, "member-${row.member.name}",
                             leading = { Avatar(row.member.avatar, row.member.name, 36.dp) },
+                            // The desktop's member menu, as the members pane had it before the pane went (#469).
+                            onLongClick = {
+                                app.openSheet(row.member.name, onOutcome = { o -> if (o is uniffi.morpheus_ffi.MenuOutcome.OpenRoom) app.openRoomWhenKnown(o.roomId) }) { app.morpheus.memberMenuRows(model.room.id, row.member.userId) }
+                            },
                         ) {
                             scope.launch {
                                 try {

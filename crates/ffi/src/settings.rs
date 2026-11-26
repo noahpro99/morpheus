@@ -415,11 +415,10 @@ pub fn last_chats_opened(kept: String, room: String, is_dm: bool) -> String {
     last.encode()
 }
 
-/// In an open chat (`is_dm`), whether a swipe (`finger_left` is the direction the finger moved) leaves it for its list (#458).
+/// Whether a chat (a DM or not) goes back to the DMs list (else Servers) when a swipe sends it away (#469).
 #[uniffi::export]
-pub fn chat_swipe_leaves(is_dm: bool, finger_left: bool) -> bool {
-    use morpheus_view_model::list_swipes::Finger;
-    morpheus_view_model::list_swipes::leaves_chat(is_dm, if finger_left { Finger::Left } else { Finger::Right })
+pub fn chat_list_is_dms(is_dm: bool) -> bool {
+    morpheus_view_model::list_swipes::list_of_chat(is_dm) == morpheus_view_model::list_swipes::List::Dms
 }
 
 /// Whether a chat (a DM or not) sits at the left edge of the screen: it comes in from there and leaves to it (#464).

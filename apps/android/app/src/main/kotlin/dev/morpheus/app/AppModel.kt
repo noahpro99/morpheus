@@ -138,6 +138,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     }
 
     fun openUnlocked(room: RoomItem) {
+        slide.leaveSign = 0
         _room.value = room
         keep("room", room.id)
         keep("last-chats", uniffi.morpheus_ffi.lastChatsOpened(kept?.getString("last-chats", null).orEmpty(), room.id, room.isDm))
@@ -802,12 +803,6 @@ object AppState {
     @Volatile
     var imeHidden: Int = 0
 
-    /** The room pager's page now (0 channels, 1 chat, 2 members) and every page it passed through, in order (the debug bridge reports them; #388). */
-    @Volatile
-    var roomPage: Int = 1
-
-    val roomPages = java.util.concurrent.CopyOnWriteArrayList<Int>()
-
     /** When (uptime ms) the finger last left the room pager, and when the keyboard was last asked for and put away: the debug bridge reports the lags (#379). */
     @Volatile
     var imeLiftAt: Long = 0
@@ -901,6 +896,8 @@ class PageRequest(val kind: String, val roomId: String, val extra: String = "", 
  * chat is (open or not).
  */
 class ChatSlide {
+    /** Which edge a chat that a drag is sending off goes to: -1 left, 1 right, 0 its own (a DM left, a channel right; #469). */
+    var leaveSign by androidx.compose.runtime.mutableIntStateOf(0)
     val f = androidx.compose.animation.core.Animatable(0f)
     var dragging by androidx.compose.runtime.mutableStateOf(false)
 }
