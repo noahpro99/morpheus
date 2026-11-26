@@ -69,7 +69,11 @@ pub fn ensure_start_menu_shortcut(launcher: &Path, shortcut: &Path) -> windows::
             },
             ..Default::default()
         });
-        store.SetValue(&PKEY_AppUserModel_ID, &value)?;
+        let set = store.SetValue(&PKEY_AppUserModel_ID, &value);
+        // Its text is ours, not the shell's: dropping the value would free it with
+        // CoTaskMemFree (PropVariantClear) and corrupt the heap.
+        std::mem::forget(value);
+        set?;
         store.Commit()?;
         let file: IPersistFile = link.cast()?;
         file.Save(&HSTRING::from(shortcut.as_os_str()), true)?;
