@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -49,6 +50,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -67,6 +69,7 @@ import uniffi.morpheus_ffi.CallPerson
 import uniffi.morpheus_ffi.CallPhase
 import uniffi.morpheus_ffi.CallSnapshot
 import uniffi.morpheus_ffi.CardKind
+import uniffi.morpheus_ffi.callCardMenu
 import uniffi.morpheus_ffi.callTimer
 
 /** The text of the call's timer, ticking each second. */
@@ -90,6 +93,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
     BackHandler { if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }
     val speaker by calls.speaker.collectAsState()
     var panel by remember { mutableStateOf<String?>(null) }
+    val hidden by calls.hiddenVideo.collectAsState()
     // A swipe down minimises the call to its strip (#474): the screen follows the finger, a short slow drag springs back. A drag the call's own
     // lists or sliders take (they consume it first) is theirs.
     val drop = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -136,17 +140,21 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                     Modifier.testTag("call-state"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_user_plus, t("Invite to call"), "call-invite-button", { panel = if (panel == INVITE_PANEL) null else INVITE_PANEL })
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
         }
         snapshot.error?.let { Text(it, Modifier.padding(16.dp).testTag("call-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyLarge) }
         // The volume panels are drawn in place of the cards (not as popups, which the e2e bridge cannot see).
-        val person = panel?.let { id -> snapshot.people.firstOrNull { it.userId == id } }
+        val screenPanel = panel?.startsWith(SCREEN_PREFIX) == true
+        val person = panel?.removePrefix(SCREEN_PREFIX)?.let { id -> snapshot.people.firstOrNull { it.userId == id } }
         if (panel == SETTINGS_PANEL) {
             CallSettings(calls) { panel = null }
+        } else if (panel == INVITE_PANEL) {
+            InvitePanel(calls, snapshot) { panel = null }
         } else if (panel == OUTPUT_PANEL) {
             OutputPanel(calls) { panel = null }
         } else if (panel != null && person != null) {
-            PersonVolumePanel(calls, person) { panel = null }
+            CardMenuPanel(calls, snapshot, person, screenPanel) { panel = null }
         } else {
             LazyVerticalGrid(
                 GridCells.Fixed(if (snapshot.cards.size <= 1) 1 else 2),
@@ -154,7 +162,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card) { panel = it } }
+                items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card, card.userId in hidden) { panel = it } }
             }
         }
         Controls(calls, snapshot, speaker, openOutput = { panel = if (panel == OUTPUT_PANEL) null else OUTPUT_PANEL }) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
@@ -162,7 +170,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
 }
 
 @Composable
-private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openVolume: (String) -> Unit) {
+private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, videoHidden: Boolean, openVolume: (String) -> Unit) {
     val person = snapshot.people.firstOrNull { it.userId == card.userId }
     Box(
         Modifier
@@ -176,7 +184,8 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
     ) {
         when (card.kind) {
             CardKind.PERSON -> Avatar(card.avatar, card.name, 64.dp)
-            CardKind.CAMERA, CardKind.SCREEN -> VideoPicture(calls, card)
+            CardKind.CAMERA -> if (videoHidden) Avatar(card.avatar, card.name, 64.dp) else VideoPicture(calls, card)
+            CardKind.SCREEN -> VideoPicture(calls, card)
             CardKind.UNWATCHED_SCREEN -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(t("%{name}'s screen", "name" to card.name), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 Button({ calls.watch(card.userId, true) }, Modifier.testTag("watch-${card.name}")) { Text(t("Watch")) }
@@ -184,6 +193,8 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
         }
         if (card.kind == CardKind.SCREEN) {
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Stop watching"), "stop-watching-${card.name}", { calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
+            // The screen's own menu: its sound's volume and mute for me (#436).
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_volume_2, t("Stream volume"), "stream-menu-${card.name}", { openVolume(SCREEN_PREFIX + card.userId) }, Modifier.align(Alignment.TopStart), tint = Color.White)
         }
         if ((card.kind == CardKind.PERSON || card.kind == CardKind.CAMERA) && person != null && !person.me) {
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_volume_2, t("Volume"), "person-volume-${card.name}", { openVolume(card.userId) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
@@ -304,6 +315,8 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
 
 private const val SETTINGS_PANEL = "settings"
 private const val OUTPUT_PANEL = "output"
+private const val INVITE_PANEL = "invite"
+private const val SCREEN_PREFIX = "screen:"
 
 /** A volume from 0 to 2 as a percentage, in steps of a tenth. */
 private fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
@@ -323,17 +336,33 @@ private fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float
     }
 }
 
-/** How loud one person plays for me, and silencing them for me alone. */
+/**
+ * The menu of one call card (#436): the rows the desktop's right-click offers (`call_card_menu`, from
+ * `view_model::calls::call_card_items`): the person's volume and mute for me, a camera's Hide video, a
+ * shared screen's Stop watching and its sound's volume and mute. Drawn in place of the cards.
+ */
 @Composable
-private fun ColumnScope.PersonVolumePanel(calls: CallModel, person: CallPerson, close: () -> Unit) {
+private fun ColumnScope.CardMenuPanel(calls: CallModel, snapshot: CallSnapshot, person: CallPerson, screen: Boolean, close: () -> Unit) {
     val kept = remember(person.userId) { calls.personVolume(person.userId) }
-    var volume by remember(person.userId) { mutableFloatStateOf(kept.volume) }
-    var muted by remember(person.userId) { mutableStateOf(kept.muted) }
+    var volume by remember(person.userId, screen) { mutableFloatStateOf(if (screen) kept.stream else kept.volume) }
+    var muted by remember(person.userId, screen) { mutableStateOf(if (screen) kept.streamMuted else kept.muted) }
+    val hidden by calls.hiddenVideo.collectAsState()
+    val watching = snapshot.cards.any { it.userId == person.userId && it.kind == CardKind.SCREEN }
+    val kind = if (screen) CardKind.SCREEN else if (person.camera || person.userId in hidden || snapshot.cards.any { it.userId == person.userId && it.kind == CardKind.CAMERA }) CardKind.CAMERA else CardKind.PERSON
+    val rows = callCardMenu(person.userId, kind, false, volume, muted, person.userId in hidden, watching)
     Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("person-volume-panel")) {
         Text(person.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-        VolumeRow(t("Volume"), "person-volume", kept.volume) { volume = it; calls.setPersonVolume(person.userId, volume, muted) }
-        Button({ muted = !muted; calls.setPersonVolume(person.userId, volume, muted) }, Modifier.testTag("person-volume-mute")) {
-            Text(if (muted) t("Unmute for me") else t("Mute for me"))
+        for (row in rows) {
+            when (row.action) {
+                "volume" -> VolumeRow(row.label, "person-volume", kept.volume) { volume = it; calls.setPersonVolume(person.userId, volume, muted) }
+                "stream-volume" -> VolumeRow(row.label, "stream-volume", kept.stream) { volume = it; calls.setStreamVolume(person.userId, volume, muted) }
+                "mute" -> Button({ muted = !muted; calls.setPersonVolume(person.userId, volume, muted) }, Modifier.testTag("person-volume-mute")) { Text(row.label) }
+                "mute-stream" -> Button({ muted = !muted; calls.setStreamVolume(person.userId, volume, muted) }, Modifier.testTag("stream-volume-mute")) { Text(row.label) }
+                "hide-video" -> TextButton({ calls.toggleHideVideo(person.userId) }, Modifier.testTag("card-hide-video").semantics { if (row.checked) stateDescription = "On" }) {
+                    Text(row.label + if (row.checked) " ✓" else "")
+                }
+                "stop-watching" -> TextButton({ calls.watch(person.userId, false); close() }, Modifier.testTag("card-stop-watching")) { Text(row.label) }
+            }
         }
         TextButton(close, Modifier.testTag("person-volume-close")) { Text(t("Close")) }
     }
@@ -370,5 +399,53 @@ private fun ColumnScope.OutputPanel(calls: CallModel, close: () -> Unit) {
             ChoiceRow(route.label, route.on, "route-${route.key}") { calls.chooseRoute(route.key); tick++ }
         }
         TextButton(close, Modifier.testTag("output-close")) { Text(t("Close")) }
+    }
+}
+
+/** Ask a friend into the call (#438): your friends, each with a button that invites them (a DM's call: the room's invite; a voice channel: a message with its link). */
+@Composable
+private fun ColumnScope.InvitePanel(calls: CallModel, snapshot: CallSnapshot, close: () -> Unit) {
+    var friends by remember { mutableStateOf<List<uniffi.morpheus_ffi.FriendItem>?>(null) }
+    var states by remember { mutableStateOf(mapOf<String, String>()) }
+    val direct = calls.isDm(snapshot.roomId)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(Unit) { friends = try { calls.friends() } catch (_: Exception) { emptyList() } }
+    Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("call-invite-panel")) {
+        Text(if (direct) t("Invite to call") else t("Invite to voice channel"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            if (direct) t("They are invited to this conversation and can join the call.") else t("They get a message with a link that opens the channel."),
+            color = Palette.Muted, style = MaterialTheme.typography.bodyMedium,
+        )
+        val list = friends
+        if (list == null) Text("…", color = Palette.Muted)
+        else if (list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("call-invite-none"), color = Palette.Muted)
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f)) {
+            listItems(list.orEmpty(), key = { it.userId }) { friend ->
+                val state = states[friend.userId]
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(friend.avatar, friend.name, 40.dp)
+                    Text(friend.name, Modifier.weight(1f).padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                    Button(
+                        {
+                            states = states + (friend.userId to "working")
+                            scope.launch {
+                                states = states + (friend.userId to try { calls.invite(snapshot.roomId, friend.userId); "done" } catch (e: Exception) { "failed" })
+                            }
+                        },
+                        Modifier.testTag("call-invite-${friend.name}"),
+                        enabled = state != "working" && state != "done",
+                    ) {
+                        Text(
+                            when (state) {
+                                "done" -> if (direct) t("Invited") else t("Sent")
+                                "failed" -> t("Try again")
+                                else -> if (direct) t("Invite") else t("Send invite")
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        TextButton(close, Modifier.testTag("call-invite-close")) { Text(t("Close")) }
     }
 }

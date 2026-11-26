@@ -142,7 +142,12 @@ class TestBridge(private val app: Application) {
             true
         }
         "swipe" -> {
-            swipe(
+            // `via`: [[x, y], ...] the finger passes on the way (one gesture that turns back).
+            val via = request.optJSONArray("via")
+            if (via != null) {
+                val pts = (0 until via.length()).map { via.getJSONArray(it).let { p -> p.getDouble(0).toFloat() to p.getDouble(1).toFloat() } }
+                swipePath(listOf(request.getDouble("x1").toFloat() to request.getDouble("y1").toFloat()) + pts + (request.getDouble("x2").toFloat() to request.getDouble("y2").toFloat()), request.optLong("ms", 300))
+            } else swipe(
                 request.getDouble("x1").toFloat(), request.getDouble("y1").toFloat(),
                 request.getDouble("x2").toFloat(), request.getDouble("y2").toFloat(),
                 request.optLong("ms", 300), request.optBoolean("fling", false), request.optLong("hold", 0),
@@ -250,6 +255,16 @@ class TestBridge(private val app: Application) {
             }
             JSONObject().put("actions", JSONArray(titles)).put("importance", manager.getNotificationChannel(n.channelId).importance)
                 .put("big_content", n.extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT) != null)
+        }
+        // The call sounds played so far (#439), by key; "clear" forgets them first.
+        "call_sounds" -> {
+            if (request.optBoolean("clear")) CallSounds.played.clear()
+            JSONObject().put("played", JSONArray(CallSounds.played.toList()))
+        }
+        // Make someone a friend (or not) of the signed-in account, for tests that start from a friends list.
+        "friend" -> {
+            kotlinx.coroutines.runBlocking { (app as MorpheusApp).morpheus.setFriend(request.getString("user"), request.getBoolean("on")) }
+            true
         }
         "gain" -> {
             // What a person's voice plays at now, and the kept microphone and speaker volumes.
@@ -450,6 +465,22 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_DOWN, down, x, y)
         Thread.sleep(30)
         touch(MotionEvent.ACTION_UP, down, x, y)
+    }
+
+    /** One touch that goes through the points in turn (down at the first, up at the last), settling a moment at each turn. */
+    private fun swipePath(points: List<Pair<Float, Float>>, ms: Long) {
+        val down = SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN, down, points[0].first, points[0].second)
+        for (leg in 1 until points.size) {
+            val (a, b) = points[leg - 1] to points[leg]
+            for (i in 1..8) {
+                Thread.sleep(ms / 8)
+                touch(MotionEvent.ACTION_MOVE, down, a.first + (b.first - a.first) * i / 8, a.second + (b.second - a.second) * i / 8)
+            }
+            Thread.sleep(80)
+        }
+        Thread.sleep(150)
+        touch(MotionEvent.ACTION_UP, down, points.last().first, points.last().second)
     }
 
     private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean, hold: Long) {

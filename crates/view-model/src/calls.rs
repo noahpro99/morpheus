@@ -808,6 +808,27 @@ impl Sound {
         }
     }
 
+    /// The sound with this [`Sound::key`].
+    pub fn from_key(key: &str) -> Option<Self> {
+        [
+            Self::Join,
+            Self::Leave,
+            Self::Mute,
+            Self::Unmute,
+            Self::Deafen,
+            Self::Undeafen,
+            Self::CameraOn,
+            Self::CameraOff,
+            Self::ScreenOn,
+            Self::ScreenOff,
+            Self::Ring,
+            Self::Ringback,
+            Self::Message,
+        ]
+        .into_iter()
+        .find(|s| s.key() == key)
+    }
+
     /// The notes (Hz) and how long each rings (ms).
     pub fn notes(self) -> &'static [(f32, u32)] {
         match self {
@@ -845,6 +866,80 @@ impl Sound {
         }
         samples
     }
+}
+
+/// What the call sounds look at in one call snapshot (#439): the platform fills
+/// it from its own snapshot, so Android and iOS make the same sounds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SoundView {
+    /// The media connection is up (the call is joined).
+    pub connected: bool,
+    /// The call is over (hung up or dropped).
+    pub over: bool,
+    pub muted: bool,
+    pub deafened: bool,
+    /// This device's camera is sending.
+    pub camera: bool,
+    /// This device shares its screen.
+    pub sharing: bool,
+    /// The other people in the call (not this account).
+    pub others: Vec<String>,
+    /// How many shared screens the others have up.
+    pub their_screens: usize,
+}
+
+/// The sounds for the step from `before` (`None`: no call yet) to `after`, in
+/// the order to play them: you joining, then people coming or going, your own
+/// switches (a deafen already mutes, so it has the one sound), screens.
+pub fn sounds_for_change(before: Option<&SoundView>, after: &SoundView) -> Vec<Sound> {
+    let was_in = before.is_some_and(|b| b.connected && !b.over);
+    let is_in = after.connected && !after.over;
+    let mut sounds = Vec::new();
+    if !was_in && is_in {
+        sounds.push(Sound::Join);
+        return sounds;
+    }
+    if was_in && !is_in {
+        if after.over {
+            sounds.push(Sound::Leave);
+        }
+        return sounds;
+    }
+    let Some(before) = before.filter(|_| is_in) else {
+        return sounds;
+    };
+    if after.others.iter().any(|u| !before.others.contains(u)) {
+        sounds.push(Sound::Join);
+    }
+    if before.others.iter().any(|u| !after.others.contains(u)) {
+        sounds.push(Sound::Leave);
+    }
+    if before.deafened != after.deafened {
+        sounds.push(if after.deafened { Sound::Deafen } else { Sound::Undeafen });
+    } else if before.muted != after.muted {
+        sounds.push(if after.muted { Sound::Mute } else { Sound::Unmute });
+    }
+    if before.camera != after.camera {
+        sounds.push(if after.camera { Sound::CameraOn } else { Sound::CameraOff });
+    }
+    if after.their_screens > before.their_screens || (after.sharing && !before.sharing) {
+        sounds.push(Sound::ScreenOn);
+    } else if before.sharing && !after.sharing {
+        sounds.push(Sound::ScreenOff);
+    }
+    sounds
+}
+
+/// The gap between two ringbacks (ms) while your call rings the other person.
+pub const RINGBACK_EVERY_MS: u64 = 3_000;
+
+/// Whether a ringback is due `since_ms` after the call began ringing out
+/// (`ringing_out`), `last_ms` after the previous one: the first at once, then
+/// every [`RINGBACK_EVERY_MS`], until the ring time is up.
+pub fn ringback_due(ringing_out: bool, since_ms: u64, last_ms: Option<u64>) -> bool {
+    ringing_out
+        && since_ms < morpheus_core::RING_FOR_MS
+        && last_ms.is_none_or(|last| since_ms.saturating_sub(last) >= RINGBACK_EVERY_MS)
 }
 
 /// A device in a quick list.
@@ -1131,6 +1226,60 @@ mod person_volume_tests {
         write_person_volume(&dir, "@a:x", "@bob:x", PersonVolume::default()).expect("reset");
         assert!(read_person_volumes(&dir, "@a:x").is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn view(f: impl FnOnce(&mut SoundView)) -> SoundView {
+        let mut v = SoundView { connected: true, ..SoundView::default() };
+        f(&mut v);
+        v
+    }
+
+    #[test]
+    fn sounds_follow_the_call_snapshots() {
+        let base = view(|_| {});
+        // Joining, and hanging up.
+        assert_eq!(sounds_for_change(None, &base), vec![Sound::Join]);
+        let joining = SoundView::default();
+        assert!(sounds_for_change(None, &joining).is_empty(), "still joining: quiet");
+        assert_eq!(sounds_for_change(Some(&joining), &base), vec![Sound::Join]);
+        let over = view(|v| v.over = true);
+        assert_eq!(sounds_for_change(Some(&base), &over), vec![Sound::Leave]);
+        let dropped = SoundView::default();
+        assert!(sounds_for_change(Some(&base), &dropped).is_empty());
+        // The same snapshot twice is quiet.
+        assert!(sounds_for_change(Some(&base), &base).is_empty());
+        // People.
+        let bob = view(|v| v.others = vec!["@bob:x".into()]);
+        assert_eq!(sounds_for_change(Some(&base), &bob), vec![Sound::Join]);
+        assert_eq!(sounds_for_change(Some(&bob), &base), vec![Sound::Leave]);
+        // Mute, deafen (one sound, though deafening mutes too), camera, screens.
+        let muted = view(|v| v.muted = true);
+        assert_eq!(sounds_for_change(Some(&base), &muted), vec![Sound::Mute]);
+        assert_eq!(sounds_for_change(Some(&muted), &base), vec![Sound::Unmute]);
+        let deaf = view(|v| {
+            v.muted = true;
+            v.deafened = true;
+        });
+        assert_eq!(sounds_for_change(Some(&base), &deaf), vec![Sound::Deafen]);
+        assert_eq!(sounds_for_change(Some(&deaf), &muted), vec![Sound::Undeafen]);
+        let cam = view(|v| v.camera = true);
+        assert_eq!(sounds_for_change(Some(&base), &cam), vec![Sound::CameraOn]);
+        assert_eq!(sounds_for_change(Some(&cam), &base), vec![Sound::CameraOff]);
+        let mine = view(|v| v.sharing = true);
+        assert_eq!(sounds_for_change(Some(&base), &mine), vec![Sound::ScreenOn]);
+        assert_eq!(sounds_for_change(Some(&mine), &base), vec![Sound::ScreenOff]);
+        let theirs = view(|v| v.their_screens = 1);
+        assert_eq!(sounds_for_change(Some(&base), &theirs), vec![Sound::ScreenOn]);
+        assert!(sounds_for_change(Some(&theirs), &base).is_empty(), "someone else stopping is quiet");
+    }
+
+    #[test]
+    fn the_ringback_repeats_while_ringing_and_stops_with_the_ring() {
+        assert!(ringback_due(true, 0, None));
+        assert!(!ringback_due(true, 1_000, Some(0)));
+        assert!(ringback_due(true, RINGBACK_EVERY_MS, Some(0)));
+        assert!(!ringback_due(false, 0, None));
+        assert!(!ringback_due(true, morpheus_core::RING_FOR_MS, None));
     }
 }
 
@@ -2046,5 +2195,31 @@ mod card_menu_order_tests {
         // Not watched: no such item.
         let items = call_card_items(&user, false, true, 1.0, false, false, false);
         assert!(items.iter().all(|i| i.label != "Stop watching"));
+    }
+}
+
+/// The link a voice channel is opened with in an invite: matrix.to, via the room's own server (else `home`).
+pub fn channel_link(room: &str, home: Option<&str>) -> String {
+    let server = room.split_once(':').map(|(_, s)| s).or(home);
+    match server {
+        Some(server) => format!("https://matrix.to/#/{room}?via={server}"),
+        None => format!("https://matrix.to/#/{room}"),
+    }
+}
+
+/// The message that invites someone to a voice channel from outside a DM's call.
+pub fn channel_invite_text(name: &str, link: &str) -> String {
+    format!("Join me in [{name}]({link})")
+}
+
+#[cfg(test)]
+mod invite_tests {
+    use super::*;
+
+    #[test]
+    fn the_invite_links_the_channel_through_its_server() {
+        assert_eq!(channel_link("!abc:x.org", Some("home.org")), "https://matrix.to/#/!abc:x.org?via=x.org");
+        assert_eq!(channel_link("noserver", Some("home.org")), "https://matrix.to/#/noserver?via=home.org");
+        assert_eq!(channel_invite_text("hangout", "L"), "Join me in [hangout](L)");
     }
 }

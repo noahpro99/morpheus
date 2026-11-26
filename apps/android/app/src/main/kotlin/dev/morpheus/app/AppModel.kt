@@ -50,7 +50,9 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     }
 
     /** The call this account is in, if any (it outlives the screens). */
-    val calls: CallModel = CallModel(morpheus, morpheusApp ?: error("an application"))
+    val calls: CallModel = CallModel(morpheus, morpheusApp ?: error("an application")).also { call ->
+        call.isDm = { id -> sidebar.value?.scopes?.firstOrNull { it.kind == uniffi.morpheus_ffi.ScopeKind.DMS }?.sections?.any { s -> s.rooms.any { it.id == id } } == true }
+    }
 
     /** Calls ringing this account (a card on screen; the phone's notification away). */
     val ringModel = RingModel(morpheusApp ?: error("an application"))
@@ -833,6 +835,9 @@ object People {
 
     /** People's names as the profiles say them, fetched once each (the screens show the ID's local part until then). */
     val names = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** Their pictures (a person with none is not in the map), fetched with the name. */
+    val avatars = MutableStateFlow<Map<String, uniffi.morpheus_ffi.MediaHandle>>(emptyMap())
     private val asked = HashSet<String>()
     var morpheus: Morpheus? = null
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
@@ -843,7 +848,10 @@ object People {
     fun want(userId: String) {
         val app = morpheus ?: return
         if (!asked.add(userId)) return
-        scope.launch { names.value = names.value + (userId to app.displayName(userId)) }
+        scope.launch {
+            names.value = names.value + (userId to app.displayName(userId))
+            app.personAvatar(userId)?.let { avatars.value = avatars.value + (userId to it) }
+        }
     }
 }
 

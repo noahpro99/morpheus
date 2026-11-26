@@ -23,6 +23,10 @@ pub struct PersonVolumeItem {
     pub volume: f32,
     /// Silenced for you alone.
     pub muted: bool,
+    /// How loud their shared screen's sound plays for you (1 as sent, up to 2).
+    pub stream: f32,
+    /// Their shared screen's sound is silenced for you alone.
+    pub stream_muted: bool,
 }
 
 impl Morpheus {
@@ -70,7 +74,7 @@ impl Morpheus {
         let chosen = read_person_volumes(&self.dir, &self.account_id())
             .remove(&user_id)
             .unwrap_or_default();
-        PersonVolumeItem { volume: chosen.voice, muted: chosen.voice_muted }
+        PersonVolumeItem { volume: chosen.voice, muted: chosen.voice_muted, stream: chosen.stream, stream_muted: chosen.stream_muted }
     }
 
     /// Keep what this account chose for a person's voice (their shared screen's sound is left as it was).
@@ -80,6 +84,16 @@ impl Morpheus {
             read_person_volumes(&self.dir, &account).remove(&user_id).unwrap_or_default();
         chosen.voice = volume.clamp(0.0, morpheus_call::MAX_VOLUME);
         chosen.voice_muted = muted;
+        let _ = write_person_volume(&self.dir, &account, &user_id, chosen);
+    }
+
+    /// Keep what this account chose for a person's shared screen's sound (their voice is left as it was).
+    pub fn keep_stream_volume(&self, user_id: String, volume: f32, muted: bool) {
+        let account = self.account_id();
+        let mut chosen: PersonVolume =
+            read_person_volumes(&self.dir, &account).remove(&user_id).unwrap_or_default();
+        chosen.stream = volume.clamp(0.0, morpheus_call::MAX_VOLUME);
+        chosen.stream_muted = muted;
         let _ = write_person_volume(&self.dir, &account, &user_id, chosen);
     }
 

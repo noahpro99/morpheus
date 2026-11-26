@@ -141,9 +141,16 @@ pub struct CallListing {
     pub user_id: String,
     pub muted: bool,
     pub deafened: bool,
+    /// Their camera is on.
+    pub camera: bool,
+    /// They share their screen (a LIVE mark).
+    pub screen: bool,
+    /// When the room's call began (ms since the Unix epoch), the same for each person: the row's timer (`call_timer`).
+    pub started_ms: Option<u64>,
 }
 
 pub(crate) fn listing(room: &RoomSummary) -> Vec<CallListing> {
+    let started_ms = calls::call_start(now_ms(), &room.call_memberships);
     room.call_participants
         .iter()
         .map(|user| {
@@ -157,6 +164,9 @@ pub(crate) fn listing(room: &RoomSummary) -> Vec<CallListing> {
                 user_id: user.to_string(),
                 muted: media.muted,
                 deafened: media.deafened,
+                camera: media.camera,
+                screen: media.screen,
+                started_ms,
             }
         })
         .collect()
@@ -168,6 +178,7 @@ enum Command {
     Screen(bool),
     Watch(OwnedUserId, bool),
     PersonVolume(String, f32),
+    HideVideo(String, bool),
     OutputVolume(f32),
     Leave(oneshot::Sender<()>),
 }
@@ -212,6 +223,16 @@ impl CallHandle {
     /// Play a person's voice at this volume (0 to 2; 0 mutes them for you alone), live.
     pub fn set_person_volume(&self, user_id: String, gain: f32) {
         let _ = self.commands.send(Command::PersonVolume(user_id, gain));
+    }
+
+    /// Hide (or show again) someone's camera: nothing of it is downloaded while hidden (#436).
+    pub fn hide_video(&self, user_id: String, on: bool) {
+        let _ = self.commands.send(Command::HideVideo(user_id, on));
+    }
+
+    /// Play someone's shared screen's sound at this volume (0 to 2; 0 silences it for you alone), live (#436).
+    pub fn set_stream_volume(&self, user_id: String, gain: f32) {
+        morpheus_call::set_user_track_volume(&user_id, morpheus_call::TrackSource::ScreenShare, gain);
     }
 
     /// Play the call at this volume (0 to 2), live.
@@ -864,6 +885,11 @@ async fn run_call(
                     morpheus_call::set_user_volume(&user, gain);
                 }
             }
+            Next::Command(Some(Command::HideVideo(user, on))) => {
+                if let Some(call) = &call {
+                    call.hide_video(&user, on);
+                }
+            }
             Next::Command(Some(Command::OutputVolume(volume))) => {
                 if let Some(call) = &call {
                     call.set_output_volume(volume);
@@ -1026,4 +1052,124 @@ pub fn call_set_camera_driver(driver: Arc<dyn CameraDriver>) {
 #[allow(clippy::too_many_arguments)]
 pub fn call_camera_frame(y: Vec<u8>, u: Vec<u8>, v: Vec<u8>, y_stride: u32, uv_stride: u32, uv_pixel_stride: u32, width: u32, height: u32, rotation: u32) {
     morpheus_call::camera_frame(&y, &u, &v, y_stride as usize, uv_stride as usize, uv_pixel_stride as usize, width, height, rotation);
+}
+
+fn sound_view(s: &CallSnapshot) -> calls::SoundView {
+    let others = s.people.iter().filter(|p| !p.me);
+    calls::SoundView {
+        connected: s.phase == CallPhase::Connected,
+        over: s.phase == CallPhase::Ended,
+        muted: s.muted,
+        deafened: s.deafened,
+        camera: s.camera,
+        sharing: s.people.iter().any(|p| p.me && p.screen),
+        their_screens: others.clone().filter(|p| p.screen).count(),
+        others: others.map(|p| p.user_id.clone()).collect(),
+    }
+}
+
+/// The call sounds (#439) for the step from the last snapshot to this one, as
+/// [`call_sound_samples`] keys, in the order to play them.
+#[uniffi::export]
+pub fn call_sounds(before: Option<CallSnapshot>, after: CallSnapshot) -> Vec<String> {
+    let before = before.as_ref().map(sound_view);
+    calls::sounds_for_change(before.as_ref(), &sound_view(&after))
+        .into_iter()
+        .map(|s| s.key().to_owned())
+        .collect()
+}
+
+/// A sound as mono 16-bit samples at [`call_sound_rate`] (`join`, `leave`,
+/// `mute`, `unmute`, `deafen`, `undeafen`, `camera-on`, `camera-off`,
+/// `screen-on`, `screen-off`, `ring`, `ringback`, `message`); empty for an
+/// unknown key.
+#[uniffi::export]
+pub fn call_sound_samples(key: String) -> Vec<i16> {
+    calls::Sound::from_key(&key).map(calls::Sound::samples).unwrap_or_default()
+}
+
+/// The sample rate of [`call_sound_samples`].
+#[uniffi::export]
+pub fn call_sound_rate() -> u32 {
+    calls::SOUND_RATE
+}
+
+/// Whether the ringback is due now (see `view_model::calls::ringback_due`).
+#[uniffi::export]
+pub fn call_ringback_due(ringing_out: bool, since_ms: u64, last_ms: Option<u64>) -> bool {
+    calls::ringback_due(ringing_out, since_ms, last_ms)
+}
+
+/// One row of a call card's menu (#436): the desktop's `call_card_items`.
+#[derive(uniffi::Record)]
+pub struct CardMenuRow {
+    /// What the row does: `stop-watching`, `volume`, `mute`, `stream-volume`, `mute-stream` or `hide-video`.
+    pub action: String,
+    /// In English, for tags.
+    pub id: String,
+    /// In the app's language.
+    pub label: String,
+    /// A Lucide glyph name.
+    pub icon: Option<String>,
+    pub checked: bool,
+    /// For a volume row: where the slider stands (1 as sent, up to 2).
+    pub slider: Option<f32>,
+}
+
+/// What the menu of one call card offers (the desktop's list: stop watching, the volume or stream
+/// volume with its mute, hide video). `kind` is the card's; `volume` and `muted` are for the voice, or
+/// for the screen's sound on a screen card.
+#[uniffi::export]
+pub fn call_card_menu(user_id: String, kind: CardKind, own: bool, volume: f32, muted: bool, hidden: bool, watching: bool) -> Vec<CardMenuRow> {
+    use morpheus_view_model::menu::MenuAction;
+    let Ok(user) = OwnedUserId::try_from(user_id) else { return Vec::new() };
+    let stream = matches!(kind, CardKind::Screen | CardKind::UnwatchedScreen);
+    calls::call_card_items(&user, own, stream, volume, muted, hidden, watching)
+        .into_iter()
+        .filter_map(|item| {
+            let action = match (&item.action, &item.slider) {
+                (_, Some(morpheus_view_model::menu::MenuSlider::StreamVolume(..))) => "stream-volume",
+                (_, Some(_)) => "volume",
+                (Some(MenuAction::CallStopWatching(_)), _) => "stop-watching",
+                (Some(MenuAction::CallMute(..)), _) => "mute",
+                (Some(MenuAction::CallMuteStream(..)), _) => "mute-stream",
+                (Some(MenuAction::CallHideVideo(_)), _) if kind == CardKind::Camera => "hide-video",
+                _ => return None,
+            };
+            Some(CardMenuRow {
+                action: action.to_owned(),
+                id: item.label.clone(),
+                label: morpheus_view_model::i18n::t(&item.label),
+                icon: item.glyph().map(str::to_owned),
+                checked: item.checked,
+                slider: item.slider.as_ref().map(|s| s.value()),
+            })
+        })
+        .collect()
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// Invite a friend to the call of `room_id` (#438): in a direct message the room's own invite, in a
+    /// voice channel a message to them with a link that opens it (the desktop's invite).
+    pub async fn invite_to_call(&self, room_id: String, user_id: String) -> Result<(), FfiError> {
+        let session = self.session()?;
+        let room = OwnedRoomId::try_from(room_id.as_str()).map_err(|_| FfiError::Failed { reason: format!("{room_id} is not a room") })?;
+        let user = OwnedUserId::try_from(user_id.as_str()).map_err(|_| FfiError::Failed { reason: format!("{user_id} is not a Matrix ID") })?;
+        let (name, direct) = self
+            .rooms_now
+            .lock()
+            .ok()
+            .and_then(|rooms| rooms.iter().find(|r| r.id == room).map(|r| (r.name.clone(), r.is_dm)))
+            .unwrap_or_default();
+        if direct {
+            session.invite(room, user).await?;
+        } else {
+            let home = session.user_id().map(|u| u.server_name().to_string());
+            let dm = session.dm_with(user).await?;
+            let link = calls::channel_link(room.as_str(), home.as_deref());
+            session.say(dm, calls::channel_invite_text(&name, &link)).await?;
+        }
+        Ok(())
+    }
 }

@@ -42,6 +42,11 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     val speaker: StateFlow<Boolean> = _speaker.asStateFlow()
 
     private var handle: CallHandle? = null
+
+    /** Whether a room is a direct message (set by the app model): only a DM rings, so only a DM has a ringback (#439). */
+    var isDm: (String) -> Boolean = { false }
+    private var ringingSince: Long? = null
+    private var lastRingback: Long? = null
     private var routed = false
 
     /** The room of the call going, or null. */
@@ -80,6 +85,9 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     private fun changed(snapshot: CallSnapshot) {
         val before = _snapshot.value
         _snapshot.value = snapshot
+        CallSounds.changed(before, snapshot)
+        speakers.value = snapshot.roomId to snapshot.people.filter { it.speaking }.map { it.userId }.toSet()
+        ringbackStep(snapshot)
         // The notification's Mute and Deafen say what the call is now.
         if (before != null && (before.muted != snapshot.muted || before.deafened != snapshot.deafened) && snapshot.phase != CallPhase.ENDED) {
             CallService.update(context, snapshot.roomId, snapshot.roomName, snapshot.muted, snapshot.deafened)
@@ -93,8 +101,30 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         }
     }
 
+    /** The ringback repeats while this call rings the other person: connected, in a DM, nobody else there. */
+    private fun ringbackStep(snapshot: CallSnapshot) {
+        val out = snapshot.phase == CallPhase.CONNECTED && isDm(snapshot.roomId) && snapshot.people.none { !it.me }
+        if (!out) { ringingSince = null; lastRingback = null; return }
+        if (ringingSince != null) return
+        val since = System.currentTimeMillis()
+        ringingSince = since
+        scope.launch {
+            while (_snapshot.value?.let { it.roomId == snapshot.roomId && it.phase == CallPhase.CONNECTED && it.people.none { p -> !p.me } } == true && ringingSince == since) {
+                val elapsed = System.currentTimeMillis() - since
+                if (CallSounds.ringbackDue(true, elapsed, lastRingback?.let { it - since })) {
+                    lastRingback = since + elapsed
+                    CallSounds.play("ringback")
+                }
+                kotlinx.coroutines.delay(500)
+                if (elapsed > 31_000) break
+            }
+        }
+    }
+
     private fun ended() {
         routed = false
+        speakers.value = "" to emptySet()
+        _hidden.value = emptySet()
         handle = null
         CallService.update(context, "", "")
         _open.value = false
@@ -154,7 +184,30 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
 
     fun flipCamera() = (context.applicationContext as MorpheusApp).camera.flip()
     fun watch(userId: String, on: Boolean) = handle?.watch(userId, on)
+
+    /** My friends, to ask into the call (#438). */
+    suspend fun friends() = morpheus.friends()
+
+    /** Ask a friend into the call of [roomId]: a DM's own invite, or a message with the channel's link. */
+    suspend fun invite(roomId: String, userId: String) = morpheus.inviteToCall(roomId, userId)
     fun frame(feed: String) = handle?.frame(feed)
+
+    private val _hidden = MutableStateFlow<Set<String>>(emptySet())
+
+    /** People whose camera is hidden on their card for now (#436): nothing of it is downloaded. */
+    val hiddenVideo: StateFlow<Set<String>> = _hidden.asStateFlow()
+
+    fun toggleHideVideo(userId: String) {
+        val hide = userId !in _hidden.value
+        _hidden.value = if (hide) _hidden.value + userId else _hidden.value - userId
+        handle?.hideVideo(userId, hide)
+    }
+
+    /** How loud `userId`'s shared screen plays for me (0 to 2), or silent for me alone when [muted]; kept and applied now. */
+    fun setStreamVolume(userId: String, volume: Float, muted: Boolean) {
+        morpheus.keepStreamVolume(userId, volume, muted)
+        handle?.setStreamVolume(userId, if (muted) 0f else volume)
+    }
 
     fun hangUp() {
         val call = handle
@@ -166,7 +219,10 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         }
         scope.launch {
             call.leave()
-            if (_snapshot.value?.phase != CallPhase.ENDED) ended()
+            if (_snapshot.value?.phase != CallPhase.ENDED) {
+                if (_snapshot.value?.phase == CallPhase.CONNECTED) CallSounds.play("leave")
+                ended()
+            }
             _snapshot.value = null
         }
     }
@@ -265,5 +321,8 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         /** The call going, for the notification's Hang up. */
         @Volatile
         var current: CallModel? = null
+
+        /** Who speaks in the call going, with its room (the channel list marks them, #441). */
+        val speakers = MutableStateFlow("" to emptySet<String>())
     }
 }

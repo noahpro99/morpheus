@@ -132,6 +132,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     }
     BoxWithConstraints(modifier.clipToBounds().pointerInput(model, tab) {
         var total = 0f
+        var lock = 0f
         var peeking = false
         val flick = FlickTracker()
         val list = if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS
@@ -142,7 +143,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
             scope.launch { slide.f.snapTo(0f) }
         }
         detectHorizontalDragGestures(
-            onDragStart = { total = 0f; flick.reset(); dragging = true; peeking = false },
+            onDragStart = { total = 0f; lock = 0f; flick.reset(); dragging = true; peeking = false },
             onDragEnd = {
                 dragging = false
                 val commits = flick.commits(total, size.width.toFloat())
@@ -160,16 +161,20 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
             },
             onDragCancel = { dragging = false; endPeek(); slide.dragging = false; total = 0f; settle++ },
         ) { change, amount ->
-            total += amount
-            flick.add(change, amount)
+            // A drag that reverses only comes back to its start; it never goes over into the opposite swipe (#525).
+            lock = uniffi.morpheus_ffi.swipeDragLock(lock, amount)
+            val before = total
+            total = uniffi.morpheus_ffi.swipeDragTotal(total, amount, lock)
+            val moved = total - before
+            flick.add(change, moved)
             // What the finger is bringing in, a chat (it opens at once and follows the finger) or the other list.
-            val step = model.swipeStep(list, fingerLeft = total < 0f)
+            val step = if (total == 0f) null else model.swipeStep(list, fingerLeft = total < 0f)
             if (step is uniffi.morpheus_ffi.SwipeStep.Open) {
                 if (!peeking && model.peekChat(step.room)) { peeking = true; slide.dragging = true }
                 if (peeking) scope.launch { slide.f.snapTo((kotlin.math.abs(total) / size.width).coerceIn(0f, 1f)) }
             } else endPeek()
             // The finger moves the lists (past the far edge of either there is nothing to show, so they stay).
-            scope.launch { place.snapTo((place.value - amount / size.width).coerceIn(0f, 1f)) }
+            scope.launch { place.snapTo((place.value - moved / size.width).coerceIn(0f, 1f)) }
         }
     }) {
         val width = constraints.maxWidth
@@ -425,6 +430,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
             )
             if (room.call.isNotEmpty()) {
                 Column(Modifier.padding(start = 44.dp, bottom = Space.sm)) {
+                    CallRowTimer(room.name, room.call.firstOrNull()?.startedMs)
                     for (member in room.call) {
                         val name = callName(member.userId)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -433,6 +439,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                                 if (member.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_mic_off,
                                 Modifier.testTag("in-call-muted-${room.name}-$name"), size = 16.dp, tint = Palette.Muted,
                             )
+                            CallMemberMarks(room.id, room.name, name, member.userId, member)
                         }
                     }
                 }
