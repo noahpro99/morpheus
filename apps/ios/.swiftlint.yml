@@ -1,0 +1,21 @@
+# SwiftLint with the Apple-spec checks on (#521); our own HIG source rules are rules/ios_rules.rs.
+included:
+  - Morpheus
+  - MorpheusUITests
+excluded:
+  - Generated
+opt_in_rules:
+  - accessibility_label_for_image
+  - accessibility_trait_for_button
+  - force_unwrapping
+  - empty_count
+  - closure_spacing
+  - sorted_imports
+disabled_rules:
+  - line_length
+  - trailing_comma
+  - identifier_name
+  - type_body_length
+  - file_length
+  - function_body_length
+  - nesting

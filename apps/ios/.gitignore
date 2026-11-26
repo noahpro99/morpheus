@@ -1,0 +1,4 @@
+Generated/
+build/
+*.xcodeproj
+Morpheus/Info.plist

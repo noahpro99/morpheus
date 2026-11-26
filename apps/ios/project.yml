@@ -1,0 +1,93 @@
+# The Xcode project is generated (XcodeGen: `xcodegen generate`), so there is no .pbxproj to merge.
+# Generated/ (the UniFFI Swift bindings) and build/ (MorpheusFFI.xcframework) come from scripts/ios-ffi.sh.
+name: Morpheus
+options:
+  bundleIdPrefix: dev.morpheus
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.2.9"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+targets:
+  Morpheus:
+    type: application
+    platform: iOS
+    sources:
+      - Morpheus
+      - path: Generated
+        optional: true
+    dependencies:
+      - framework: build/MorpheusFFI.xcframework
+        embed: false
+        link: true
+    info:
+      path: Morpheus/Info.plist
+      properties:
+        CFBundleDisplayName: Morpheus
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.morpheus.ios
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        # What the static Rust library (matrix-sdk, libwebrtc) links against.
+        OTHER_LDFLAGS:
+          - -lc++
+          - -lresolv
+          - -lz
+          - -framework
+          - Security
+          - -framework
+          - SystemConfiguration
+          - -framework
+          - CoreFoundation
+          - -framework
+          - CoreGraphics
+          - -framework
+          - CoreAudio
+          - -framework
+          - AudioToolbox
+          - -framework
+          - AVFoundation
+          - -framework
+          - CoreMedia
+          - -framework
+          - CoreVideo
+          - -framework
+          - VideoToolbox
+          - -framework
+          - Metal
+          - -framework
+          - QuartzCore
+          - -framework
+          - UIKit
+          - -framework
+          - Network
+  MorpheusUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [MorpheusUITests]
+    dependencies:
+      - target: Morpheus
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.morpheus.ios.uitests
+        TEST_TARGET_NAME: Morpheus
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Morpheus:
+    build:
+      targets:
+        Morpheus: all
+        MorpheusUITests: [test]
+    test:
+      targets: [MorpheusUITests]
