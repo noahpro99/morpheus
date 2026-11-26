@@ -177,7 +177,7 @@ fun SettingsScreen(app: AppModel) {
 
             if (page == "Account") {
             Heading(t("Account"))
-            Text(account?.userId.orEmpty(), Modifier.padding(horizontal = Space.lg).testTag("settings-account"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(account?.userId.orEmpty(), Modifier.padding(horizontal = Space.lg).testTag("settings-account"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
             Button({ app.signOut() }, Modifier.padding(horizontal = Space.lg).testTag("settings-sign-out")) { Text(t("Sign out")) }
             }
         }
@@ -203,7 +203,7 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
     Column(modifier.fillMaxWidth().testTag("settings-groups")) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             if (query.isNotBlank()) {
-                if (hits.isEmpty()) Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (hits.isEmpty()) Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
                 for (hit in hits) {
                     ListRow(t(hit.label), "settings-hit-${hit.anchor}", trailing = { Text(t(groups.firstOrNull { it.key == hit.group }?.label ?: hit.group), style = MaterialTheme.typography.bodyMedium) }) { app.openSettingsPage(hit.group, hit.anchor) }
                 }

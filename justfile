@@ -265,7 +265,7 @@ e2e-android-native-release signing="debug":
 # Android spec checks that never run the app (#468): Android Lint (with the Compose and Material 3
 # checks), compose-rules through detekt, and our own source rules. Prepares the Kotlin bindings from
 # the host build first (scripts/android-check-prep.sh), so no Android cross-build is needed.
-android-lint: android-check-prep
+android-lint: android-rules android-check-prep
     nix develop .#android -c bash -c 'cd apps/android && gradle lintDebug detekt -PrustPrebuilt=$PWD/../../target/android-checks'
 
 # The Kotlin bindings and the WebRTC stub the Android checks compile against
@@ -281,3 +281,10 @@ android-shots-verify: android-check-prep
 # Approve a change of look: draw the screens again over the committed pictures (then look at the diff)
 android-shots-record: android-check-prep
     nix develop .#android -c bash -c 'cd apps/android && gradle recordRoborazziDebug --tests "*ScreenShots*" -PrustPrebuilt=$PWD/../../target/android-checks'
+
+# Our Material 3 source rules for the Android Kotlin (crates/view-model/src/android_rules.rs): no raw .sp or
+# off-grid .dp, no unstyled Text, no emoji icons, no hand-made radio, switch, search or button. Builds the one
+# file with rustc (std only), so it takes a second and CI needs no cargo build for it.
+android-rules:
+    rustc --edition 2021 --test crates/view-model/src/android_rules.rs -o target/android_rules
+    target/android_rules

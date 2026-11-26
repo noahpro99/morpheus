@@ -103,19 +103,19 @@ fun PreviewCardView(model: RoomModel, url: String, eventId: String) {
     val bitmap by produceState<ImageBitmap?>(null, shown.url) { value = shown.image?.let { Images.load(it, 600, 400) } }
     Column(
         Modifier
-            .padding(top = 6.dp)
+            .padding(top = 8.dp)
             .widthIn(max = 320.dp)
             .background(Palette.Raised, RoundedCornerShape(8.dp))
             .pointerInput(url) { detectTapGestures { context.openLink(url) } }
-            .padding(10.dp)
+            .padding(12.dp)
             .testTag("preview-card"),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row {
             Text(shown.site ?: "", Modifier.weight(1f), color = Palette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_x, Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.semantics { contentDescription = t("Dismiss preview") }.testTag("preview-dismiss"), size = 18.dp, tint = Palette.Muted)
+            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_x, Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.semantics { contentDescription = t("Dismiss preview") }.testTag("preview-dismiss"), size = 20.dp, tint = Palette.Muted)
         }
-        shown.title?.let { Text(it, Modifier.testTag("preview-title"), color = Palette.Accent, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        shown.title?.let { Text(it, Modifier.testTag("preview-title"), color = Palette.Accent, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge) }
         shown.description?.let { Text(it, Modifier.testTag("preview-description"), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }
         bitmap?.let {
             androidx.compose.foundation.Image(it, null, Modifier.fillMaxWidth().padding(top = 4.dp).testTag("preview-image"), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)

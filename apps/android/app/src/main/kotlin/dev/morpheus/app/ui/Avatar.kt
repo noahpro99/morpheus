@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,7 +91,8 @@ fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Mod
                 color = onColour(colourOf(name)),
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 fontSize = (size.value * 0.42f).sp,
-            )
+           style = MaterialTheme.typography.bodyLarge,
+       )
         }
     }
 }

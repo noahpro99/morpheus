@@ -89,7 +89,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
         Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 28.dp) }
             Column(Modifier.weight(1f)) {
-                Text(snapshot.roomName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("call-title"))
+                Text(snapshot.roomName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("call-title"), style = MaterialTheme.typography.bodyLarge)
                 Text(
                     when (snapshot.phase) {
                         CallPhase.JOINING -> t("Connecting…")
@@ -100,9 +100,9 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                     Modifier.testTag("call-state"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted) }
+            if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
         }
-        snapshot.error?.let { Text(it, Modifier.padding(16.dp).testTag("call-error"), color = Palette.Danger) }
+        snapshot.error?.let { Text(it, Modifier.padding(16.dp).testTag("call-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyLarge) }
         // The volume panels are drawn in place of the cards (not as popups, which the e2e bridge cannot see).
         val person = panel?.let { id -> snapshot.people.firstOrNull { it.userId == id } }
         if (panel == SETTINGS_PANEL) {
@@ -132,7 +132,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
             .aspectRatio(if (card.kind == CardKind.PERSON) 1f else 16f / 9f)
             .clip(RoundedCornerShape(12.dp))
             .background(Palette.Raised)
-            .border(if (card.speaking) 3.dp else 0.dp, if (card.speaking) speakingGreen else Color.Transparent, RoundedCornerShape(12.dp))
+            .border(if (card.speaking) 4.dp else 0.dp, if (card.speaking) speakingGreen else Color.Transparent, RoundedCornerShape(12.dp))
             .testTag(if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) "card-screen-${card.name}" else "card-${card.name}"),
         contentAlignment = Alignment.Center,
     ) {
@@ -151,7 +151,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, openV
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_volume_2, t("Volume"), "person-volume-${card.name}", { openVolume(card.userId) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
         }
         Row(
-            Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -188,7 +188,7 @@ private fun VideoPicture(calls: CallModel, card: CallCard) {
     if (shown != null) {
         Image(shown, card.name, Modifier.fillMaxSize().testTag(if (card.kind == CardKind.SCREEN) "video-screen-${card.name}" else "video-${card.name}"), contentScale = ContentScale.Fit)
     } else {
-        Text("…", color = Palette.Muted)
+        Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -233,12 +233,13 @@ private fun Control(@androidx.annotation.DrawableRes icon: Int, description: Str
 /** The call going, as a bar over the rest of the app: back to it, mute, hang up. */
 @Composable
 fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
+    androidx.compose.material3.Surface(onClick = { calls.show(true) }, Modifier.fillMaxWidth().testTag("call-bar"), color = Palette.Accent) {
     Row(
-        Modifier.fillMaxWidth().background(Palette.Accent).clickable { calls.show(true) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("call-bar"),
+        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(snapshot.roomName, color = Palette.OnAccent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(snapshot.roomName, color = Palette.OnAccent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             Text(
                 if (snapshot.phase == CallPhase.CONNECTED) t("In a call") else t("Connecting…"),
                 color = Palette.OnAccent, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("call-bar-state"),
@@ -246,6 +247,7 @@ fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
         }
         IconAction(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "bar-mute", { calls.toggleMute() }, tint = onColour(Palette.Accent))
         IconAction(dev.morpheus.app.R.drawable.ic_lucide_phone_off, t("Hang up"), "bar-hangup", { calls.hangUp() }, tint = onColour(Palette.Accent))
+    }
     }
 }
 
@@ -258,11 +260,11 @@ private fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
 @Composable
 private fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float) -> Unit) {
     var value by remember { mutableFloatStateOf(steps(start)) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(label, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_minus, t("Less"), "$tag-less", { value = steps(value - 0.1f); onChange(value) })
-            Text("${Math.round(value * 100)}%", Modifier.testTag("$tag-label"))
+            Text("${Math.round(value * 100)}%", Modifier.testTag("$tag-label"), style = MaterialTheme.typography.bodyLarge)
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("More"), "$tag-more", { value = steps(value + 0.1f); onChange(value) })
             Slider(value, { value = steps(it); onChange(value) }, Modifier.weight(1f).testTag("$tag-slider"), valueRange = 0f..2f)
         }
@@ -276,7 +278,7 @@ private fun ColumnScope.PersonVolumePanel(calls: CallModel, person: CallPerson, 
     var volume by remember(person.userId) { mutableFloatStateOf(kept.volume) }
     var muted by remember(person.userId) { mutableStateOf(kept.muted) }
     Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("person-volume-panel")) {
-        Text(person.name, fontWeight = FontWeight.Bold)
+        Text(person.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
         VolumeRow(t("Volume"), "person-volume", kept.volume) { volume = it; calls.setPersonVolume(person.userId, volume, muted) }
         Button({ muted = !muted; calls.setPersonVolume(person.userId, volume, muted) }, Modifier.testTag("person-volume-mute")) {
             Text(if (muted) t("Unmute for me") else t("Mute for me"))

@@ -206,7 +206,7 @@ fun ConfirmDialog(
         text = if (text != null || content != null) {
             {
                 androidx.compose.foundation.layout.Column {
-                    if (text != null) Text(text, if (textTag != null) Modifier.testTag(textTag) else Modifier)
+                    if (text != null) Text(text, if (textTag != null) Modifier.testTag(textTag) else Modifier, style = MaterialTheme.typography.bodyLarge)
                     content?.invoke()
                 }
             }

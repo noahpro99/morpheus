@@ -133,10 +133,10 @@ private fun Confirm(model: AppModel, share: Share, target: ShareTarget) {
     Column(Modifier.fillMaxSize().padding(16.dp).testTag("share-confirm"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f).fillMaxWidth().testTag("share-preview"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (share.files.isEmpty()) {
-                Text(share.text.orEmpty(), Modifier.clip(RoundedCornerShape(Radius.md)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(12.dp), maxLines = 8, overflow = TextOverflow.Ellipsis)
+                Text(share.text.orEmpty(), Modifier.clip(RoundedCornerShape(Radius.md)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(12.dp), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             } else {
                 share.files.take(4).forEach { Preview(it) }
-                if (share.files.size > 4) Text(t("and %{count} more", "count" to (share.files.size - 4).toString()), color = Palette.Muted)
+                if (share.files.size > 4) Text(t("and %{count} more", "count" to (share.files.size - 4).toString()), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
             }
         }
         OutlinedTextField(
@@ -160,8 +160,8 @@ private fun Preview(shared: SharedFile) {
         Image(shown, shared.name, Modifier.fillMaxWidth().heightIn(max = 240.dp).clip(RoundedCornerShape(Radius.md)).testTag("share-image"), contentScale = ContentScale.Fit)
     } else {
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(Palette.Surface).padding(12.dp).testTag("share-file"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(shared.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(size(shared.file.length().toULong()), color = Palette.Muted)
+            Text(shared.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            Text(size(shared.file.length().toULong()), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

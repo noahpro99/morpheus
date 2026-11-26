@@ -59,13 +59,13 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
             val current = status
             if (flow != null) {
                 panel?.let { Panel(it) { action -> model.act(action) } }
-                    ?: Text(t("Starting…"), color = Palette.Muted, modifier = Modifier.testTag("verify-starting"))
+                    ?: Text(t("Starting…"), color = Palette.Muted, modifier = Modifier.testTag("verify-starting"), style = MaterialTheme.typography.bodyLarge)
             } else if (newKey != null) {
-                Text(t("Your recovery key. Keep it somewhere safe: it is shown only once."))
+                Text(t("Your recovery key. Keep it somewhere safe: it is shown only once."), style = MaterialTheme.typography.bodyLarge)
                 Text(newKey.orEmpty(), Modifier.testTag("new-recovery-key"), style = MaterialTheme.typography.bodyLarge)
                 Button({ model.keySaved() }, Modifier.testTag("key-saved")) { Text(t("I have saved it")) }
             } else if (current == null) {
-                Text(t("Loading…"), color = Palette.Muted)
+                Text(t("Loading…"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
             } else {
                 // The state of this device, as a Material 3 card with a shield.
                 androidx.compose.material3.Card(
@@ -77,11 +77,12 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
                         Text(
                             if (current.deviceVerified) "This device is verified." else "This device is not verified: encrypted messages from before you signed in cannot be read yet.",
                             Modifier.testTag("security-state"),
-                        )
+                       style = MaterialTheme.typography.bodyLarge,
+                   )
                     }
                 }
                 if (current.recovery == RecoveryKind.NEEDS_KEY) {
-                    Text(t("Enter your recovery key (or passphrase) to unlock your encrypted history."), color = Palette.Muted)
+                    Text(t("Enter your recovery key (or passphrase) to unlock your encrypted history."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
                     OutlinedTextField(
                         key, { key = it },
                         Modifier.fillMaxWidth().testTag("recovery-key"),
@@ -93,15 +94,15 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
                     }
                 }
                 if (current.otherDevices > 0u && !current.deviceVerified) {
-                    Text(t("Or verify with another device of yours that is signed in."), color = Palette.Muted)
+                    Text(t("Or verify with another device of yours that is signed in."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
                     OutlinedButton({ model.startVerification() }, Modifier.testTag("verify-device")) { Text(t("Verify with another device")) }
                 }
                 if (current.recovery == RecoveryKind.DISABLED) {
-                    Text(t("Recovery is not set up: if you lose every device, your encrypted history is gone."), color = Palette.Muted)
+                    Text(t("Recovery is not set up: if you lose every device, your encrypted history is gone."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
                     OutlinedButton({ model.setUpRecovery() }, Modifier.testTag("set-up-recovery"), enabled = !busy) { Text(t("Set up recovery")) }
                 }
             }
-            error?.let { Text(it, color = Palette.Danger, modifier = Modifier.testTag("security-error")) }
+            error?.let { Text(it, color = Palette.Danger, modifier = Modifier.testTag("security-error"), style = MaterialTheme.typography.bodyLarge) }
         }
     }
 }
@@ -117,7 +118,8 @@ private fun Panel(panel: VerificationPanel, onAction: (uniffi.morpheus_ffi.Verif
                 PanelTone.ERROR -> Palette.Danger
                 else -> Palette.Text
             },
-        )
+       style = MaterialTheme.typography.bodyLarge,
+   )
         if (panel.emojis.isNotEmpty()) {
             FlowRow(Modifier.testTag("verify-emoji"), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (emoji in panel.emojis) {

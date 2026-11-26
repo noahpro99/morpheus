@@ -91,6 +91,8 @@ pub mod vim;
 pub mod verification;
 
 #[cfg(test)]
+mod android_rules;
+#[cfg(test)]
 mod test_room {
     use morpheus_core::{OwnedRoomId, RoomSummary};
 

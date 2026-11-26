@@ -356,7 +356,7 @@ private fun Timeline(
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
                 }
                 TimelineRow.Start -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                    Text("This is the beginning of the room.", Modifier.testTag("timeline-start"), textAlign = TextAlign.Center, color = Palette.Muted)
+                    Text("This is the beginning of the room.", Modifier.testTag("timeline-start"), textAlign = TextAlign.Center, color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
                     // An empty direct message offers a greeting (#421).
                     if (sayHi) {
                         androidx.compose.material3.FilledTonalButton({ model.send(uniffi.morpheus_ffi.sayHiGreeting()) }, Modifier.testTag("say-hi")) { Text(t("Say hi! 👋")) }
@@ -453,7 +453,8 @@ private fun MessageRow(
                         Modifier.testTag("msg-sender"),
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
-                    )
+                   style = MaterialTheme.typography.bodyLarge,
+               )
                     Text(whenSent(message.timestampMs.toLong(), rememberNow()), Modifier.testTag("msg-time"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -463,7 +464,7 @@ private fun MessageRow(
                         .padding(vertical = 2.dp)
                         .clip(RoundedCornerShape(Radius.sm))
                         .background(Palette.Raised)
-                        .drawBehind { drawRect(Palette.Accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+                        .drawBehind { drawRect(Palette.Accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height)) }
                         .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
@@ -488,7 +489,7 @@ private fun MessageRow(
                         TextButton({ onFull(message) }, Modifier.testTag("show-more")) { Text(t("Show more")) }
                     }
                 }
-                is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted)
+                is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
                 is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
                 is MessageBody.File -> Row(
                     Modifier
@@ -503,7 +504,7 @@ private fun MessageRow(
                         when (body.kind) { FileKind.VIDEO -> dev.morpheus.app.R.drawable.ic_lucide_play; FileKind.AUDIO -> dev.morpheus.app.R.drawable.ic_lucide_audio_lines; else -> dev.morpheus.app.R.drawable.ic_lucide_paperclip },
                         size = 20.dp,
                     )
-                    Text(body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }), Modifier.testTag("msg-file"))
+                    Text(body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }), Modifier.testTag("msg-file"), style = MaterialTheme.typography.bodyLarge)
                 }
             }
             message.thread?.let { chip ->
@@ -534,17 +535,17 @@ private fun MessageRow(
                 PreviewCardView(model, url, eventId)
             }
             if (message.reactions.isNotEmpty()) {
-                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (reaction in message.reactions) {
                         Text(
                             "${reaction.key} ${reaction.count}",
                             Modifier
-                                .border(1.dp, if (reaction.mine) Palette.Accent else Palette.Raised, RoundedCornerShape(10.dp))
-                                .background(if (reaction.mine) Palette.Accent.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(10.dp))
+                                .border(1.dp, if (reaction.mine) Palette.Accent else Palette.Raised, RoundedCornerShape(12.dp))
+                                .background(if (reaction.mine) Palette.Accent.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(12.dp))
                                 .pointerInput(reaction.key, message.key) {
                                     detectTapGestures { message.eventId?.let { model.react(it, reaction.key) } }
                                 }
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
                                 .testTag("reaction-${reaction.key}"),
                             style = MaterialTheme.typography.bodyMedium,
                         )

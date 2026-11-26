@@ -66,7 +66,7 @@ fun MentionPill(count: ULong, tag: String, modifier: Modifier = Modifier) {
 @Composable
 private fun Pill(text: String, fill: Color, content: Color, tag: String, modifier: Modifier) {
     Box(
-        modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).clip(CircleShape).background(fill).padding(horizontal = 6.dp),
+        modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).clip(CircleShape).background(fill).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, Modifier.testTag(tag), color = content, style = MaterialTheme.typography.labelMedium)
@@ -189,7 +189,7 @@ fun SkeletonRows(count: Int = 6, avatars: Boolean = true, modifier: Modifier = M
                 if (avatars) SkeletonBar(Size.avatar, Size.avatar, round = true)
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     SkeletonBar((120 + (i * 37) % 90).dp)
-                    SkeletonBar((180 + (i * 53) % 80).dp, 10.dp)
+                    SkeletonBar((180 + (i * 53) % 80).dp, 12.dp)
                 }
             }
         }

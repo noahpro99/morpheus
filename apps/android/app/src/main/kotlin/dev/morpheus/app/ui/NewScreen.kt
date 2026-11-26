@@ -145,7 +145,7 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
     SearchField(term, { term = it }, t("Search public rooms"), "directory-search")
     failure?.let { Text(it, color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
     val listed = rooms
-    if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted)
+    if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     LazyColumn(Modifier.testTag("directory")) {
         items(listed.orEmpty(), key = { it.id }) { room ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -197,7 +197,7 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
     }
     LaunchedEffect(failure) { failure?.let { Toasts.say(it, "friend-error", long = true) } }
     val list = friends
-    if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted)
+    if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     if (list != null && list.isNotEmpty()) Text(t("All friends — %{count}", "count" to list.size.toString()), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
     LazyColumn(Modifier.testTag("friends")) {
         items(list.orEmpty(), key = { it.userId }) { friend ->

@@ -208,7 +208,7 @@ private fun PrivacyPage(app: AppModel, page: PageRequest) {
             if (i.hasEncryption) {
                 SectionHeader(t("Encryption"))
                 when (i.encrypted) {
-                    null -> Text("…", color = Palette.Muted)
+                    null -> Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
                     true -> Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = MaterialTheme.typography.bodyLarge)
                     false -> {
                         Text(i.encryptionNote, Modifier.testTag("privacy-encryption"), style = MaterialTheme.typography.bodyLarge)
@@ -301,12 +301,12 @@ private fun PinnedPage(app: AppModel, page: PageRequest) {
     }
     PageFrame(app, "Pinned messages", "page-pinned") {
         val list = pins
-        if (list != null && list.isEmpty()) Text(t("Nothing pinned yet. Long-press a message to pin it."), Modifier.testTag("pinned-empty"), color = Palette.Muted)
+        if (list != null && list.isEmpty()) Text(t("Nothing pinned yet. Long-press a message to pin it."), Modifier.testTag("pinned-empty"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
         for (pin in list.orEmpty()) {
             Row(Modifier.fillMaxWidth().testTag("pinned-item"), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    pin.sender?.let { Text(it, Modifier.testTag("pinned-sender"), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) }
-                    Text(pin.body, Modifier.testTag("pinned-body"))
+                    pin.sender?.let { Text(it, Modifier.testTag("pinned-sender"), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, style = MaterialTheme.typography.bodyLarge) }
+                    Text(pin.body, Modifier.testTag("pinned-body"), style = MaterialTheme.typography.bodyLarge)
                 }
                 IconAction(dev.morpheus.app.R.drawable.ic_lucide_pin_off, t("Unpin"), "unpin-${pin.eventId}", {
                     scope.launch { try { app.morpheus.unpinMessage(page.roomId, pin.eventId); pins = app.morpheus.pinnedMessages(page.roomId) } catch (e: Exception) { error = e.sentence() } }
@@ -535,12 +535,12 @@ private fun FullProfilePage(app: AppModel, page: PageRequest) {
                 Avatar(profile.avatar, profile.name, Size.avatarXl)
                 Text(profile.name, Modifier.testTag("full-profile-name"), style = MaterialTheme.typography.titleLarge)
                 Text(profile.userId, Modifier.testTag("full-profile-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
-                profile.status?.let { Text(it, Modifier.testTag("full-profile-status")) }
-                if (profile.isMe) Text(t("This is you"), Modifier.testTag("full-profile-me"), color = Palette.Muted)
+                profile.status?.let { Text(it, Modifier.testTag("full-profile-status"), style = MaterialTheme.typography.bodyLarge) }
+                if (profile.isMe) Text(t("This is you"), Modifier.testTag("full-profile-me"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
             }
             if (!profile.isMe) {
                 SectionHeader(profile.mutualHeading, Modifier.testTag("full-profile-mutual"))
-                for (server in profile.servers) Text(server, Modifier.testTag("full-profile-server-$server"))
+                for (server in profile.servers) Text(server, Modifier.testTag("full-profile-server-$server"), style = MaterialTheme.typography.bodyLarge)
                 Button({
                     scope.launch { try { app.closePage(); app.openNewRoom(app.morpheus.startDm(profile.userId)) } catch (e: Exception) { error = e.sentence() } }
                 }, Modifier.fillMaxWidth().testTag("full-profile-message")) { Text(t("Message")) }

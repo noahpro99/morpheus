@@ -72,7 +72,7 @@ fun BridgesScreen(app: AppModel) {
     ScreenScaffold("bridges-screen", { TopBar(t("Bridges"), backTag = "bridges-back", onBack = { app.closeBridges() }) }) { inner ->
         Column(
             Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 t("Connect chats from other networks. Morpheus messages the bridge's bot for you and shows what to scan or type."),
@@ -80,12 +80,13 @@ fun BridgesScreen(app: AppModel) {
             )
             val shown = bots
             if (shown == null) {
-                Text(t("Looking for bridges..."), Modifier.testTag("bridges-looking"), color = Palette.Muted)
+                Text(t("Looking for bridges..."), Modifier.testTag("bridges-looking"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
             } else if (shown.isEmpty()) {
                 Text(
                     t("No bridge bots were found on your server. If your bridge's bot has another name, add it below."),
                     Modifier.testTag("bridges-none"), color = Palette.Muted,
-                )
+               style = MaterialTheme.typography.bodyLarge,
+           )
             }
             for (bot in shown.orEmpty()) BridgeRow(app, bot, language)
 
@@ -140,7 +141,7 @@ private fun BridgeRow(app: AppModel, bot: BridgeBot, language: String) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(bot.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("bridge-name-$id"))
+                Text(bot.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("bridge-name-$id"), style = MaterialTheme.typography.bodyLarge)
                 Text(bot.bot, color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
             }
             Text(
@@ -150,7 +151,8 @@ private fun BridgeRow(app: AppModel, bot: BridgeBot, language: String) {
                     BridgePhase.ERROR, BridgePhase.NEEDS_LOGIN -> Palette.Danger
                     else -> Palette.Muted
                 },
-            )
+           style = MaterialTheme.typography.bodyLarge,
+       )
         }
         if (connecting) Text(t(bot.steps), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("bridge-steps-$id"))
         val picture = remember(snapshot.qr) {
@@ -160,7 +162,7 @@ private fun BridgeRow(app: AppModel, bot: BridgeBot, language: String) {
             Image(picture, null, Modifier.size(220.dp).testTag("bridge-qr-$id"))
         }
         if (phase == BridgePhase.PROMPT) {
-            Text(snapshot.detail.orEmpty(), Modifier.testTag("bridge-question-$id"))
+            Text(snapshot.detail.orEmpty(), Modifier.testTag("bridge-question-$id"), style = MaterialTheme.typography.bodyLarge)
             var answer by remember(snapshot.detail) { mutableStateOf("") }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(

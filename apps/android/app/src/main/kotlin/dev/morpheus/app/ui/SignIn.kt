@@ -88,7 +88,7 @@ fun SignInScreen(model: AppModel) {
             keyboardActions = KeyboardActions(onDone = { submit() }),
         )
         error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("sign-in-error"))
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("sign-in-error"), style = MaterialTheme.typography.bodyLarge)
         }
         Button(
             submit,

@@ -41,6 +41,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # First and alone: it needs only rustc, so a rule broken fails in seconds, before anything is built.
+      - name: Source rules
+        run: |
+          rustc --edition 2021 --test crates/view-model/src/android_rules.rs -o android_rules
+          ./android_rules
+
       - name: Libraries
         run: scripts/ci-linux-deps.sh
 

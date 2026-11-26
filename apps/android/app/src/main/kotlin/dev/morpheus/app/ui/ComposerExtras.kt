@@ -52,10 +52,10 @@ fun SuggestionStrip(items: List<SuggestionItem>, onPick: (SuggestionItem) -> Uni
             Row(
                 Modifier
                     .clickable { onPick(item) }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
                     .testTag("suggestion-${item.label}"),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 when (item.kind) {
                     SuggestionKind.EMOJI -> {
@@ -66,7 +66,7 @@ fun SuggestionStrip(items: List<SuggestionItem>, onPick: (SuggestionItem) -> Uni
                         item.media?.let { CustomEmojiImage(it, 28) }
                         Text(":${item.label}:", color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                     }
-                    SuggestionKind.MEMBER -> Text("@${item.label}")
+                    SuggestionKind.MEMBER -> Text("@${item.label}", style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }

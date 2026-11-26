@@ -116,7 +116,7 @@ private fun ServerLine(app: AppModel, server: ScopeItem, id: String, folders: Li
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Avatar(server.avatar, server.title, 40.dp)
-        Text(server.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(server.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
         if (!inFolder) {
             TextButton({ move(-1) }, Modifier.testTag("server-up-${server.title}"), enabled = canUp) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_up, size = 20.dp) }
             TextButton({ move(1) }, Modifier.testTag("server-down-${server.title}"), enabled = canDown) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 20.dp) }

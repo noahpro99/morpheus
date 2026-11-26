@@ -86,7 +86,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                             }
                         }
                         SmallHeading(t("Members"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
-                        if (members == null && problem == null) Text(t("Loading…"), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (members == null && problem == null) Text(t("Loading…"), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
                 items(members.orEmpty()) { row ->
@@ -181,7 +181,7 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
             }
             if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_lucide_ellipsis, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
             card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, style = MaterialTheme.typography.bodyMedium) }
-            card.status?.let { Text(it, color = Palette.Muted) }
+            card.status?.let { Text(it, color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
             Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
             Text(card.mutualRooms.joinToString(", "), maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             if (!card.isMe) {

@@ -251,7 +251,7 @@ fun BottomBar(model: AppModel, tab: Tab) {
                 val ownKey by model.ownAvatarKey.collectAsState()
                 val name = own?.name ?: People.nameOf(me, names)
                 Box(
-                    Modifier.size(30.dp).then(if (on) Modifier.border(2.dp, Palette.Accent, CircleShape).testTag("tab-profile-ring") else Modifier),
+                    Modifier.size(32.dp).then(if (on) Modifier.border(2.dp, Palette.Accent, CircleShape).testTag("tab-profile-ring") else Modifier),
                     contentAlignment = Alignment.Center,
                 ) { Avatar(own?.avatar, name, 24.dp, Modifier.testTag("tab-profile-avatar"), key = ownKey) }
             }
@@ -299,7 +299,7 @@ private fun RowScope.TabItem(
                 icon(on)
             }
             if (mentions > 0UL) MentionPill(mentions, "$tag-badge", Modifier.padding(end = Space.xs))
-            else if (dot) Box(Modifier.padding(top = 4.dp, end = 14.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).testTag("$tag-dot"))
+            else if (dot) Box(Modifier.padding(top = 4.dp, end = 16.dp).size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).testTag("$tag-dot"))
         }
         Text(label, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelMedium, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
     }
@@ -484,7 +484,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
                             Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                             if (member.muted || member.deafened) GlyphIcon(
                                 if (member.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_mic_off,
-                                Modifier.testTag("in-call-muted-${room.name}-$name"), size = 14.dp, tint = Palette.Muted,
+                                Modifier.testTag("in-call-muted-${room.name}-$name"), size = 16.dp, tint = Palette.Muted,
                             )
                         }
                     }
@@ -526,7 +526,7 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
                 Modifier.padding(top = Space.md).clip(CircleShape).background(Palette.Raised).padding(horizontal = Space.md, vertical = Space.xs),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(if (online) Color(0xFF3BA55D) else Palette.Muted))
+                Box(Modifier.size(12.dp).clip(CircleShape).background(if (online) Color(0xFF3BA55D) else Palette.Muted))
                 Text(if (online) t("Online") else t("Offline"), Modifier.testTag("profile-status"), style = MaterialTheme.typography.bodyMedium)
             }
             if (status.isNotBlank()) Text(status, Modifier.padding(top = Space.sm).testTag("profile-status-message"), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
