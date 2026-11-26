@@ -193,6 +193,8 @@ impl Render for EmojiPicker {
                     .e2e("div", "skin-tone-menu"),
             );
         }
+        // Its search glyph is inset evenly (#505).
+        const SEARCH_H: f32 = 32.0;
         let top = div()
             .flex()
             .flex_none()
@@ -207,13 +209,21 @@ impl Render for EmojiPicker {
                     .flex()
                     .items_center()
                     .gap(px(6.0))
-                    .px(px(10.0))
+                    .h(px(SEARCH_H))
+                    .px(px(theme::inset_in(SEARCH_H, 16.0)))
                     .rounded(px(theme::RADIUS_SM))
                     .bg(theme::solid_rail())
                     .text_color(rgb(theme::text()))
                     .child(div().flex_1().min_w_0().child(self.search.clone()))
-                    .child(icon("search", 16.0).text_color(rgb(theme::text_muted())))
-                    .e2e("label", "emoji-search-box"),
+                    .child(
+                        div()
+                            .size(px(16.0))
+                            .flex_none()
+                            .child(icon("search", 16.0).text_color(rgb(theme::text_muted())))
+                            .e2e("span", "search-glyph"),
+                    )
+                    .e2e("label", "emoji-search-box")
+                    .attr("radius", theme::radius_attr(theme::RADIUS_SM)),
             )
             .child(tones.e2e("div", "skin-tone"));
 
@@ -443,7 +453,7 @@ impl Render for EmojiPicker {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded(px(10.0))
+            .rounded(px(theme::RADIUS_LG))
             .bg(theme::solid_sidebar())
             .border_1()
             .border_color(rgba(theme::edge()))

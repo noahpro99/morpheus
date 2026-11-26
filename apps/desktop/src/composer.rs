@@ -1044,12 +1044,12 @@ fn slot(child: impl IntoElement) -> impl IntoElement {
         .child(child)
 }
 
-/// A button beside the box is a circle: its centre is the centre of the end cap of the pill.
+/// A button beside the box is inset evenly (7 px) from the box's edges, rounded to match.
 const TOOL: f32 = 36.0;
 
 /// The box's side padding: what puts a tool button's centre on the end cap's.
 fn side_pad() -> f32 {
-    theme::end_cap_inset(theme::BOTTOM_R, TOOL)
+    theme::inset_in(theme::BOTTOM_H, TOOL)
 }
 
 /// The room the buttons, their gaps and the padding take from the row.
@@ -1074,7 +1074,7 @@ fn tool_button(
         .flex()
         .items_center()
         .justify_center()
-        .rounded_full()
+        .rounded(px(theme::inner_radius(theme::BAR_R, side_pad())))
         .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
         .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))
@@ -1083,7 +1083,7 @@ fn tool_button(
         .tip(title.to_owned())
         .e2e("button", classes)
         .attr("title", title)
-        .attr("radius", theme::radius_attr(TOOL / 2.0));
+        .attr("radius", theme::radius_attr(theme::inner_radius(theme::BAR_R, side_pad())));
     if enabled {
         tagged
     } else {
@@ -1213,9 +1213,9 @@ impl Render for Composer {
         // whole box they jumped to the middle of every taller one).
         row = row.items_end();
         row = if above {
-            row.rounded_b(px(theme::BOTTOM_R))
+            row.rounded_b(px(theme::BAR_R))
         } else {
-            row.rounded(px(theme::BOTTOM_R))
+            row.rounded(px(theme::BAR_R))
         };
 
         let mut footer = div()
@@ -1231,7 +1231,7 @@ impl Render for Composer {
         }
         footer = footer.child(
             row.e2e("div", "composer-row")
-                .attr("radius", theme::radius_attr(theme::BOTTOM_R)),
+                .attr("radius", theme::radius_attr(theme::BAR_R)),
         );
         if let Some(popup) = self.autocomplete_el(cx) {
             footer = footer.child(popup);

@@ -380,9 +380,10 @@ pub const BOTTOM_GAP: f32 = 8.0;
 
 // Concentric shapes (#505): see view_model::concentric. A child at the end of a pill is a
 // circle centred on the end cap; a shape inside a rounded one has radius outer - padding.
-pub use crate::view_model::concentric::{end_cap_inset, inner_radius, pill_radius};
-/// The box, the user pill's row, the search bars: pills, so their ends are half circles.
-pub const BOTTOM_R: f32 = BOTTOM_H / 2.0;
+pub use crate::view_model::concentric::{end_cap_inset, inner_radius, inset_in, pill_radius};
+/// The message box and the user pill: the app's usual rounded rectangle, not a pill. What sits
+/// in them is inset evenly (`inset_in`) and is rounded `inner_radius(BAR_R, inset)`.
+pub const BAR_R: f32 = RADIUS_LG;
 /// A context menu's padding and border: what its rows are inset by.
 pub const MENU_PAD: f32 = 6.0;
 pub const MENU_BORDER: f32 = 1.0;
@@ -687,12 +688,12 @@ mod source_tests {
             ("call_ui.rs", 3),
             ("composer.rs", 1),
             ("diagnostics.rs", 1),
-            ("emoji_picker.rs", 2),
+            ("emoji_picker.rs", 1),
             ("invites.rs", 2),
             ("lightbox.rs", 1),
             ("login.rs", 1),
             ("members.rs", 1),
-            ("message.rs", 9),
+            ("message.rs", 8),
             ("noise.rs", 4),
             ("profile.rs", 3),
             ("rail.rs", 3),

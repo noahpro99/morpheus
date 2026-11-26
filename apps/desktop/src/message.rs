@@ -745,14 +745,17 @@ fn thread_chip(
     named.latest_sender_name = named
         .latest_sender_name
         .map(|name| crate::streamer::name(&name));
+    /// The thread icon is inset evenly from the chip's left end (#505).
+    const THREAD_CHIP_H: f32 = 26.0;
     let mut chip = div()
         .flex()
         .items_center()
         .gap(px(6.0))
         .mt(px(6.0))
-        .px(px(10.0))
-        .py(px(4.0))
-        .rounded(px(10.0))
+        .h(px(THREAD_CHIP_H))
+        .pl(px(theme::inset_in(THREAD_CHIP_H, 14.0)))
+        .pr(px(10.0))
+        .rounded(px(theme::RADIUS_SM))
         .bg(theme::fill_elevated())
         .text_color(rgb(theme::text_muted()))
         .text_size(rem(0.82))
@@ -791,7 +794,9 @@ fn thread_chip(
         chip =
             chip.on_click(move |_, window, cx| actions(RowAction::Thread, &unique_id, window, cx));
     }
-    chip.w_auto().e2e("button", "thread-chip")
+    chip.w_auto()
+        .e2e("button", "thread-chip")
+        .attr("radius", theme::radius_attr(theme::RADIUS_SM))
 }
 
 fn reply_quote(reply: &morpheus_core::ReplyPreview) -> impl IntoElement {

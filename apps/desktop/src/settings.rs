@@ -1881,7 +1881,8 @@ impl Render for SettingsView {
             .child(nav)
             .child(content)
             .child(crate::dialogs::modal_close(cx.listener(|this, _, _, cx| this.close(cx))))
-            .e2e("div", "settings");
+            .e2e("div", "settings")
+            .attr("radius", theme::radius_attr(theme::RADIUS_XL));
         div()
             .absolute()
             .top_0()

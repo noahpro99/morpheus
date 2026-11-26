@@ -269,8 +269,9 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             // column.
             if let Some(input) = &shell.search_input {
                 const REST_W: f32 = 144.0;
-                // A pill: its search glyph and clear button are circles on the end cap (#505).
-                const SEARCH_R: f32 = 14.0;
+                // Its glyph and clear button are inset evenly, the button rounded to match (#505).
+                const SEARCH_R: f32 = theme::RADIUS_SM;
+                const SEARCH_H: f32 = 28.0;
                 const SEARCH_ICON: f32 = 16.0;
                 const SEARCH_CLEAR: f32 = 22.0;
                 const WIDE_W: f32 = 240.0;
@@ -294,10 +295,10 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .flex_none()
                     .items_center()
                     .gap(px(6.0))
-                    .h(px(28.0))
+                    .h(px(SEARCH_H))
                     .pl(px(8.0))
                     .when(text.is_empty(), |d| {
-                        d.pr(px(theme::end_cap_inset(SEARCH_R, SEARCH_ICON)))
+                        d.pr(px(theme::inset_in(SEARCH_H, SEARCH_ICON)))
                     })
                     .rounded(px(SEARCH_R))
                     .bg(theme::fill_input())
@@ -327,8 +328,11 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             .size(px(SEARCH_CLEAR))
                             .flex_none()
                             .justify_center()
-                            .mr(px(theme::end_cap_inset(SEARCH_R, SEARCH_CLEAR)))
-                            .rounded_full()
+                            .mr(px(theme::inset_in(SEARCH_H, SEARCH_CLEAR)))
+                            .rounded(px(theme::inner_radius(
+                                SEARCH_R,
+                                theme::inset_in(SEARCH_H, SEARCH_CLEAR),
+                            )))
                             .cursor_pointer()
                             .text_color(rgb(clear_colour))
                             .on_hover(bar_hover(cx, "search-clear"))
@@ -339,6 +343,13 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                             }))
                             .e2e("button", "ghost search-clear")
                             .attr("title", "Clear search")
+                            .attr(
+                                "radius",
+                                theme::radius_attr(theme::inner_radius(
+                                    SEARCH_R,
+                                    theme::inset_in(SEARCH_H, SEARCH_CLEAR),
+                                )),
+                            )
                             .attr("data-color", format!("{clear_colour:06x}"))
                             .attr("data-bg", "")
                             .into_any_element()

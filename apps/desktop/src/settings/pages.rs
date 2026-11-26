@@ -1808,7 +1808,11 @@ impl SettingsView {
             .border_color(if selected { rgb(theme::accent()) } else { theme::fill_elevated() })
             .bg(theme::fill_elevated())
             .cursor_pointer()
-            .child(swatch)
+            .child(
+                swatch
+                    .e2e("div", "theme-swatch")
+                    .attr("radius", theme::radius_attr(theme::inner_radius(theme::RADIUS_LG, 10.0))),
+            )
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
@@ -1823,7 +1827,8 @@ impl SettingsView {
             .flex()
             .w(px(120.0))
             .h(px(72.0))
-            .rounded(px(theme::RADIUS))
+            // Inside the tile (padding 8, ring 2): the tile's radius less that (#505).
+            .rounded(px(theme::inner_radius(theme::RADIUS_LG, 10.0)))
             .overflow_hidden()
             .child(div().w(relative_36()).h_full().bg(rgb(side)))
             .child(div().flex_1().h_full().bg(rgb(chat)))
@@ -1846,6 +1851,7 @@ impl SettingsView {
         }))
         .e2e("button", if selected { "theme-option selected" } else { "theme-option" })
         .attr("data-theme", theme_choice.key())
+        .attr("radius", theme::radius_attr(theme::RADIUS_LG))
         .into_any_element()
     }
 

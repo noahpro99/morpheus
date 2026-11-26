@@ -600,12 +600,17 @@ pub(crate) fn overlay(
     deferred(layer).with_priority(20).into_any_element()
 }
 
+const MODAL_CLOSE: f32 = 24.0;
+
 /// The close X of every modal (#222): top right, tooltip "Close (Esc)". One
 /// component so a modal cannot go without; `on_click` closes the modal.
 pub(crate) fn modal_close(
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
-    modal_close_at(8.0, 8.0, on_click)
+    // A circle on the dialog corner's own cap (its radius is RADIUS_XL), so the 24 px button sits
+    // 4 px from both edges (#505).
+    let inset = theme::end_cap_inset(theme::RADIUS_XL, MODAL_CLOSE);
+    modal_close_at(inset, inset, on_click)
 }
 
 /// [`modal_close`] at another place (the image viewer's is outside its picture).
@@ -620,11 +625,11 @@ pub(crate) fn modal_close_at(
         .absolute()
         .top(px(top))
         .right(px(right))
-        .size(px(28.0))
+        .size(px(MODAL_CLOSE))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(theme::RADIUS_SM))
+        .rounded_full()
         .cursor_pointer()
         .text_color(rgb(theme::text_muted()))
         .hover(|s| s.bg(rgba(theme::bg_hover())).text_color(rgb(theme::text())))

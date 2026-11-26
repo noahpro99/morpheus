@@ -377,6 +377,7 @@ impl Discover {
             .gap(px(6.0))
             .px(px(10.0))
             .py(px(3.0))
+            .when(failed, |d| d.pr(px(3.0)))
             .rounded_full()
             .text_size(px(0.85 * theme::REM))
             .cursor_pointer()
@@ -400,6 +401,8 @@ impl Discover {
             chip = chip.child(
                 div()
                     .px(px(6.0))
+                    .flex()
+                    .items_center()
                     .rounded_full()
                     .bg(rgb(theme::danger()))
                     .text_color(rgb(theme::on_danger()))

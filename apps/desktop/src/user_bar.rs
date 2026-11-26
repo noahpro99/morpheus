@@ -1,4 +1,4 @@
-//! The pill along the bottom of the rail and sidebar
+//! The pill along the bottom of the rail an sidebar
 //! (`crates/ui/src/components/user_bar.rs`): your avatar and name, mute,
 //! deafen and the settings gear. Not ported yet: the account menu behind the
 //! chip, what the buttons do (calls and settings come with their screens).
@@ -12,9 +12,12 @@ use crate::{
     view_model::keys::SettingsFocus,
 };
 
-/// The user pill's row is a pill: the profile chip and the buttons are shapes on its end caps (#505).
+/// The user pill's row is a rounded rectangle: the profile chip and the buttons are inset evenly in it (#505).
 const CHIP_H: f32 = 40.0;
 const GHOST: f32 = 32.0;
+/// Each is inset evenly in the 50 px row, so its corner is the pill's less that inset.
+const CHIP_R: f32 = theme::RADIUS_LG - (theme::BOTTOM_H - CHIP_H) / 2.0;
+const GHOST_R: f32 = theme::RADIUS_LG - (theme::BOTTOM_H - GHOST) / 2.0;
 
 fn ghost(
     id: &'static str,
@@ -31,7 +34,7 @@ fn ghost(
         .flex()
         .items_center()
         .justify_center()
-        .rounded_full()
+        .rounded(px(GHOST_R))
         .text_color(rgb(theme::text_muted()))
         .cursor_pointer()
         .hover(|s| {
@@ -42,7 +45,7 @@ fn ghost(
         .tip(title.to_owned())
         .e2e("button", classes)
         .attr("title", title)
-        .attr("radius", theme::radius_attr(GHOST / 2.0))
+        .attr("radius", theme::radius_attr(GHOST_R))
 }
 
 pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
@@ -70,8 +73,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .flex()
         .items_center()
         .gap(px(8.0))
-        .px(px(theme::end_cap_inset(CHIP_H / 2.0, 34.0)))
-        .rounded(px(CHIP_H / 2.0))
+        .px(px(theme::inset_in(CHIP_H, 34.0)))
+        .rounded(px(CHIP_R))
         .cursor_pointer()
         .hover(|s| s.bg(gpui::rgba(theme::bg_hover())))
         // Click (or right-click) on your own chip: account actions.
@@ -99,7 +102,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         )
         .e2e("button", "profile-chip")
         .attr("title", user_id)
-        .attr("radius", theme::radius_attr(CHIP_H / 2.0));
+        .attr("radius", theme::radius_attr(CHIP_R));
     // The mic and its arrow are one thing: red together when muted.
     let voice = shell.calls.voice;
     let pair = |id: &'static str,
@@ -124,7 +127,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .flex()
             .items_center()
             .justify_center()
-            .rounded_l(px(GHOST / 2.0))
+            .rounded_l(px(GHOST_R))
             .cursor_pointer()
             .when(active, |d| d.bg(tint(0x2e)))
             .hover(|s| {
@@ -156,7 +159,7 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
             .flex()
             .items_center()
             .justify_center()
-            .rounded_r(px(GHOST / 2.0))
+            .rounded_r(px(GHOST_R))
             .cursor_pointer()
             .when(active, |d| d.bg(tint(0x2e)))
             .hover(|s| {
@@ -223,8 +226,8 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
         .items_center()
         .gap(px(8.0))
         .h(px(theme::BOTTOM_H))
-        .pl(px(theme::end_cap_inset(theme::BOTTOM_R, CHIP_H)))
-        .pr(px(theme::end_cap_inset(theme::BOTTOM_R, GHOST)))
+        .pl(px(theme::inset_in(theme::BOTTOM_H, CHIP_H)))
+        .pr(px(theme::inset_in(theme::BOTTOM_H, GHOST)))
         .child(
             div()
                 .flex()
@@ -249,20 +252,17 @@ pub fn render(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement {
     // In a call, its controls sit at the top of this card.
     let join_error = crate::call_ui::join_error(shell, cx);
     let voice_panel = crate::call_ui::voice_panel(shell, cx);
-    let in_call = join_error.is_some() || voice_panel.is_some();
     let pill = div()
         .w_full()
         .flex()
         .flex_col()
-        .rounded_b(px(theme::BOTTOM_R))
+        .rounded(px(theme::BAR_R))
         .bg(theme::fill_card())
         .children(join_error)
         .children(voice_panel)
         .child(row)
-        .when(in_call, |d| d.rounded_t(px(theme::RADIUS_LG)))
-        .when(!in_call, |d| d.rounded_t(px(theme::BOTTOM_R)))
         .e2e("div", "user-pill")
-        .attr("radius", theme::radius_attr(theme::BOTTOM_R));
+        .attr("radius", theme::radius_attr(theme::BAR_R));
     // The band is the rail's fill under the rail and the sidebar's under the list: the
     // same flat fills as the columns above, so a see-through window shows no seam or
     // extra layer; the pill floats on it.
