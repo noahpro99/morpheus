@@ -116,17 +116,43 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
             // The icon (a DM's picture, a channel's #) and the name are one
             // button, as tall as the bar and with a hover background, as in
             // Discord: any of it opens the room's menu, under the name.
-            let icon_el = if room.is_dm {
-                avatar(shell.picture(&room.avatar, 24), &title, 24.0, None).into_any_element()
-            } else {
-                div()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("#")
-                    .e2e("span", "hash")
-                    .text("#")
-                    .into_any_element()
-            };
             let head_colour = bar_colour(shell, "room-head", theme::text_muted());
+            // The lock state (#518): a lock when encrypted, an open lock when not,
+            // where Discord has the #; a DM keeps its picture and gets it by the name.
+            let lock_el = || {
+                let tip = if room.is_encrypted {
+                    ts("Encrypted")
+                } else {
+                    ts("Not encrypted")
+                };
+                div()
+                    .flex()
+                    .items_center()
+                    .child(
+                        icon(if room.is_encrypted { "lock" } else { "lock-open" }, 18.0)
+                            .text_color(rgb(head_colour)),
+                    )
+                    .e2e(
+                        "span",
+                        if room.is_encrypted {
+                            "room-lock on"
+                        } else {
+                            "room-lock off"
+                        },
+                    )
+                    .attr("title", tip)
+            };
+            let icon_el = if room.is_dm {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(avatar(shell.picture(&room.avatar, 24), &title, 24.0, None))
+                    .child(lock_el())
+                    .into_any_element()
+            } else {
+                lock_el().into_any_element()
+            };
             let anchor = shell.title_bounds.clone();
             let menu_room = room.clone();
             header = header.child(
