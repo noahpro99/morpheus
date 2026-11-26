@@ -179,9 +179,21 @@ android-emulator:
 android-native-phone:
     nix develop .#android -c bash -c 'set -euo pipefail; (cd apps/android && gradle assembleRelease -PrustAbis=arm64-v8a); serial="${ANDROID_SERIAL:-$(adb devices | awk '"'"'$2=="device" && $1 !~ /^emulator/ {print $1; exit}'"'"')}"; [ -n "$serial" ] || { echo "no phone attached (adb devices)"; exit 1; }; apk=apps/android/app/build/outputs/apk/release/app-release.apk; [ -f "$apk" ] || { echo "$apk is missing: no release key at ~/.config/morpheus/release.keystore?"; exit 1; }; adb -s "$serial" install -r "$apk"'
 
-# The virtual phone without a window or sound (what the e2e runs use)
-android-emulator-headless:
-    nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -netdelay none -netspeed full
+# The virtual phone without a window or sound, from a quick-boot snapshot; a no-op when running. Flags: --cold, --window, --stop (scripts/android-emulator.sh)
+android-emulator-headless *flags:
+    scripts/android-emulator.sh {{flags}}
+
+# The e2e recipes below start the headless phone when none is running (a no-op when one is; never touches a plugged-in phone)
+_android-emulator-up:
+    scripts/android-emulator.sh
+
+# The second Synapse for the desktop lane (:8009, its own users and rooms): the desktop e2e runs of local-run.sh --lane desktop
+hs-up-desk:
+    MORPHEUS_HS_INSTANCE=desk dev/homeserver/up.sh
+
+# Seed the desktop-lane Synapse (`just hs-seed` does the same under local-run.sh --lane desktop)
+hs-seed-desk:
+    MORPHEUS_HS_INSTANCE=desk dev/homeserver/seed.sh
 
 # The second person in the phone's call tests: morpheus-ffi's call_peer example, built on the host. In the Android shell and
 # its own target tree (target/android-host), the same as the e2e run builds it (see scripts/android-e2e-run.sh)
@@ -192,7 +204,7 @@ call-peer-build:
 e2e-android-native file="android_native" name="": (android-native-build "x86_64") (e2e-android-native-run file name)
 
 # Only install the last build and run the native app's tests: for a change to the tests alone
-e2e-android-native-run file="android_native" name="": hs-seed-if-needed
+e2e-android-native-run file="android_native" name="": _android-emulator-up hs-seed-if-needed
     nix develop .#android-emulator -c env MORPHEUS_TEST_HOMESERVER={{hs}} scripts/android-e2e-run.sh {{file}} {{name}}
 
 # Run on the virtual phone (start it with `just android-emulator` first)
@@ -201,7 +213,7 @@ android-virtual: sweep
     nix develop .#android-emulator -c dx serve --package morpheus-mobile --platform android
 
 # Build the mobile app with the test bridge for the virtual phone and install it (the emulator must be running)
-e2e-android-build: sweep
+e2e-android-build: sweep _android-emulator-up
     # dx reuses one gradle project per app: drop the phone's ARM library so it is not bundled too.
     rm -rf target/dx/morpheus-mobile/debug/android/app/app/src/main/jniLibs/arm64-v8a
     nix develop .#android-emulator -c dx build --package morpheus-mobile --platform android --target x86_64-linux-android --features e2e
@@ -211,15 +223,15 @@ e2e-android-build: sweep
     nix develop .#android-emulator -c bash -c 'apk=target/dx/morpheus-mobile/debug/android/app/app/build/outputs/apk/debug/app-debug.apk; adb -s "${ANDROID_SERIAL:-emulator-5554}" install -r "$apk" || { adb -s "${ANDROID_SERIAL:-emulator-5554}" uninstall dev.morpheus.mobile; adb -s "${ANDROID_SERIAL:-emulator-5554}" install "$apk"; }'
 
 # Drive the app on the virtual phone (`just android-emulator` and `just e2e-android-build` first)
-e2e-android: hs-seed
+e2e-android: _android-emulator-up hs-seed
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" scripts/e2e-cargo.sh --test android -- --nocapture --test-threads=1
 
 # Push notifications end to end on the virtual phone: needs Sunup installed and opened once on it, and internet
-e2e-android-push: hs-seed
+e2e-android-push: _android-emulator-up hs-seed
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 MORPHEUS_E2E_PUSH=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test android push -- --nocapture
 
 # The whole e2e suite with the phone standing in for the first app of each test (other users run on desktop)
-e2e-android-all: hs-seed
+e2e-android-all: _android-emulator-up hs-seed
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --no-fail-fast -- --test-threads=1
 
 # Type-check the mobile crate for Android without an emulator (needs `nix develop .#android`, or runs it)
@@ -262,7 +274,7 @@ hs-user name password *flags:
     dev/homeserver/register.sh {{name}} {{password}} {{flags}}
 
 # The native app's release build (R8 on) on the virtual phone: built for x86_64 and signed with the debug key (`just e2e-android-native-release release` signs it with the release key, as shipped; the emulator's copy is replaced), installed, and a smoke test run against it (`just android-emulator-headless` first)
-e2e-android-native-release signing="debug":
+e2e-android-native-release signing="debug": _android-emulator-up
     nix develop .#android-emulator -c bash -c 'set -euo pipefail; (cd apps/android && gradle assembleRelease -PrustAbis=x86_64 -PreleaseSigning={{signing}}); s="${ANDROID_SERIAL:-emulator-5554}"; apk=apps/android/app/build/outputs/apk/release/app-release.apk; adb -s "$s" install -r "$apk" || { adb -s "$s" uninstall dev.morpheus.mobile; adb -s "$s" install "$apk"; }'
     nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_RELEASE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" scripts/e2e-cargo.sh --test android_release -- --nocapture
 
