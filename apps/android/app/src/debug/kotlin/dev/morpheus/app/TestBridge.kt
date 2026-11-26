@@ -411,8 +411,11 @@ class TestBridge(private val app: Application) {
         return root() ?: error("no window")
     }
 
+    /** The window a gesture's DOWN went to: the rest of the finger's events go there too, as on a phone, even when a sheet opens over it mid-press. */
+    private var gestureWindow: View? = null
+
     private fun touch(action: Int, down: Long, x: Float, y: Float) = onMain {
-        val view = windowAt(x, y)
+        val view = if (action == MotionEvent.ACTION_DOWN || gestureWindow?.isAttachedToWindow != true) windowAt(x, y).also { gestureWindow = it } else gestureWindow!!
         val at = IntArray(2).also { view.getLocationOnScreen(it) }
         val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x - at[0], y - at[1], 0)
         event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN

@@ -251,7 +251,7 @@ fun ScreenScaffold(tag: String, topBar: @Composable () -> Unit, modifier: Modifi
 @Composable
 fun SearchField(
     query: String, onQuery: (String) -> Unit, hint: String, tag: String, modifier: Modifier = Modifier,
-    focus: androidx.compose.ui.focus.FocusRequester? = null, onFocused: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null,
+    focus: androidx.compose.ui.focus.FocusRequester? = null, trailing: (@Composable () -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val fill = ComposerColours.fill(scheme)
@@ -272,8 +272,7 @@ fun SearchField(
                 query = query, onQueryChange = onQuery, onSearch = {}, expanded = false, onExpandedChange = {},
                 modifier = Modifier.testTag(tag)
                     .semantics { contentDescription = hint }
-                    .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
-                    .then(if (onFocused != null) Modifier.onFocusChanged { if (it.hasFocus) onFocused() } else Modifier),
+                    .then(if (focus != null) Modifier.focusRequester(focus) else Modifier),
                 placeholder = { Text(hint) },
                 leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, tint = muted) },
                 trailingIcon = if (trailing != null) trailing else if (query.isEmpty()) null else ({

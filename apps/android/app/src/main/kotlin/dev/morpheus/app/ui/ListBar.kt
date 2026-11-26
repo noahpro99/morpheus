@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -14,7 +15,6 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,19 +45,29 @@ import uniffi.morpheus_ffi.ScopeKind
  */
 @Composable
 fun ListSearchBar(model: AppModel, hint: String, modifier: Modifier = Modifier, extra: (@Composable () -> Unit)? = null) {
-    val focusManager = LocalFocusManager.current
-    SearchField(
-        "", {}, hint, "list-search",
-        modifier.padding(horizontal = Space.md, vertical = Space.sm),
-        onFocused = { focusManager.clearFocus(); model.openSwitcher() },
-        trailing = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                Bell(model)
-                extra?.invoke()
-            }
-        },
-    )
+    val scheme = MaterialTheme.colorScheme
+    val muted = ComposerColours.hint(scheme)
+    // A pill that is not a text field: a text field takes the focus when a window over it closes (a sheet, a page) and would open the
+    // switcher by itself. The taps are read by pointerInput (a clickable would merge the bell and the picture into the bar's node).
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm).height(SearchBarHeight).clip(CircleShape)
+            .background(ComposerColours.fill(scheme))
+            .pointerInput(Unit) { detectTapGestures(onTap = { model.openSwitcher() }) }
+            .semantics { role = Role.Button; contentDescription = hint; onClick { model.openSwitcher(); true } }
+            .testTag("list-search"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The glyph is centred on the pill's end cap: inset = R - size / 2.
+        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, Modifier.padding(start = SearchBarHeight / 2 - 12.dp), tint = muted)
+        Text(hint, Modifier.weight(1f).padding(start = Space.md), color = muted, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Bell(model)
+            extra?.invoke()
+        }
+    }
 }
+
+private val SearchBarHeight = 56.dp
 
 /** The inbox button: a bell with the number of mentions and invitations waiting. */
 @Composable
@@ -115,7 +124,11 @@ fun SwipeHint(model: AppModel, modifier: Modifier = Modifier) {
         kotlinx.coroutines.delay(8000)
         model.dismissSwipeHint()
     }
-    Surface(modifier.testTag("swipe-hint"), shape = CircleShape, color = MaterialTheme.colorScheme.inverseSurface, contentColor = MaterialTheme.colorScheme.inverseOnSurface) {
-        Text(t("Swipe left or right to go between your DMs and your servers"), Modifier.padding(horizontal = Space.lg, vertical = Space.md), style = MaterialTheme.typography.bodyMedium)
-    }
+    // Not a Surface: that one takes every touch that lands on it, and the hint sits over the search bar, whose buttons must work at once.
+    Text(
+        t("Swipe left or right to go between your DMs and your servers"),
+        modifier.testTag("swipe-hint").clip(CircleShape).background(MaterialTheme.colorScheme.inverseSurface).padding(horizontal = Space.lg, vertical = Space.md),
+        color = MaterialTheme.colorScheme.inverseOnSurface,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
