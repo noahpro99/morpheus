@@ -107,7 +107,10 @@ impl Element for Svg {
             window,
             cx,
             |style, window, cx| {
-                if let Some((path, color)) = self.path.as_ref().zip(style.text.color) {
+                // No colour of its own: draw in the inherited text colour, so a
+                // holder's text_color (and its hover/active one) reaches the glyph.
+                let color = style.text.color.unwrap_or_else(|| window.text_style().color);
+                if let Some(path) = self.path.as_ref() {
                     let transformation = self
                         .transformation
                         .as_ref()
