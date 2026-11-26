@@ -77,9 +77,10 @@ for _ in $(seq 1 360); do # up to 3 minutes
     sleep 0.5
 done
 booted || { echo "emulator: not booted after 3 minutes (see target/emulator-$port.log)" >&2; exit 1; }
-adbs shell settings put global window_animation_scale 0 >/dev/null 2>&1 || true
-adbs shell settings put global transition_animation_scale 0 >/dev/null 2>&1 || true
-adbs shell settings put global animator_duration_scale 0 >/dev/null 2>&1 || true
+# Animations run at normal speed: the slide, sheet and fade tests measure them (a snapshot taken with them off would keep that).
+adbs shell settings put global window_animation_scale 1 >/dev/null 2>&1 || true
+adbs shell settings put global transition_animation_scale 1 >/dev/null 2>&1 || true
+adbs shell settings put global animator_duration_scale 1 >/dev/null 2>&1 || true
 echo "emulator: booted in $(awk -v a="$started" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }') s ($serial)"
 
 # First clean boot (one this script started, never somebody else's running phone): save the quick-boot snapshot (not for a windowed run).

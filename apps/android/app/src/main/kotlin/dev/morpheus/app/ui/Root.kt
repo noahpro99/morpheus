@@ -90,7 +90,12 @@ fun Root(model: AppModel) {
                             if (open != null) lastRoom = open
                             val slide = model.slide
                             androidx.compose.runtime.LaunchedEffect(open != null, slide.dragging) {
-                                if (!slide.dragging) slide.f.animateTo(if (open != null) 1f else 0f, Motion.slide())
+                                if (!slide.dragging) {
+                                    // The chat's first composition and layout is a long frame; the slide starts after it, or the frame's time is spent
+                                    // from the slide's 300 ms and the pane seems to jump (the curve is fast at its start).
+                                    if (open != null && slide.f.value < 0.001f) { androidx.compose.runtime.withFrameNanos { }; androidx.compose.runtime.withFrameNanos { } }
+                                    slide.f.animateTo(if (open != null) 1f else 0f, Motion.slide())
+                                }
                             }
                             val at = slide.f.value
                             val listsDrawn = open == null || at < 0.999f
