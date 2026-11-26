@@ -1243,7 +1243,11 @@ fn windows_app_id_self_test(out: &std::path::Path) -> String {
     let handed = matches!(&got, Ok(view_model::instance::Request::Open(l)) if l == link);
     text += &*format!(
         "single instance: {}\n",
-        if first && !second && handed { "ok" } else { "broken" }
+        if first && !second && handed {
+            "ok".to_owned()
+        } else {
+            format!("broken (first {first}, second {second}, got {got:?})")
+        }
     );
     save(&text);
     let launch = view_model::win_toast::launch_arg("!room:example.org", Some("$event"));

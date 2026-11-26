@@ -74,7 +74,7 @@ mod imp {
 
     use windows::{
         Win32::{
-            Foundation::{ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE},
+            Foundation::{ERROR_NO_DATA, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE},
             Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
             System::Pipes::{
                 ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE,
@@ -159,9 +159,14 @@ mod imp {
             loop {
                 // SAFETY: a valid pipe handle owned by this thread from here on.
                 let connected = unsafe { ConnectNamedPipe(pipe, None) };
+                // A client that wrote and left before this connected (ERROR_NO_DATA)
+                // still left its line to read.
                 let ok = match connected {
                     Ok(()) => true,
-                    Err(err) => err.code() == ERROR_PIPE_CONNECTED.to_hresult(),
+                    Err(err) => {
+                        err.code() == ERROR_PIPE_CONNECTED.to_hresult()
+                            || err.code() == ERROR_NO_DATA.to_hresult()
+                    }
                 };
                 if ok {
                     // SAFETY: the same handle, borrowed as a File that is never dropped
@@ -171,7 +176,9 @@ mod imp {
                     });
                     let mut line = String::new();
                     let _ = std::io::BufReader::new(&*file).read_line(&mut line);
-                    handle(Request::parse(&line));
+                    if !line.trim().is_empty() {
+                        handle(Request::parse(&line));
+                    }
                 }
                 // SAFETY: as above; frees the instance for the next client.
                 let _ = unsafe { DisconnectNamedPipe(pipe) };
