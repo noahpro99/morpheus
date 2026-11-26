@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Morpheus mark (crates/ui/assets/logo.svg) in the accent colour,
-     scaled to about 45 dp of the 108 (the safe zone is 66; the round mask 72) so round and squircle masks
+     scaled to about 51 dp of the 108 (the safe zone is 66; the round mask 72) so round and squircle masks
      never clip it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -10,8 +10,8 @@
     <group
         android:pivotX="256"
         android:pivotY="259"
-        android:scaleX="0.56"
-        android:scaleY="0.56">
+        android:scaleX="0.62"
+        android:scaleY="0.62">
         <path
             android:fillColor="#7C8CFF"
             android:pathData="M292.355 256.433 C293.616 220.336 330.594 192.33 374.949 193.878 C419.303 195.427 454.237 225.945 452.977 262.042 C451.716 298.139 414.738 326.145 370.384 324.596 C326.029 323.047 291.095 292.529 292.355 256.433 Z" />
