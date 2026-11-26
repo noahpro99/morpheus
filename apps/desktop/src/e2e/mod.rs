@@ -22,22 +22,22 @@
 //!   attached to their logical parent yet: they have no parent in the tree.
 
 // The bridge itself (the tagged tree, selectors, the TCP server, the fake screen
-// sources) lives in the private morpheus-e2e repo, checked out next to this one.
+// sources) lives in the private morpheus-e2e repo, checked out next to this one and reached through the `.e2e` symlink (scripts/e2e-link.sh makes it).
 // Only builds with the `e2e` feature read it; every other build never opens the path.
 #[cfg(feature = "e2e")]
-#[path = "../../../../../morpheus-e2e/bridge/bridge.rs"]
+#[path = "../../../../.e2e/bridge/bridge.rs"]
 mod bridge;
 #[cfg(feature = "e2e")]
-#[path = "../../../../../morpheus-e2e/bridge/selector.rs"]
+#[path = "../../../../.e2e/bridge/selector.rs"]
 mod selector;
 #[cfg(feature = "e2e")]
-#[path = "../../../../../morpheus-e2e/bridge/sources.rs"]
+#[path = "../../../../.e2e/bridge/sources.rs"]
 pub mod sources;
 #[cfg(feature = "e2e")]
-#[path = "../../../../../morpheus-e2e/bridge/tag.rs"]
+#[path = "../../../../.e2e/bridge/tag.rs"]
 mod tag;
 #[cfg(feature = "e2e")]
-#[path = "../../../../../morpheus-e2e/bridge/tree.rs"]
+#[path = "../../../../.e2e/bridge/tree.rs"]
 mod tree;
 
 /// How far a scrolling element is scrolled, in pixels: `from_bottom` (0 at

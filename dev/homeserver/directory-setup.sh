@@ -4,7 +4,7 @@
 # existing config once (idempotent); restart Synapse to apply.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-CONFIG="${1:-$HS_DIR/data/homeserver.yaml}"
+CONFIG="${1:-$HS_DATA/homeserver.yaml}"
 grep -q "^room_list_publication_rules:" "$CONFIG" && exit 0
 cat >>"$CONFIG" <<'YAML'
 

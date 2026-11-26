@@ -46,7 +46,8 @@ test-ffi:
 # target/debug/morpheus-desktop, which you may be running (`cargo r`); that one has no
 # bridge and opens on your screen.
 e2e-build:
-    @test -d "${MORPHEUS_E2E_DIR:-../morpheus-e2e}/bridge" || { echo "The test bridge is in the private repo noahpro99/morpheus-e2e; check it out at ../morpheus-e2e (or set MORPHEUS_E2E_DIR)." >&2; exit 1; }
+    @scripts/e2e-link.sh
+    @test -d "${MORPHEUS_E2E_DIR:-../morpheus-e2e$(basename "$PWD" | sed s/^morpheus//)}/bridge" || { echo "The test bridge is in the private repo noahpro99/morpheus-e2e; check it out at ../morpheus-e2e (or set MORPHEUS_E2E_DIR)." >&2; exit 1; }
     cargo build -p morpheus-desktop --bin morpheus-desktop-e2e --features e2e
 
 # Needs `just hs-up hs-seed`. Checks that need a display are skipped and counted;

@@ -12,9 +12,9 @@ mkdir -p "$HS_DATA"
 # directory rules), signing key and certificate, with an empty database: the main server must have been
 # started once.
 if [[ "${MORPHEUS_HS_INSTANCE:-}" == desk && ! -f "$HS_DATA/homeserver.yaml" ]]; then
-  [[ -f "$HS_DIR/data/homeserver.yaml" ]] || { echo "start the main server first (just hs-up)" >&2; exit 1; }
+  [[ -f "$HS_HOME/data/homeserver.yaml" ]] || { echo "start the main server first (just hs-up)" >&2; exit 1; }
   for f in homeserver.yaml localhost.log.config localhost.signing.key tls.crt tls.key; do
-    cp "$HS_DIR/data/$f" "$HS_DATA/$f"
+    cp "$HS_HOME/data/$f" "$HS_DATA/$f"
   done
 fi
 

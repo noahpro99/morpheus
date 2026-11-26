@@ -7,13 +7,13 @@
 # emulator cannot reach.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-CONFIG="$HS_DIR/data/homeserver.yaml"
+CONFIG="$HS_DATA/homeserver.yaml"
 MARK="# ---- morpheus calls ----"
 grep -qF "$MARK" "$CONFIG" && exit 0
 
-if [[ ! -f "$HS_DIR/data/tls.crt" ]]; then
+if [[ ! -f "$HS_DATA/tls.crt" ]]; then
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=localhost" \
-    -keyout "$HS_DIR/data/tls.key" -out "$HS_DIR/data/tls.crt" 2>/dev/null
+    -keyout "$HS_DATA/tls.key" -out "$HS_DATA/tls.crt" 2>/dev/null
 fi
 
 # A second listener, inserted into the generated `listeners:` list.
