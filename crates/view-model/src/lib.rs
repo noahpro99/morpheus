@@ -82,6 +82,7 @@ pub mod share;
 pub mod text_buffer;
 pub mod theme;
 pub mod theme_history;
+pub mod theme_row;
 pub mod theme_share;
 pub mod threads;
 pub mod toast;

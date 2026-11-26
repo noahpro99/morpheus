@@ -59,6 +59,11 @@ impl ThemeHistory {
         }
     }
 
+    /// Recency order, newest first, pins not moved (the theme row, #490).
+    pub fn newest_first(&self) -> Vec<Entry> {
+        self.entries.clone()
+    }
+
     /// For showing: pinned first, each group newest first.
     pub fn shown(&self) -> Vec<Entry> {
         let (pinned, rest): (Vec<Entry>, Vec<Entry>) =

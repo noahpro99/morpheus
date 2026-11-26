@@ -39,6 +39,7 @@ mod room_info;
 mod room_pages;
 mod security;
 mod settings;
+mod theme_row;
 mod share;
 mod sidebar;
 mod sidebar_cache;
