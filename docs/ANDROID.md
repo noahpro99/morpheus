@@ -106,6 +106,18 @@ as resource ids (`testTagsAsResourceId`), so uiautomator sees them too.
 
 ## Running the tests (the emulator, headless)
 
+The emulator is headless by default (no window, no sound, software GL `swiftshader_indirect`) and comes up from a
+quick-boot snapshot: `scripts/android-emulator.sh` (`just android-emulator-headless`) starts it only when none is
+running, and every e2e recipe calls it first, so nothing needs starting by hand. The first start saves the snapshot
+("headless", about 4 GB in `~/.android/avd/morpheus.avd/snapshots`); later starts load it read-only, so a crash or
+`--stop` and a start again is a few seconds (a cold boot is 15 to 30 s). `--cold` rebuilds the snapshot, `--window`
+shows a window (no snapshot), `MORPHEUS_EMULATOR_GPU=host` uses the GPU (works headless here too, no faster for the
+tests, and its snapshot loads slowly). Only `emulator-<port>` is ever addressed, never a plugged-in phone.
+
+Agents on this machine run Android jobs in the android lane (`local-run.sh --lane android`) and desktop jobs in the
+desktop lane, which run at the same time; see the agent rules. The desktop lane uses its own Synapse on :8009
+(`just hs-up-desk`), because the e2e runs prune and re-seed the users alice, bob and carol.
+
 ```sh
 just android-emulator-headless
 just e2e-android-native                 # build (Gradle skips what did not change), install, run
