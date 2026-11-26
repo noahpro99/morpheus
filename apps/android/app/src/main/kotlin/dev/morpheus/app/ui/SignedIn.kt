@@ -147,7 +147,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
                 if (peeking) {
                     // The chat came in under the finger: past a tenth it stays and comes the rest of the way, else it goes back out.
                     peeking = false
-                    if (commits) model.peekCommitted() else model.closeRoom()
+                    if (!commits) model.closeRoom()
                 } else if (commits) {
                     (model.swipeStep(list, fingerLeft = total < 0f) as? uniffi.morpheus_ffi.SwipeStep.Show)?.let {
                         model.selectTab(if (it.list == uniffi.morpheus_ffi.SwipeList.DMS) Tab.Dms else Tab.Servers)

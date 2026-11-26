@@ -132,20 +132,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
         onDispose { RoomHooks.attach = null }
     }
 
-    // A chat opened by a swipe focuses the composer and shows the keyboard; the swipe that leaves it puts the keyboard away.
+    // Opening a chat (a tap or a swipe) never focuses the message box or raises the keyboard (#480); a tap on the box does.
     val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    // A chat that is still coming in under a finger waits for the drag to end: it only takes the focus when the drag went through.
-    LaunchedEffect(threadRoot) {
-        if (threadRoot != null) return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { app.slide.dragging }.first { !it }
-        if (app.takeSwipeOpened()) {
-            try { composerFocus.requestFocus() } catch (_: Exception) {}
-            keyboard?.show()
-            dev.morpheus.app.AppState.imeShownAt = android.os.SystemClock.uptimeMillis()
-            dev.morpheus.app.AppState.imeShown++
-        }
-    }
     BackHandler {
         when {
             searching -> searching = false

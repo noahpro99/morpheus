@@ -470,14 +470,6 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         return _room.value?.id == roomId
     }
 
-    /** The drag that brought the chat in went through: its composer takes the focus (#344). */
-    fun peekCommitted() { swipeOpened = true }
-
-    /** The room that is opening was reached by a swipe (its composer takes the focus); read once. */
-    var swipeOpened = false
-
-    fun takeSwipeOpened(): Boolean = swipeOpened.also { swipeOpened = false }
-
     fun closeRoom() {
         _room.value = null
         keep("room", null)
