@@ -28,7 +28,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                     .flex_1()
                     .min_h_0()
                     .child(crate::welcome::render(shell, cx, space));
-                if shell.members_open
+                if shell.members_shown()
                     && let Some((id, members)) = &shell.welcome_members
                     && id == &space.id
                 {
@@ -413,7 +413,7 @@ pub fn render(shell: &Shell, window: &gpui::Window, cx: &mut Context<Shell>) -> 
                 && id == &room.id
             {
                 Some(search.clone().into_any_element())
-            } else if shell.members_open
+            } else if shell.members_shown()
                 && let Some((id, members)) = &shell.members
                 && id == &room.id
             {
@@ -510,8 +510,11 @@ pub fn bar_hover(
 
 /// The header's member-list toggle (a channel's and a server overview's).
 pub fn members_toggle(shell: &Shell, cx: &mut Context<Shell>) -> gpui::AnyElement {
-    let open = shell.members_open;
-    let members_colour = if open {
+    let open = shell.members_shown();
+    let disabled = !shell.members_fit;
+    let members_colour = if disabled {
+        theme::text_muted()
+    } else if open {
         theme::text()
     } else {
         bar_colour(shell, "member-toggle", theme::text_muted())
@@ -526,14 +529,21 @@ pub fn members_toggle(shell: &Shell, cx: &mut Context<Shell>) -> gpui::AnyElemen
         .rounded(px(theme::RADIUS_SM))
         .text_size(px(0.85 * theme::REM))
         .text_color(rgb(members_colour))
-        .cursor_pointer()
+        .when(disabled, |d| d.opacity(0.4))
+        .when(!disabled, |d| d.cursor_pointer())
         .on_hover(bar_hover(cx, "member-toggle"))
         .child(icon("users", 16.0).text_color(rgb(members_colour)))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_members(cx)))
-        .tip(t("Member list (Ctrl+U)"))
+        .tip(if disabled {
+            t("The window is too narrow for the member list")
+        } else {
+            t("Member list (Ctrl+U)")
+        })
         .e2e(
             "button",
-            if open {
+            if disabled {
+                "ghost member-toggle disabled"
+            } else if open {
                 "ghost member-toggle active"
             } else {
                 "ghost member-toggle"

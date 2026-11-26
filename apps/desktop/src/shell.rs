@@ -187,6 +187,8 @@ pub struct Shell {
     pub members: Option<(OwnedRoomId, Entity<MembersView>)>,
     /// Whether the member list shows (kept across rooms).
     pub members_open: bool,
+    /// Whether the window leaves room for the member panel (#512), set each frame.
+    pub members_fit: bool,
     /// The member count the list was last read at.
     pub members_count: u64,
     /// The open room's timeline, to act on its messages.
@@ -574,6 +576,7 @@ impl Shell {
             menu_at: gpui::Point::default(),
             members: None,
             members_open: true,
+            members_fit: true,
             welcome_members: None,
             hovered_voice: None,
             welcome_scroll: gpui::ScrollHandle::new(),
@@ -1654,6 +1657,12 @@ impl Render for Shell {
             self.discover_place = None;
         }
         self.sidebar_shown = self.sidebar_width(window);
+        self.members_fit = crate::view_model::members::panel_fits(
+            f32::from(window.viewport_size().width),
+            theme::RAIL_W,
+            self.sidebar_shown,
+            theme::MEMBERS_W,
+        );
         crate::timeline::THREAD_PANEL_OPEN.store(self.thread.is_some(), std::sync::atomic::Ordering::Relaxed);
         // The shake of "nothing there": an offset while it lasts.
         let shake = match self.shake_at {
@@ -2023,7 +2032,7 @@ impl Render for Shell {
             .children(diagnostics)
             .e2e(
                 "div",
-                if self.members_open {
+                if self.members_shown() {
                     "shell"
                 } else {
                     "shell no-side"

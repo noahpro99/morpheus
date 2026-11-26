@@ -19,8 +19,16 @@ use crate::{
 impl Shell {
     /// The member list, shown or not (kept across rooms).
     pub fn toggle_members(&mut self, cx: &mut Context<Self>) {
+        if !self.members_fit {
+            return;
+        }
         self.members_open = !self.members_open;
         cx.notify();
+    }
+
+    /// The panel shows when the user wants it and the window has room (#512).
+    pub fn members_shown(&self) -> bool {
+        crate::view_model::members::panel_shown(self.members_open, self.members_fit)
     }
 
     /// Reads the member list again if the room's member count changed (the

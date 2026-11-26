@@ -159,9 +159,39 @@ pub fn member_menu(input: &MemberMenuInput) -> Vec<MenuItem> {
     items
 }
 
+/// The chat keeps at least this much beside the member panel (#512).
+pub const MIN_CHAT_WITH_PANEL: f32 = super::sidebar::MIN_CHAT;
+
+/// Whether the member panel has room: the window less the rail, the channel list and the
+/// panel still leaves the chat its minimum width. When it does not, the panel hides and its
+/// button is disabled; the user's own on/off choice is kept and applies again when it fits.
+pub fn panel_fits(window: f32, rail: f32, sidebar: f32, panel: f32) -> bool {
+    window - rail - sidebar - panel >= MIN_CHAT_WITH_PANEL
+}
+
+/// Whether the panel is shown: the user wants it and it fits.
+pub fn panel_shown(wanted: bool, fits: bool) -> bool {
+    wanted && fits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_panel_needs_the_chat_its_minimum_width() {
+        assert!(panel_fits(952.0, 72.0, 248.0, 232.0));
+        assert!(!panel_fits(951.0, 72.0, 248.0, 232.0));
+        assert!(panel_fits(1400.0, 72.0, 248.0, 232.0));
+        assert!(!panel_fits(800.0, 72.0, 248.0, 232.0));
+    }
+
+    #[test]
+    fn the_choice_is_kept_while_it_does_not_fit() {
+        assert!(!panel_shown(true, false));
+        assert!(panel_shown(true, true));
+        assert!(!panel_shown(false, true));
+    }
 
     fn member(name: &str, role: MemberRole, power: i64) -> Member {
         Member {
