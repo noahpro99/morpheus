@@ -1004,7 +1004,7 @@ fn main() {
     // CI's check of the app's Windows identity (windows.yml).
     #[cfg(target_os = "windows")]
     if let Some(out) = std::env::var_os("MORPHEUS_APP_ID_SELF_TEST") {
-        let text = windows_app_id_self_test();
+        let text = windows_app_id_self_test(std::path::Path::new(&out));
         eprint!("{text}");
         let _ = std::fs::write(out, text);
         std::process::exit(0);
@@ -1195,10 +1195,14 @@ mod dioxus_data {
 /// shortcut made as the installer's is and read back, the registry entry that
 /// names the app for toasts, and a toast shown under it.
 #[cfg(target_os = "windows")]
-fn windows_app_id_self_test() -> String {
+fn windows_app_id_self_test(out: &std::path::Path) -> String {
+    let save = |text: &str| {
+        let _ = std::fs::write(out, text);
+    };
     let mut text = String::new();
     win_shell::set_app_id();
     text += &*format!("process app id: {}\n", win_shell::process_app_id().unwrap_or_default());
+    save(&text);
     let dir = std::env::temp_dir().join("morpheus-app-id-self-test");
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::create_dir_all(&dir);
@@ -1213,6 +1217,7 @@ fn windows_app_id_self_test() -> String {
         }
         Err(err) => text += &*format!("shortcut error: {err}\n"),
     }
+    save(&text);
     let icon = dir.join("morpheus.ico");
     let _ = std::fs::write(&icon, include_bytes!("../icons/icon.ico"));
     match win_notify::register_identity(&icon) {
@@ -1222,6 +1227,7 @@ fn windows_app_id_self_test() -> String {
         }
         Err(err) => text += &*format!("registry error: {err}\n"),
     }
+    save(&text);
     // A second launch (a toast's click) reaches the running one with its link.
     let probe = dir.join("instance");
     let (tx, rx) = std::sync::mpsc::channel();
@@ -1237,6 +1243,7 @@ fn windows_app_id_self_test() -> String {
         "single instance: {}\n",
         if first && !second && handed { "ok" } else { "broken" }
     );
+    save(&text);
     let launch = view_model::win_toast::launch_arg("!room:example.org", Some("$event"));
     let toast = view_model::win_toast::Toast {
         title: "Morpheus",
@@ -1244,6 +1251,8 @@ fn windows_app_id_self_test() -> String {
         launch: Some(&launch),
         ..Default::default()
     };
+    text += "toast: starting\n";
+    save(&text);
     match win_notify::show(&toast) {
         Ok(()) => text += "toast: shown\n",
         Err(err) => text += &*format!("toast error: {err}\n"),

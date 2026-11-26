@@ -113,9 +113,12 @@ jobs:
       - name: App identity
         run: |
           out="$RUNNER_TEMP/app-id-self-test.txt"
+          code=0
           MORPHEUS_APP_ID_SELF_TEST="$out" \
-            target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe
-          cat "$out"
+            timeout 120 target/x86_64-pc-windows-msvc/release/morpheus-desktop.exe || code=$?
+          echo "exit code $code"
+          cat "$out" || true
+          test "$code" -eq 0
           grep -q "^process app id: dev.morpheus.Morpheus$" "$out"
           grep -q "^shortcut app id: dev.morpheus.Morpheus$" "$out"
           grep -q "^registry name: Morpheus$" "$out"
