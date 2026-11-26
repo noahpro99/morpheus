@@ -144,6 +144,13 @@ object Palette {
     /** A hairline between things: the outline colour, faint. */
     val Divider: Color get() = scheme.outlineVariant
 
+    /** Draw with a ready colour scheme (the screenshot tests: no core, no native library). */
+    internal fun useScheme(scheme: ColorScheme, light: Boolean) {
+        dynamic = null
+        fixed = scheme
+        fixedLight = light
+    }
+
     /** Draw with a palette the core made (a theme, or a custom colour). */
     fun use(p: uniffi.morpheus_ffi.PaletteItem) {
         fixed = schemeOf(p.material, p.isLight)

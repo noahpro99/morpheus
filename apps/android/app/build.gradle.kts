@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("io.gitlab.arturbosch.detekt")
+    id("io.github.takahirom.roborazzi")
 }
 
 // The Rust half: crates/ffi built for these ABIs (`scripts/android-ffi.sh`),
@@ -112,6 +113,11 @@ android {
         buildConfig = true
     }
     packaging { jniLibs.useLegacyPackaging = false }
+    testOptions {
+        // Robolectric (the screenshot and accessibility tests, on the JVM) reads the app's resources and manifest.
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+    }
 
     // `just android-lint`: Android Lint, with the Compose and Material 3 checks that ship inside
     // those libraries, fails the build on any warning (what is accepted is in lint-baseline.xml).
@@ -158,5 +164,27 @@ dependencies {
     // WebRTC's Java half (calls): built with crates/call, copied out by scripts/android-ffi.sh.
     implementation(files(rustOut.map { it.file("libs/libwebrtc.jar") }).let { if (rustPrebuilt == null) it.builtBy(buildRust) else it })
     testImplementation("junit:junit:4.13.2")
+    testImplementation("net.java.dev.jna:jna:5.14.0")
     testImplementation("org.json:json:20231013")
+    // Screenshot and accessibility tests on the JVM (#468): Robolectric renders Compose, Roborazzi records and
+    // compares the pictures and runs the Accessibility Test Framework over the same screen.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.33.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.33.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.33.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+roborazzi {
+    // The approved pictures, committed: `just android-shots-verify` fails when a screen drifts from them,
+    // `just android-shots-record` approves a change.
+    outputDir.set(file("src/test/screenshots"))
+}
+
+// The tests call the Rust core (colour helpers, words) through JNA: the host build of crates/ffi, which
+// scripts/android-check-prep.sh makes, is what they load.
+tasks.withType<Test>().configureEach {
+    systemProperty("jna.library.path", repoRoot.resolve("target/" + (System.getenv("ANDROID_CHECK_PROFILE") ?: "debug")).absolutePath)
 }

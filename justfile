@@ -271,3 +271,13 @@ android-lint: android-check-prep
 # The Kotlin bindings and the WebRTC stub the Android checks compile against
 android-check-prep:
     nix develop .#android -c scripts/android-check-prep.sh
+
+# Screenshot tests on the JVM (Robolectric + Roborazzi, no emulator): the main screens' parts in light and
+# dark against the approved pictures in apps/android/app/src/test/screenshots, with the Accessibility Test
+# Framework run over each (48 dp targets, contrast, content descriptions). Fails when a pixel moves.
+android-shots-verify: android-check-prep
+    nix develop .#android -c bash -c 'cd apps/android && gradle verifyRoborazziDebug --tests "*ScreenShots*" -PrustPrebuilt=$PWD/../../target/android-checks'
+
+# Approve a change of look: draw the screens again over the committed pictures (then look at the diff)
+android-shots-record: android-check-prep
+    nix develop .#android -c bash -c 'cd apps/android && gradle recordRoborazziDebug --tests "*ScreenShots*" -PrustPrebuilt=$PWD/../../target/android-checks'
