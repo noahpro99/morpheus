@@ -280,3 +280,30 @@ fun SearchField(query: String, onQuery: (String) -> Unit, hint: String, tag: Str
         tonalElevation = 0.dp, shadowElevation = 0.dp,
     ) {}
 }
+
+/**
+ * Material 3's motion tokens (m3.material.io, Motion > Easing and duration): the easing curves and the durations every transition uses (#464, #465).
+ * The emphasized curve is two segments in the spec; the usual single cubic stands in for it, as Material's own libraries do.
+ */
+object Motion {
+    val Standard = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val StandardDecelerate = androidx.compose.animation.core.CubicBezierEasing(0f, 0f, 0f, 1f)
+    val StandardAccelerate = androidx.compose.animation.core.CubicBezierEasing(0.3f, 0f, 1f, 1f)
+    val Emphasized = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val EmphasizedDecelerate = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+    val EmphasizedAccelerate = androidx.compose.animation.core.CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+
+    const val Short1 = 50
+    const val Short2 = 100
+    const val Short3 = 150
+    const val Short4 = 200
+    const val Medium1 = 250
+    const val Medium2 = 300
+    const val Medium3 = 350
+    const val Medium4 = 400
+    const val Long1 = 450
+    const val Long2 = 500
+
+    /** The shared axis (X) transition: a pane slides in or out over medium2 on the emphasized curve (the lists, the chat). */
+    fun <T> slide() = androidx.compose.animation.core.tween<T>(Medium2, easing = Emphasized)
+}

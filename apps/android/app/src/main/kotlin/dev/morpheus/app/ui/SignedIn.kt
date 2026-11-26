@@ -107,6 +107,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean =
  */
 @Composable
 private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier) {
+    val slide = model.slide
     // 0 is the DMs, 1 is Servers, and between is a slide.
     val place = remember { androidx.compose.animation.core.Animatable(if (tab == Tab.Dms) 0f else 1f) }
     var settle by remember { mutableStateOf(0) }
@@ -116,9 +117,9 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     LaunchedEffect(tab, settle) {
         if (tab == Tab.Profile) { before = tab; return@LaunchedEffect }
         val goal = if (tab == Tab.Dms) 0f else 1f
-        // Coming from You there is nothing to slide from.
-        if (before == Tab.Profile) place.snapTo(goal)
-        else if (!dragging) place.animateTo(goal, androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+        // Coming from You, or from under a chat that is moving off the screen, there is nothing to slide from.
+        if (before == Tab.Profile || slide.f.value > 0f) place.snapTo(goal)
+        else if (!dragging) place.animateTo(goal, Motion.slide())
         before = tab
     }
     if (tab == Tab.Profile) {
@@ -127,25 +128,47 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     }
     BoxWithConstraints(modifier.clipToBounds().pointerInput(model, tab) {
         var total = 0f
+        var peeking = false
+        val list = if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS
+        fun endPeek() {
+            if (!peeking) return
+            peeking = false
+            model.closeRoom()
+            scope.launch { slide.f.snapTo(0f) }
+        }
         detectHorizontalDragGestures(
-            onDragStart = { total = 0f; dragging = true },
+            onDragStart = { total = 0f; dragging = true; peeking = false },
             onDragEnd = {
                 dragging = false
-                if (kotlin.math.abs(total) > size.width / 6f) {
-                    model.swipeList(if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS, fingerLeft = total < 0f)
+                val commits = uniffi.morpheus_ffi.swipeCommits(total, size.width.toFloat())
+                if (peeking) {
+                    // The chat came in under the finger: past a sixth it stays and comes the rest of the way, else it goes back out.
+                    peeking = false
+                    if (commits) model.peekCommitted() else model.closeRoom()
+                } else if (commits) {
+                    (model.swipeStep(list, fingerLeft = total < 0f) as? uniffi.morpheus_ffi.SwipeStep.Show)?.let {
+                        model.selectTab(if (it.list == uniffi.morpheus_ffi.SwipeList.DMS) Tab.Dms else Tab.Servers)
+                    }
                 }
+                slide.dragging = false
                 settle++
             },
-            onDragCancel = { dragging = false; total = 0f; settle++ },
+            onDragCancel = { dragging = false; endPeek(); slide.dragging = false; total = 0f; settle++ },
         ) { _, amount ->
             total += amount
+            // What the finger is bringing in, a chat (it opens at once and follows the finger) or the other list.
+            val step = model.swipeStep(list, fingerLeft = total < 0f)
+            if (step is uniffi.morpheus_ffi.SwipeStep.Open) {
+                if (!peeking && model.peekChat(step.room)) { peeking = true; slide.dragging = true }
+                if (peeking) scope.launch { slide.f.snapTo((kotlin.math.abs(total) / size.width).coerceIn(0f, 1f)) }
+            } else endPeek()
             // The finger moves the lists (past the far edge of either there is nothing to show, so they stay).
             scope.launch { place.snapTo((place.value - amount / size.width).coerceIn(0f, 1f)) }
         }
     }) {
         val width = constraints.maxWidth
         val at = place.value
-        if (at < 1f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset((-at * width).toInt(), 0) }.onGloballyPositioned { dev.morpheus.app.AppState.slide(2, it.positionInWindow().x) }) { DmsPane(model, onOpenRoom) }
+        if (at < 1f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset((-at * width).toInt(), 0) }.testTag("dms-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(2, it.positionInWindow().x) }) { DmsPane(model, onOpenRoom) }
         if (at > 0f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(((1f - at) * width).toInt(), 0) }.onGloballyPositioned { dev.morpheus.app.AppState.slide(3, it.positionInWindow().x) }) { ServersPane(model, onOpenRoom) }
     }
 }

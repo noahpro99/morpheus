@@ -1,6 +1,8 @@
 package dev.morpheus.app
 
 import dev.morpheus.app.ui.t
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -436,24 +438,24 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
-    /**
-     * A swipe along the Servers or DMs list (the finger moved left or right): to the other list, or on to the chat opened last
-     * on the far side (the last DM, the last server channel), across launches. What each direction does is in view-model
-     * (`list_swipes`); with no such chat there is nothing to do.
-     */
-    fun swipeList(list: uniffi.morpheus_ffi.SwipeList, fingerLeft: Boolean) {
-        when (val step = uniffi.morpheus_ffi.listSwipe(kept?.getString("last-chats", null).orEmpty(), list, fingerLeft)) {
-            is uniffi.morpheus_ffi.SwipeStep.Show -> selectTab(if (step.list == uniffi.morpheus_ffi.SwipeList.DMS) Tab.Dms else Tab.Servers)
-            is uniffi.morpheus_ffi.SwipeStep.Open -> {
-                val bar = sidebar.value ?: return
-                // Swiping onto a room is also a swipe onto its composer: the room comes up with the keyboard (#344).
-                val room = bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == step.room } ?: return
-                swipeOpened = true
-                open(room)
-            }
-            is uniffi.morpheus_ffi.SwipeStep.Nothing -> {}
-        }
+
+    /** The open chat's place between the screen's edges (#464). */
+    val slide = ChatSlide()
+
+    /** What a swipe along `list` would do now (the last chats are kept across launches). */
+    fun swipeStep(list: uniffi.morpheus_ffi.SwipeList, fingerLeft: Boolean): uniffi.morpheus_ffi.SwipeStep =
+        uniffi.morpheus_ffi.listSwipe(kept?.getString("last-chats", null).orEmpty(), list, fingerLeft)
+
+    /** The chat a drag along a list is bringing in opens under the finger now (it follows it); false when it did not open (a locked room asks first). */
+    fun peekChat(roomId: String): Boolean {
+        val bar = sidebar.value ?: return false
+        val room = bar.scopes.flatMap { it.sections }.flatMap { it.rooms }.firstOrNull { it.id == roomId } ?: return false
+        open(room)
+        return _room.value?.id == roomId
     }
+
+    /** The drag that brought the chat in went through: its composer takes the focus (#344). */
+    fun peekCommitted() { swipeOpened = true }
 
     /** The room that is opening was reached by a swipe (its composer takes the focus); read once. */
     var swipeOpened = false
@@ -888,3 +890,13 @@ class SheetRequest(
 
 /** A page of the phone for a sheet item: what kind, which room (or server, or folder), a name where it matters, the message it is about. */
 class PageRequest(val kind: String, val roomId: String, val extra: String = "", val message: uniffi.morpheus_ffi.MessageItem? = null)
+
+/**
+ * Where the open chat is between the screen's edges (#464): 1 covers the screen, 0 is off it at the chat's edge (`view_model::list_swipes::chat_edge`:
+ * a DM at the left, a channel at the right). A finger drag sets it while the finger is down (`dragging`); otherwise Root animates it to where the
+ * chat is (open or not).
+ */
+class ChatSlide {
+    val f = androidx.compose.animation.core.Animatable(0f)
+    var dragging by androidx.compose.runtime.mutableStateOf(false)
+}

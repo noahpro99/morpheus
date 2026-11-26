@@ -1,6 +1,11 @@
 package dev.morpheus.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -134,13 +139,18 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    val openedBySwipe = remember { app.takeSwipeOpened() }
     // Driven by where the pager is heading, not where it has settled: the keyboard is asked for (or put away) as soon as the
     // swipe is committed, not after the pane has stopped moving, and a swipe that springs back brings it back (#379).
     LaunchedEffect(pager, threadRoot) {
         if (threadRoot != null) return@LaunchedEffect
         var first = true
+        // A chat that is still coming in under a finger waits for the drag to end: it only takes the focus when the drag went through.
+        var openedBySwipe = false
         androidx.compose.runtime.snapshotFlow { pager.targetPage }.collect { page ->
+            if (first) {
+                androidx.compose.runtime.snapshotFlow { app.slide.dragging }.first { !it }
+                openedBySwipe = app.takeSwipeOpened()
+            }
             if (page == 1) {
                 if (!first || openedBySwipe) {
                     try { composerFocus.requestFocus() } catch (_: Exception) {}
@@ -681,14 +691,26 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
             return 0f
         }
     }
-    // A DM has no channels or members to page to: a swipe left in it goes back to the DMs (#458; list_swipes), the chat sliding off the list.
+    // A DM has no channels or members to page to: a swipe left in it goes back to the DMs (#458; list_swipes), the chat following the finger
+    // off to its edge, the left (#464). A server channel's way back is the pager's first page (the channels pane), and a swipe on from
+    // there goes on to the DMs (below).
     var leaveDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val dragScope = androidx.compose.runtime.rememberCoroutineScope()
     HorizontalPager(pager, Modifier.fillMaxSize().testTag("room-pager").then(if (!isDm) Modifier else Modifier.pointerInput(Unit) {
         detectHorizontalDragGestures(
-            onDragStart = { leaveDrag = 0f },
-            onDragEnd = { if (kotlin.math.abs(leaveDrag) > size.width / 6f && uniffi.morpheus_ffi.chatSwipeLeaves(true, fingerLeft = leaveDrag < 0f)) app.selectTab(dev.morpheus.app.Tab.Dms) },
-            onDragCancel = { leaveDrag = 0f },
-        ) { _, amount -> leaveDrag += amount }
+            onDragStart = { leaveDrag = 0f; app.slide.dragging = true },
+            onDragEnd = {
+                val leaves = uniffi.morpheus_ffi.swipeCommits(leaveDrag, size.width.toFloat()) && uniffi.morpheus_ffi.chatSwipeLeaves(true, fingerLeft = leaveDrag < 0f)
+                if (leaves) app.selectTab(dev.morpheus.app.Tab.Dms)
+                app.slide.dragging = false
+            },
+            onDragCancel = { leaveDrag = 0f; app.slide.dragging = false },
+        ) { _, amount ->
+            leaveDrag += amount
+            // Only the swipe that leaves the chat moves it (the other way it stays).
+            val along = if (uniffi.morpheus_ffi.chatSwipeLeaves(true, fingerLeft = leaveDrag < 0f)) kotlin.math.abs(leaveDrag) else 0f
+            dragScope.launch { app.slide.f.snapTo((1f - along / size.width).coerceIn(0f, 1f)) }
+        }
     }).pointerInput(Unit) {
         // The finger leaving the pager: what the keyboard's lags are measured from (the debug bridge reports them, #379).
         awaitPointerEventScope {
@@ -699,12 +721,31 @@ private fun RoomPages(app: AppModel, model: RoomModel, room: RoomItem, pager: Pa
         }
     }, userScrollEnabled = !isDm, flingBehavior = fling, key = { it }) { page ->
         when (page) {
-            // The Servers tab as it is outside a room: its bar is here, the chat has none.
-            0 -> Column(Modifier.fillMaxSize().testTag("pane-channels")) {
+            // The Servers tab as it is outside a room: its bar is here, the chat has none. A swipe right on from here is the swipe right on
+            // Servers: it goes on to the DMs, the chat leaving to its right (#464).
+            0 -> Column(Modifier.fillMaxSize().testTag("pane-channels").pointerInput(Unit) {
+                awaitPointerEventScope { while (true) {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var over = 0f
+                    val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, o -> if (o > 0f) { over = o; change.consume() } }
+                    if (slop != null && over > 0f) {
+                        var total = over
+                        app.slide.dragging = true
+                        dragScope.launch { app.slide.f.snapTo((1f - total / size.width).coerceIn(0f, 1f)) }
+                        horizontalDrag(slop.id) { change ->
+                            total += change.positionChange().x
+                            change.consume()
+                            dragScope.launch { app.slide.f.snapTo((1f - kotlin.math.max(total, 0f) / size.width).coerceIn(0f, 1f)) }
+                        }
+                        if (uniffi.morpheus_ffi.swipeCommits(total, size.width.toFloat()) && total > 0f) app.selectTab(dev.morpheus.app.Tab.Dms)
+                        app.slide.dragging = false
+                    }
+                } }
+            }) {
                 ServersPane(app, { app.open(it) }, Modifier.weight(1f), selectedRoom = room.id)
                 BottomBar(app, dev.morpheus.app.Tab.Servers)
             }
-            1 -> chat()
+            1 -> Box(Modifier.fillMaxSize().testTag("chat-page")) { chat() }
             else -> MembersPane(app, model)
         }
     }

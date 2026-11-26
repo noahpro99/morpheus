@@ -422,6 +422,18 @@ pub fn chat_swipe_leaves(is_dm: bool, finger_left: bool) -> bool {
     morpheus_view_model::list_swipes::leaves_chat(is_dm, if finger_left { Finger::Left } else { Finger::Right })
 }
 
+/// Whether a chat (a DM or not) sits at the left edge of the screen: it comes in from there and leaves to it (#464).
+#[uniffi::export]
+pub fn chat_edge_is_left(is_dm: bool) -> bool {
+    morpheus_view_model::list_swipes::chat_edge(is_dm) == morpheus_view_model::list_swipes::Finger::Left
+}
+
+/// Whether a drag of `distance` pixels across a pane `width` wide goes through or springs back.
+#[uniffi::export]
+pub fn swipe_commits(distance: f32, width: f32) -> bool {
+    morpheus_view_model::list_swipes::swipe_commits(distance, width)
+}
+
 /// What a swipe on `list` does; `finger_left` is the direction the finger moved.
 #[uniffi::export]
 pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool) -> SwipeStep {

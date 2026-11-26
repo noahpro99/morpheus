@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.animation.togetherWith
+import androidx.compose.ui.layout.layout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -82,14 +82,17 @@ fun Root(model: AppModel) {
                     else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
                         if (going != null) CallBar(model.calls, going)
                         Box(Modifier.weight(1f)) {
-                            // The room covers the lists: it slides in over them from the right and out again, and the lists under it stay
-                            // exactly where they are (they are only drawn while the room is moving or not open; #394).
+                            // The room covers the lists and the lists under it stay exactly where they are (they are only drawn while the room is
+                            // moving or not open; #394). It comes from its own edge (a DM from the left, a channel from the right: the way the finger
+                            // moves that opens it) and goes back out to it; a finger drag sets its place while it is down (#464).
                             var lastRoom by remember { mutableStateOf(open) }
                             if (open != null) lastRoom = open
-                            val roomShown = remember { androidx.compose.animation.core.MutableTransitionState(open != null) }
-                            roomShown.targetState = open != null
-                            val listsDrawn = !roomShown.isIdle || !roomShown.currentState
-                            val spec = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)
+                            val slide = model.slide
+                            androidx.compose.runtime.LaunchedEffect(open != null, slide.dragging) {
+                                if (!slide.dragging) slide.f.animateTo(if (open != null) 1f else 0f, Motion.slide())
+                            }
+                            val at = slide.f.value
+                            val listsDrawn = open == null || at < 0.999f
                             if (listsDrawn) {
                                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(0, it.positionInWindow().x) }) {
                                     if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
@@ -99,15 +102,15 @@ fun Root(model: AppModel) {
                                     else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
                                 }
                             }
-                            androidx.compose.animation.AnimatedVisibility(
-                                visibleState = roomShown,
-                                enter = androidx.compose.animation.slideInHorizontally(spec) { it },
-                                exit = androidx.compose.animation.slideOutHorizontally(spec) { it },
-                            ) {
-                                val shownRoom = lastRoom
-                                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { dev.morpheus.app.AppState.slide(1, it.positionInWindow().x) }) {
-                                    if (shownRoom != null) RoomScreen(model, shownRoom)
-                                }
+                            val shownRoom = lastRoom
+                            if (shownRoom != null && (open != null || at > 0.001f)) {
+                                val sign = if (uniffi.morpheus_ffi.chatEdgeIsLeft(shownRoom.isDm)) -1 else 1
+                                Box(
+                                    Modifier.fillMaxSize()
+                                        .layout { m, c -> val p = m.measure(c); layout(p.width, p.height) { p.place((sign * (1f - at) * p.width).toInt(), 0) } }
+                                        .background(MaterialTheme.colorScheme.background)
+                                        .onGloballyPositioned { dev.morpheus.app.AppState.slide(1, it.positionInWindow().x) },
+                                ) { RoomScreen(model, shownRoom) }
                             }
                             RoomPageHost(model)
                         }

@@ -85,6 +85,35 @@ pub fn leaves_chat(is_dm: bool, finger: Finger) -> bool {
     if is_dm { finger == TOWARDS_SERVERS } else { finger == TOWARDS_DMS }
 }
 
+/// The screen edge a chat sits at: it comes in from there when it opens and goes back out to it when it closes (#464). The rule is that
+/// whatever a swipe opens or closes moves the way the finger moves: a DM opens with a swipe right, so it comes in from the left edge and
+/// a swipe left sends it back there; a server channel opens with a swipe left, so it sits at the right edge.
+pub fn chat_edge(is_dm: bool) -> Finger {
+    // The chat travels with the finger that opens it, from the side the finger came from.
+    opposite(if is_dm { TOWARDS_DMS } else { TOWARDS_SERVERS })
+}
+
+/// The screen edge a list sits at, beside the other: the DMs on the left, Servers on the right (the bottom bar's order). A swipe
+/// towards the DMs brings them in from the left edge.
+pub fn list_edge(list: List) -> Finger {
+    match list {
+        List::Dms => opposite(TOWARDS_DMS),
+        List::Servers => opposite(TOWARDS_SERVERS),
+    }
+}
+
+fn opposite(finger: Finger) -> Finger {
+    match finger {
+        Finger::Left => Finger::Right,
+        Finger::Right => Finger::Left,
+    }
+}
+
+/// Does a drag of `distance` pixels (either way) across a pane `width` pixels wide go through, or spring back? A sixth of the width.
+pub fn swipe_commits(distance: f32, width: f32) -> bool {
+    distance.abs() > width / 6.0
+}
+
 /// The list a chat goes back to.
 pub fn list_of_chat(is_dm: bool) -> List {
     if is_dm { List::Dms } else { List::Servers }
@@ -134,6 +163,33 @@ mod tests {
         assert_eq!(LastChats::parse(&only_channel.encode()), only_channel);
         assert_eq!(LastChats::parse(""), LastChats::default());
         assert_eq!(LastChats::parse("garbage"), LastChats { dm: Some("garbage".into()), channel: None });
+    }
+
+    #[test]
+    fn a_chat_or_a_list_moves_the_way_the_finger_moves() {
+        // A DM opens with a swipe right and so sits at the left edge; a channel opens with a swipe left and sits at the right.
+        assert_eq!(chat_edge(true), Finger::Left);
+        assert_eq!(chat_edge(false), Finger::Right);
+        for is_dm in [true, false] {
+            let edge = chat_edge(is_dm);
+            // The swipe that sends a chat away moves it towards its own edge.
+            let leaving = if leaves_chat(is_dm, Finger::Left) { Finger::Left } else { Finger::Right };
+            assert_eq!(leaving, edge, "the swipe that closes a chat (dm: {is_dm}) moves it to its edge");
+            // The one that opens it moves away from there.
+            let opening = if is_dm { TOWARDS_DMS } else { TOWARDS_SERVERS };
+            assert_ne!(opening, edge);
+            assert!(matches!(kept().swipe(list_of_chat(is_dm), opening), Step::Open(_)));
+        }
+        // The lists: a swipe towards the DMs brings them in from the left, one towards Servers brings Servers in from the right.
+        assert_eq!(list_edge(List::Dms), Finger::Left);
+        assert_eq!(list_edge(List::Servers), Finger::Right);
+    }
+
+    #[test]
+    fn a_drag_goes_through_past_a_sixth_of_the_width() {
+        assert!(swipe_commits(200.0, 1080.0));
+        assert!(swipe_commits(-200.0, 1080.0));
+        assert!(!swipe_commits(150.0, 1080.0));
     }
 
     #[test]

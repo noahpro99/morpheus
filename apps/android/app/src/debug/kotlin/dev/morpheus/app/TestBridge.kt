@@ -177,7 +177,7 @@ class TestBridge(private val app: Application) {
                     val row = JSONArray()
                     for (i in 0 until tags.length()) {
                         val node = all.firstOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == tags.getString(i) }
-                        row.put(if (node == null) JSONObject.NULL else JSONObject().put("x", node.boundsInWindow.left).put("w", node.boundsInWindow.width))
+                        row.put(if (node == null) JSONObject.NULL else JSONObject().put("x", node.positionInWindow.x.toDouble()).put("w", node.boundsInWindow.width))
                     }
                     row
                 })
