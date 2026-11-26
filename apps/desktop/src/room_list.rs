@@ -827,7 +827,15 @@ fn room_button(
     button = if room.is_dm {
         button.child(avatar(shell.picture(&room.avatar, 32), &title, 32.0, None))
     } else {
-        button.child(channel_glyph(room.is_voice))
+        let live = crate::view_model::calls::speaker_is_live(room, &shell.call_shown(room)).then(|| {
+            let sidebar = theme::bg_sidebar();
+            if selected {
+                crate::view_model::theme::over(theme::bg_selected(), sidebar)
+            } else {
+                sidebar
+            }
+        });
+        button.child(channel_glyph_live(room.is_voice, live))
     };
     button = button.child(
         div()
@@ -1368,6 +1376,12 @@ pub fn welcome_channels(shell: &Shell, space: &OwnedRoomId) -> (Vec<RoomSummary>
 /// of a text one, in one slot as wide for both, so every name starts at the
 /// same x and the mark is centred on the name's line.
 pub fn channel_glyph(voice: bool) -> AnyElement {
+    channel_glyph_live(voice, None)
+}
+
+/// [`channel_glyph`], with a voice channel's speaker in the call's green when `live` holds the
+/// fill it sits on (#513): green where it reads (3:1) on that fill, else the contrast colour.
+pub fn channel_glyph_live(voice: bool, live: Option<u32>) -> AnyElement {
     let slot = div()
         .w(px(20.0))
         .flex_none()
@@ -1375,10 +1389,22 @@ pub fn channel_glyph(voice: bool) -> AnyElement {
         .items_center()
         .justify_center();
     if voice {
+        let colour = match live {
+            Some(fill) => {
+                let green = theme::green();
+                if crate::view_model::theme::contrast(green, fill) >= 3.0 {
+                    green
+                } else {
+                    crate::view_model::theme::on_colour(fill)
+                }
+            }
+            None => theme::text_faint(),
+        };
         slot.child(
             icon("volume-2", 18.0)
-                .text_color(rgb(theme::text_faint()))
-                .e2e("svg", "voice-icon"),
+                .text_color(rgb(colour))
+                .e2e("svg", if live.is_some() { "voice-icon live" } else { "voice-icon" })
+                .attr("data-color", format!("{colour:06x}")),
         )
         .into_any_element()
     } else {

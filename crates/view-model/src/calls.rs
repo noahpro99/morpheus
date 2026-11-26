@@ -733,6 +733,13 @@ pub fn shown_participants(
     shown
 }
 
+/// Whether a voice channel's speaker is drawn as "people are in the call" (#513): a voice
+/// channel (not a DM) whose call lists anyone (`shown`, from [`shown_participants`]). Shared with
+/// the phones, which colour the speaker the same way.
+pub fn speaker_is_live(room: &RoomSummary, shown: &[OwnedUserId]) -> bool {
+    room.is_voice && !room.is_dm && !shown.is_empty()
+}
+
 /// The call button in a room's header: what its tooltip says.
 pub fn call_button_title(in_this_call: bool, someone_there: bool) -> &'static str {
     if in_this_call {
@@ -1337,6 +1344,17 @@ mod tests {
             .map(|u| OwnedUserId::try_from(*u).expect("user id"))
             .collect();
         r
+    }
+
+    #[test]
+    fn the_speaker_is_live_while_anyone_is_in_the_call() {
+        let mut voice = room("!v:x", "voice");
+        voice.is_voice = true;
+        assert!(!speaker_is_live(&voice, &[]));
+        assert!(speaker_is_live(&voice, &[user("bob")]));
+        let mut text = room("!t:x", "text");
+        text.is_voice = false;
+        assert!(!speaker_is_live(&text, &[user("bob")]));
     }
 
     #[test]
