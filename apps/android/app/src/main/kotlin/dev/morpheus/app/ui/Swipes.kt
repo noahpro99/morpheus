@@ -61,6 +61,7 @@ fun SwipeBack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     var width by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val flick = remember { FlickTracker() }
+    var lock by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     Box(
         modifier
@@ -68,7 +69,7 @@ fun SwipeBack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
             .offset { androidx.compose.ui.unit.IntOffset(offset.value.toInt(), 0) }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
-                    onDragStart = { flick.reset() },
+                    onDragStart = { flick.reset(); lock = 0f },
                     onDragEnd = {
                         val goes = flick.commits(kotlin.math.abs(offset.value), width)
                         scope.launch {
@@ -81,8 +82,11 @@ fun SwipeBack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
                     },
                     onDragCancel = { scope.launch { offset.animateTo(0f, Motion.slide()) } },
                 ) { change, amount ->
-                    flick.add(change, amount)
-                    scope.launch { offset.snapTo(offset.value + amount) }
+                    // Reversing only undoes the drag; it never crosses into the other way (#525).
+                    lock = uniffi.morpheus_ffi.swipeDragLock(lock, amount)
+                    val next = uniffi.morpheus_ffi.swipeDragTotal(offset.value, amount, lock)
+                    flick.add(change, next - offset.value)
+                    scope.launch { offset.snapTo(next) }
                 }
             },
     ) { content() }

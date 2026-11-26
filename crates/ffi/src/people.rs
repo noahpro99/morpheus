@@ -124,6 +124,14 @@ impl Morpheus {
         Ok(self.session()?.create_room(name, topic, None).await?.to_string())
     }
 
+    /// A person's picture (none when they have none): the small faces of a message's read receipts (#483).
+    pub async fn person_avatar(&self, user_id: String) -> Option<Arc<MediaHandle>> {
+        let session = self.session().ok()?;
+        let user = OwnedUserId::try_from(user_id.as_str()).ok()?;
+        let profile = session.profile(user).await.ok()?;
+        profile.avatar.map(|m| MediaHandle::new(m, &session))
+    }
+
     /// My friends.
     pub async fn friends(&self) -> Result<Vec<FriendItem>, FfiError> {
         let session = self.session()?;

@@ -128,6 +128,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     // The button row above the composer goes while the box is focused or has text and returns when it is empty and not focused, or on a pull down (#502).
     var composing by remember(room.id, threadRoot) { mutableStateOf(false) }
     var pulled by remember(room.id, threadRoot) { mutableStateOf(false) }
+    var boxEmpty by remember(room.id, threadRoot) { mutableStateOf(true) }
+    val scrollFocus = androidx.compose.ui.platform.LocalFocusManager.current
+    val scrollKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val editing by model.editing.collectAsState()
     var info by remember(room.id) { mutableStateOf(false) }
     var searching by remember(room.id) { mutableStateOf(false) }
@@ -197,6 +200,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onFull = { app.openPage(dev.morpheus.app.PageRequest("full-message", room.id, message = it)) },
                 isDm = isDm,
                 onPull = { pulled = true },
+                // Starting to scroll towards older messages with an empty box puts the keyboard away, for more of the conversation (#526).
+                onScrollOlder = { if (boxEmpty) { scrollFocus.clearFocus(); scrollKeyboard?.hide() } },
             )
             typingLine?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
@@ -228,7 +233,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             }
             Composer(
                 model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, title = if (threadRoot == null) title else null, dm = isDm, encrypted = encrypted, room = listed, server = serverOfRoom,
-                onComposing = { composing = it; pulled = false }, onAttach = { picker.launch("*/*") },
+                onComposing = { composing = it; pulled = false }, onEmpty = { boxEmpty = it }, onAttach = { picker.launch("*/*") },
             ) { model.send(it) }
             if (threadRoot == null) {
                 val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
@@ -268,8 +273,21 @@ private fun Timeline(
     onFull: (MessageItem) -> Unit,
     onPull: () -> Unit,
     isDm: Boolean,
+    onScrollOlder: () -> Unit = {},
 ) {
     val state = rememberLazyListState()
+    // The start of a scroll towards older messages (the first item of this bottom-up list moves away from the newest), once per gesture.
+    val older by androidx.compose.runtime.rememberUpdatedState(onScrollOlder)
+    LaunchedEffect(state) {
+        var from = -1L
+        var fired = false
+        androidx.compose.runtime.snapshotFlow { Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset) }.collect { (going, i, o) ->
+            val pos = i.toLong() * 100_000 + o
+            if (!going) { from = -1L; fired = false }
+            else if (from < 0) from = pos
+            else if (!fired && pos - from > 20) { fired = true; older() }
+        }
+    }
     // A pull down at the newest message (the finger moving down while the list rests at the bottom) brings the button row back (#502).
     val pull by androidx.compose.runtime.rememberUpdatedState(onPull)
     val pullDown = remember(state) {
@@ -352,7 +370,8 @@ private fun Timeline(
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Divider))
                 }
                 TimelineRow.Start -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                    Text("This is the beginning of the room.", Modifier.testTag("timeline-start"), textAlign = TextAlign.Center, color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
+                    // No words here: the list's native stretch says it is the start (#524). A 1 dp marker is what the tests look for.
+                    Spacer(Modifier.height(1.dp).testTag("timeline-start"))
                     // An empty direct message offers a greeting (#421).
                     if (sayHi) {
                         androidx.compose.material3.FilledTonalButton({ model.send(uniffi.morpheus_ffi.sayHiGreeting()) }, Modifier.testTag("say-hi")) { Text(t("Say hi! 👋")) }
@@ -440,7 +459,7 @@ private fun MessageRow(
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
         if (message.showHeader) {
-            Avatar(message.senderAvatar, message.senderName, Size.avatar, key = message.senderAvatarKey)
+            Avatar(message.senderAvatar, message.senderName, Size.avatar, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey)
         } else {
             Spacer(Modifier.size(Size.avatar))
         }
@@ -518,15 +537,7 @@ private fun MessageRow(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            if (message.readBy.isNotEmpty()) {
-                val names by People.names.collectAsState()
-                message.readBy.forEach { People.want(it) }
-                Text(
-                    t("Seen by %{names}", "names" to message.readBy.joinToString(", ") { People.nameOf(it, names) }),
-                    Modifier.padding(top = 2.dp).testTag("read-by"),
-                    color = Palette.Muted, style = MaterialTheme.typography.labelSmall,
-                )
-            }
+            if (message.readBy.isNotEmpty()) ReadReceipts(message.readBy)
             val dismissed by model.dismissed.collectAsState()
             val url = message.previewUrl
             val eventId = message.eventId
@@ -587,7 +598,7 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit,
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun Composer(
     model: RoomModel, draftKey: String, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester,
-    title: String?, dm: Boolean, encrypted: Boolean, room: RoomItem, server: uniffi.morpheus_ffi.ScopeItem?, onComposing: (Boolean) -> Unit, onAttach: () -> Unit, onSend: (String) -> Unit,
+    title: String?, dm: Boolean, encrypted: Boolean, room: RoomItem, server: uniffi.morpheus_ffi.ScopeItem?, onComposing: (Boolean) -> Unit, onEmpty: (Boolean) -> Unit, onAttach: () -> Unit, onSend: (String) -> Unit,
 ) {
     // What is typed is kept with its cursor or selected range for this chat or thread (#460), and comes back when it is opened again.
     var field by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
@@ -610,6 +621,8 @@ private fun Composer(
     val composing = (focused && !dismissed) || text.isNotEmpty()
     val composingChanged by androidx.compose.runtime.rememberUpdatedState(onComposing)
     LaunchedEffect(composing, text) { composingChanged(composing) }
+    val emptyChanged by androidx.compose.runtime.rememberUpdatedState(onEmpty)
+    LaunchedEffect(text.isEmpty()) { emptyChanged(text.isEmpty()) }
     var suggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     LaunchedEffect(text) { suggestions = model.suggest(text) }
     LaunchedEffect(text) { if (text.isNotBlank()) model.typing() }
@@ -746,13 +759,14 @@ private fun RoomPages(app: AppModel, room: RoomItem, panes: Boolean, isDm: Boole
         return
     }
     var leaveDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var leaveLock by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val flick = remember { FlickTracker() }
     val dragScope = androidx.compose.runtime.rememberCoroutineScope()
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     Box(Modifier.fillMaxSize().testTag("room-pager").pointerInput(Unit) {
         detectHorizontalDragGestures(
-            onDragStart = { leaveDrag = 0f; flick.reset(); app.slide.dragging = true },
+            onDragStart = { leaveDrag = 0f; leaveLock = 0f; flick.reset(); app.slide.dragging = true },
             onDragEnd = {
                 if (flick.commits(leaveDrag, size.width.toFloat())) {
                     // Put the keyboard away as the chat goes.
@@ -766,8 +780,11 @@ private fun RoomPages(app: AppModel, room: RoomItem, panes: Boolean, isDm: Boole
             },
             onDragCancel = { leaveDrag = 0f; app.slide.leaveSign = 0; app.slide.dragging = false },
         ) { change, amount ->
-            flick.add(change, amount)
-            leaveDrag += amount
+            // Reversing only undoes the drag; it never crosses into the other way (#525).
+            leaveLock = uniffi.morpheus_ffi.swipeDragLock(leaveLock, amount)
+            val was = leaveDrag
+            leaveDrag = uniffi.morpheus_ffi.swipeDragTotal(leaveDrag, amount, leaveLock)
+            flick.add(change, leaveDrag - was)
             // The chat goes the way the finger goes, whichever that is.
             if (leaveDrag != 0f) app.slide.leaveSign = if (leaveDrag < 0f) -1 else 1
             dragScope.launch { app.slide.f.snapTo((1f - kotlin.math.abs(leaveDrag) / size.width).coerceIn(0f, 1f)) }
@@ -805,3 +822,43 @@ private fun ComposerBanner(@androidx.annotation.DrawableRes icon: Int, text: Str
         IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, closeDescription, closeTag, onClose, tint = ink)
     }
 }
+
+/**
+ * Who has read up to a message (#483): a row of small pictures under it, overlapping, at the right, with "+N" past a few. Its description says "Seen by ..."
+ * (what a screen reader and the tests read). A tap lists the names, one under the other; another tap folds it.
+ */
+@Composable
+private fun ReadReceipts(readers: List<String>) {
+    val names by People.names.collectAsState()
+    val avatars by People.avatars.collectAsState()
+    readers.forEach { People.want(it) }
+    var open by remember { mutableStateOf(false) }
+    val seen = t("Seen by %{names}", "names" to readers.joinToString(", ") { People.nameOf(it, names) })
+    val face = Size.avatarSm
+    val shown = readers.take(MAX_FACES)
+    Column(Modifier.fillMaxWidth().padding(top = Space.xs), horizontalAlignment = Alignment.End) {
+        Row(
+            Modifier.heightIn(min = Size.target).clip(CircleShape).pointerInput(readers) { detectTapGestures { open = !open } }.semantics { contentDescription = seen; onClick("Show who has seen it") { open = !open; true } }.testTag("read-by"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(-Space.xs),
+        ) {
+            // Overlapping by 4 dp; a ring in the page's colour parts them.
+            shown.forEach { id ->
+                Avatar(avatars[id], People.nameOf(id, names), face, Modifier.border(1.dp, MaterialTheme.colorScheme.background, CircleShape), key = null)
+            }
+            if (readers.size > shown.size) Text("+${readers.size - shown.size}", Modifier.padding(start = Space.xs), color = Palette.Muted, style = MaterialTheme.typography.labelSmall)
+        }
+        if (open) {
+            Column(Modifier.testTag("read-by-list"), horizontalAlignment = Alignment.End) {
+                readers.forEach { id ->
+                    Row(Modifier.padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Text(People.nameOf(id, names), Modifier.testTag("read-by-$id"), color = Palette.Muted, style = MaterialTheme.typography.labelMedium)
+                        Avatar(avatars[id], People.nameOf(id, names), face, key = null)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val MAX_FACES = 5

@@ -467,3 +467,15 @@ pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool, server: Opti
         Step::Nothing => SwipeStep::Nothing,
     }
 }
+
+/// The side a drag is locked to once it has moved (#525).
+#[uniffi::export]
+pub fn swipe_drag_lock(lock: f32, amount: f32) -> f32 {
+    morpheus_view_model::list_swipes::drag_lock(lock, amount)
+}
+
+/// A drag's distance after a move: a reversal stops at the start instead of crossing into the opposite swipe (#525).
+#[uniffi::export]
+pub fn swipe_drag_total(total: f32, amount: f32, lock: f32) -> f32 {
+    morpheus_view_model::list_swipes::drag_total(total, amount, lock)
+}

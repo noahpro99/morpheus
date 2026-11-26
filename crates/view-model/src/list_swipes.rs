@@ -154,6 +154,18 @@ pub fn swipe_commits_with_velocity(distance: f32, velocity: f32, width: f32) -> 
     swipe_commits(distance, width) || (distance.abs() > width / 40.0 && velocity * distance > 0.0 && velocity.abs() > width * 0.4)
 }
 
+/// The side a drag is locked to (#525): `lock` is 0 until the drag has moved; its first move (`amount`) sets it to -1 or 1 and it stays.
+pub fn drag_lock(lock: f32, amount: f32) -> f32 {
+    if lock != 0.0 || amount == 0.0 { lock } else { amount.signum() }
+}
+
+/// The distance of a drag after a move of `amount` px: reversing only takes the pane back towards where it started and stops there, so
+/// one gesture never goes over into the opposite swipe (#525). `lock` is [`drag_lock`]'s.
+pub fn drag_total(total: f32, amount: f32, lock: f32) -> f32 {
+    let t = total + amount;
+    if lock > 0.0 { t.max(0.0) } else if lock < 0.0 { t.min(0.0) } else { t }
+}
+
 /// The list a chat goes back to.
 pub fn list_of_chat(is_dm: bool) -> List {
     if is_dm { List::Dms } else { List::Servers }
@@ -266,6 +278,28 @@ mod tests {
         assert!(!swipe_commits_with_velocity(60.0, 300.0, 1080.0));
         assert!(!swipe_commits_with_velocity(10.0, 2000.0, 1080.0));
         assert!(!swipe_commits_with_velocity(60.0, -2000.0, 1080.0));
+    }
+
+    #[test]
+    fn a_drag_that_reverses_only_undoes_itself_and_never_crosses_into_the_opposite_swipe() {
+        // Left half way, then right all the way past the start: it stops at the start.
+        let mut lock = 0.0;
+        let mut total = 0.0;
+        for amount in [-100.0, -200.0, 150.0, 200.0, 300.0] {
+            lock = drag_lock(lock, amount);
+            total = drag_total(total, amount, lock);
+            assert!(total <= 0.0, "never to the right of the start: {total}");
+        }
+        assert_eq!(lock, -1.0);
+        assert_eq!(total, 0.0);
+        // And back out the same way it began: the drag continues from the start.
+        assert_eq!(drag_total(total, -80.0, lock), -80.0);
+        // A rightward drag is the mirror.
+        let lock = drag_lock(0.0, 30.0);
+        assert_eq!(drag_total(100.0, -400.0, lock), 0.0);
+        // Nothing moved yet: no side.
+        assert_eq!(drag_lock(0.0, 0.0), 0.0);
+        assert_eq!(drag_total(0.0, 5.0, 0.0), 5.0);
     }
 
     #[test]
