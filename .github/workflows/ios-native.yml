@@ -55,8 +55,9 @@ jobs:
         with:
           path: ~/Library/Caches/pip
           key: pip-synapse-${{ runner.os }}
-      - name: Homeserver (Synapse, seeded)
-        run: python3 apps/ios/ci/homeserver.py start "$RUNNER_TEMP/hs"
+      # In the background: installing Synapse and seeding take minutes, the Rust build needs none of it.
+      - name: Homeserver (Synapse, seeded), started
+        run: nohup python3 apps/ios/ci/homeserver.py start "$RUNNER_TEMP/hs" > "$RUNNER_TEMP/hs.out" 2>&1 &
 
       - name: Rust
         run: rustup show active-toolchain || rustup toolchain install
@@ -72,12 +73,17 @@ jobs:
           which xcodegen || brew install xcodegen
           cd apps/ios && xcodegen generate
 
+      - name: Homeserver ready
+        run: for _ in $(seq 300); do grep -q seeded "$RUNNER_TEMP/hs.out" && exit 0; sleep 2; done; cat "$RUNNER_TEMP/hs.out"; exit 1
+
       - name: XCUITests
+        shell: bash
         run: |
           cd apps/ios
           xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
             -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO | tail -150
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 300 \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "Test Case|error:|\*\* TEST|Executed"
 
       - name: Results
         if: always()
@@ -88,7 +94,10 @@ jobs:
           retention-days: 7
       - name: Homeserver log
         if: failure()
-        run: tail -50 "$RUNNER_TEMP/hs/synapse.log" || true
+        run: |
+          grep -A60 "accessibility tree" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
+          tail -30 "$RUNNER_TEMP/hs/synapse.log" || true
+          ls ~/Library/Logs/DiagnosticReports 2>/dev/null | head; cat ~/Library/Logs/DiagnosticReports/Morpheus*.ips 2>/dev/null | head -60 || true
 
   device:
     runs-on: macos-latest

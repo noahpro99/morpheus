@@ -53,7 +53,6 @@ struct SignInView: View {
         .padding(24)
         .frame(maxWidth: 480)
         .onAppear { if homeserver.isEmpty { homeserver = model.defaultHomeserver } }
-        .accessibilityIdentifier("sign-in")
     }
 
     private func field(_ title: String, text: Binding<String>, id: String) -> some View {

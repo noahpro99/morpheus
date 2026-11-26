@@ -22,11 +22,21 @@ class MorpheusTestCase: XCTestCase {
         password.tap()
         password.typeText("alice-pass-1")
         app.buttons["sign-in-submit"].tap()
-        XCTAssertTrue(app.otherElements["lists"].waitForExistence(timeout: 60) || app.scrollViews.firstMatch.waitForExistence(timeout: 60), "the lists after signing in")
+        XCTAssertTrue(app.buttons["list-picker"].exists || app.segmentedControls["list-picker"].waitForExistence(timeout: 60), "the lists after signing in")
     }
 
     /// Apple's audit: contrast, hit regions, Dynamic Type, labels, clipped text.
     func audit(file: StaticString = #filePath, line: UInt = #line) throws {
         try app.performAccessibilityAudit()
+    }
+}
+
+extension MorpheusTestCase {
+    /// What the screen had when a test failed: the accessibility tree, for the CI log.
+    override func tearDown() {
+        if (testRun?.failureCount ?? 0) > 0 {
+            print("--- accessibility tree at failure ---\n\(app.debugDescription)")
+        }
+        super.tearDown()
     }
 }
