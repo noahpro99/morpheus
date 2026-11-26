@@ -175,7 +175,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
         val width = constraints.maxWidth
         val at = place.value
         if (at < 1f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset((-at * width).toInt(), 0) }.testTag("dms-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(2, it.positionInWindow().x) }) { DmsPane(model, onOpenRoom) }
-        if (at > 0f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(((1f - at) * width).toInt(), 0) }.onGloballyPositioned { dev.morpheus.app.AppState.slide(3, it.positionInWindow().x) }) { ServersPane(model, onOpenRoom) }
+        if (at > 0f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(((1f - at) * width).toInt(), 0) }.testTag("servers-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(3, it.positionInWindow().x) }) { ServersPane(model, onOpenRoom) }
     }
 }
 
@@ -188,8 +188,8 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     if (bar == null) {
         Column(modifier.fillMaxSize().background(Palette.Background)) {
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background))
                 Column(Modifier.weight(1f).fillMaxHeight().background(Palette.Surface).padding(top = Space.xl)) { SkeletonRows(8, avatars = false) }
+                Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background))
             }
             ListSearchBar(model, t("Search"))
         }
@@ -205,13 +205,13 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     }
     Column(modifier.fillMaxSize().background(Palette.Background)) {
         Row(Modifier.weight(1f).fillMaxWidth()) {
-            Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
             if (scope == null) {
                 EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation from the search bar."), Modifier.weight(1f).background(Palette.Surface))
             } else {
                 val record by model.lastChats.collectAsState()
                 ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
             }
+            Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
         }
         if (scope == null) ListSearchBar(model, t("Search"))
         else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
@@ -242,9 +242,10 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     PullDown(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail")) {
     LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = Space.md),
-        verticalArrangement = Arrangement.spacedBy(Space.lg),
+        Modifier.fillMaxSize(), reverseLayout = true,
+        // The first server is at the bottom, near the thumb (#503); the same 16 dp under it as under the channel list, so its bottom item is level with the list's.
+        contentPadding = PaddingValues(vertical = Space.lg),
+        verticalArrangement = Arrangement.spacedBy(Space.lg, Alignment.Bottom),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         items(scopes, key = { it.key }) { scope ->
@@ -274,7 +275,8 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                                 onDragStart = { held[0] = true; dragging = currentScope.key; shift = 0f },
                                 onDrag = { change, amount -> change.consume(); shift += amount.y },
                                 onDragEnd = {
-                                    val by = Math.round(shift / step)
+                                    // The list is drawn from the bottom: a drag up moves the server later in the order.
+                                    val by = -Math.round(shift / step)
                                     dragging = null; shift = 0f
                                     if (by == 0) manage(currentScope) else {
                                         val order = currentScopes.toMutableList()
@@ -318,9 +320,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                     }
                 }
                 Box(
-                    Modifier.align(Alignment.CenterStart).width(4.dp)
+                    Modifier.align(Alignment.CenterEnd).width(4.dp)
                         .height(if (on) 40.dp else if (scope.hasUnread) 8.dp else 0.dp)
-                        .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)).background(Color.White) // fixed, as the desktop's mark: white on the rail
+                        .clip(RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)).background(Color.White) // fixed, as the desktop's mark: white on the rail
                         .then(if (on) Modifier.testTag("rail-pill-selected") else if (scope.hasUnread && scope.highlights == 0UL) Modifier.testTag("dot-${scope.title}") else Modifier),
                 )
                 if (scope.highlights > 0UL) {
@@ -339,7 +341,7 @@ private fun ChannelList(
 ) {
     androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.listDrawn() }
     Column(
-        modifier.then(if (rounded) Modifier.clip(RoundedCornerShape(topStart = Radius.lg)) else Modifier).background(Palette.Surface).testTag("channel-panel"),
+        modifier.then(if (rounded) Modifier.clip(RoundedCornerShape(topEnd = Radius.lg)) else Modifier).background(Palette.Surface).testTag("channel-panel"),
     ) {
         if (scope.sections.all { it.rooms.isEmpty() } && invites.isEmpty()) {
             EmptyState(
@@ -352,21 +354,20 @@ private fun ChannelList(
         // Each rail entry has its own scroll position.
         key(scope.key) {
             val listState = rememberLazyListState()
-            // A new invitation goes above the rooms: the list stays on the room it was showing, so go and look.
-            LaunchedEffect(invites.size) { if (invites.isNotEmpty()) listState.animateScrollToItem(0) }
-            // The DMs are anchored at the bottom, near the thumb: the most recent at the bottom, older ones going up (#471). The list is laid out
-            // from the bottom, so a section's rooms come before its heading (the heading is drawn above them).
-            val fromBottom = scope.kind == ScopeKind.DMS
+            // A new invitation goes above the rooms (the far end of the list): the list stays on the room it was showing, so go and look.
+            LaunchedEffect(invites.size) { if (invites.isNotEmpty()) listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1) }
+            // Every list is anchored at the bottom, near the thumb: the first room is the lowest, later ones go up, and a short list rests at the
+            // bottom (#471, #503). The list is laid out from the bottom, so a section's rooms come before its heading (drawn above them), and the
+            // invitations come last (they are at the top).
             PullDown(Modifier.fillMaxSize().testTag("rooms-list")) {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = fromBottom, contentPadding = PaddingValues(vertical = Space.lg)) {
-                if (invites.isNotEmpty()) {
-                    item(key = "invites-heading") { SectionHeader(t("Invites")) }
-                    items(invites, key = { "invite-${it.id}" }) { invite -> InviteCard(invite, model) }
-                }
+            LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true, contentPadding = PaddingValues(vertical = Space.lg)) {
                 for ((index, section) in scope.sections.withIndex()) {
-                    if (!fromBottom) section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
                     items(section.rooms, key = { it.id }) { room -> RoomRow(room, onOpenRoom, model, room.id == selectedRoom) }
-                    if (fromBottom) section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
+                    section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
+                }
+                if (invites.isNotEmpty()) {
+                    items(invites, key = { "invite-${it.id}" }) { invite -> InviteCard(invite, model) }
+                    item(key = "invites-heading") { SectionHeader(t("Invites")) }
                 }
             }
             }
