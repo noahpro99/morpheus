@@ -777,6 +777,10 @@ object AppState {
     @Volatile
     var clockOffsetMs: Long = 0L
 
+    /** What the debug bridge adds to every request for older messages, to see the list while one is slow (0 otherwise). */
+    @Volatile
+    var olderDelayMs: Long = 0L
+
     @Volatile
     var screen: String = "loading"
 

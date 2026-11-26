@@ -188,6 +188,7 @@ class TestBridge(private val app: Application) {
         "windows" -> onMain { JSONArray(windows().map { JSONObject().put("view", it.view.javaClass.name).put("over", it.over).put("modal", it.modal).put("w", it.view.width).put("h", it.view.height).put("x", it.dx).put("y", it.dy) }) }
         "slide_reset" -> { AppState.slideLog.clear(); true }
         "clock_offset" -> { AppState.clockOffsetMs = request.getLong("ms"); true }
+        "older_delay" -> { AppState.olderDelayMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
         "click" -> onMain { click(find(request)) }
         "type" -> onMain {

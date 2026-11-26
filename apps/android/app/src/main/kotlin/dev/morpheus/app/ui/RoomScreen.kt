@@ -276,6 +276,7 @@ private fun summary(body: MessageBody): String = when (body) {
     is MessageBody.Other -> body.summary
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun Timeline(
     model: RoomModel,
@@ -336,6 +337,9 @@ private fun Timeline(
     Box(modifier) {
     // Nothing yet: placeholders where the messages will be.
     if (rows.isEmpty()) Column(Modifier.align(Alignment.BottomStart).padding(bottom = Space.lg)) { SkeletonRows(7) }
+    // No stretch at the ends (#470): it held the list in its pulled state when a page of older messages arrived under it, and
+    // the next drags up went into the stretch instead of the list.
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
     LazyColumn(Modifier.fillMaxSize().testTag("timeline"), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
@@ -372,6 +376,7 @@ private fun Timeline(
                 )
             }
         }
+    }
     }
     if (dividerAt >= 0 && !dividerShowing) {
         val scope = androidx.compose.runtime.rememberCoroutineScope()

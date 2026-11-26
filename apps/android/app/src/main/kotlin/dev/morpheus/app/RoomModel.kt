@@ -214,6 +214,7 @@ class RoomModel(
         _loadingOlder.value = true
         scope.launch {
             try {
+                if (AppState.olderDelayMs > 0) kotlinx.coroutines.delay(AppState.olderDelayMs)
                 timeline?.loadOlder()
             } catch (e: Exception) {
                 _error.value = e.sentence()
