@@ -35,8 +35,9 @@ Gradle wrapper is checked in. Gradle's plugins and libraries come from Maven
    (`-PrustAbis=x86_64` for the emulator, `arm64-v8a` for a phone; both by
    default) and copies `libmorpheus_ffi.so` into `build/rust/jniLibs/<abi>`;
 2. generates the Kotlin bindings from the library's own metadata
-   (`uniffi-bindgen generate --library`, binary in `crates/ffi`, feature
-   `bindgen`) into `build/rust/kotlin`.
+   (`uniffi-bindgen generate --library`; the generator is the small crate
+   `tools/uniffi-bindgen`, built once into `target/uniffi-bindgen`, so the host
+   is not built for it) into `build/rust/kotlin`.
 
 Both are Gradle source directories, so the bindings always match the library.
 Plain cargo with the shell's NDK linkers is used, not cargo-ndk: the shell
@@ -96,8 +97,8 @@ API: debug only) and injects input:
 - `key`, `back`, `state` (the app's `AppState`).
 
 morpheus-e2e's `native_android` module is the client (`NativeApp`): it
-installs nothing itself (`just android-native-build` does), clears the app's
-data, starts it, forwards the port, and offers `wait_for_text`, `tap_tag`,
+installs nothing itself (`just android-native-build` does; `just e2e-android-native-run`
+installs an APK the phone does not have yet), starts the app, forwards the port, and offers `wait_for_text`, `tap_tag`,
 `type_into`, `screenshot` (`adb exec-out screencap`).
 
 Screens tag what tests need with `Modifier.testTag`, and tags are also exposed
@@ -111,6 +112,24 @@ just e2e-android-native                 # build (Gradle skips what did not chang
 just e2e-android-native-run android_native a_room_shows   # no build: reinstall and run one test
 just test-ffi                # the Rust side alone, against the local homeserver
 ```
+
+What keeps the loop short:
+
+- The host-side Rust of these runs (the harness, the call peer) is built in the
+  `android-emulator` shell into `target/android-host`, apart from the desktop
+  shell's `target/`; the two shells' environments differ, and sharing one tree
+  rebuilt aws-lc and 30 more crates each time the shell changed.
+- `dev/homeserver/ensure-seeded.sh` runs the seed only when the seed script
+  changed or the server lacks alice and the seeded rooms; `MORPHEUS_FORCE_SEED=1`
+  (or `just hs-seed`) seeds anyway.
+- `NativeApp::launch_signed_in("alice", "alice-password")` signs in through the
+  screen once per test process; later calls restart the app, which restores the
+  session, and drop what a test can leave of the app's own state (look,
+  language, remembered tab and chat). A test about sign-in, a clean install,
+  accounts or the store uses `NativeApp::launch()` (clears all data), after
+  which the next `launch_signed_in` signs in again.
+- Waits poll the bridge every 50 ms; `tap` waits for the node to stand still and
+  `scroll_list_by` for the screen to stop moving, instead of fixed sleeps.
 
 ## Release build and the phone
 

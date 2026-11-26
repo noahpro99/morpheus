@@ -183,17 +183,17 @@ android-native-phone:
 android-emulator-headless:
     nix develop .#android-emulator -c env LD_LIBRARY_PATH=/run/opengl-driver/lib emulator -avd morpheus -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect -netdelay none -netspeed full
 
-# The second person in the phone's call tests: morpheus-ffi's call_peer example, built on the host
+# The second person in the phone's call tests: morpheus-ffi's call_peer example, built on the host. In the Android shell and
+# its own target tree (target/android-host), the same as the e2e run builds it (see scripts/android-e2e-run.sh)
 call-peer-build:
-    cargo build -p morpheus-ffi --example call_peer
+    nix develop .#android-emulator -c env CARGO_TARGET_DIR=$PWD/target/android-host cargo build -p morpheus-ffi --example call_peer
 
 # Drive the native app on the virtual phone (`just android-emulator-headless` first): builds (Gradle skips what did not change), installs, runs
 e2e-android-native file="android_native" name="": (android-native-build "x86_64") (e2e-android-native-run file name)
 
 # Only install the last build and run the native app's tests: for a change to the tests alone
-e2e-android-native-run file="android_native" name="": hs-seed call-peer-build
-    nix develop .#android-emulator -c bash -c 's="${ANDROID_SERIAL:-emulator-5554}"; apk=apps/android/app/build/outputs/apk/debug/app-debug.apk; adb -s "$s" install -r "$apk" || { adb -s "$s" uninstall dev.morpheus.mobile; adb -s "$s" install "$apk"; }'
-    nix develop .#android-emulator -c env MORPHEUS_E2E_ANDROID_NATIVE=1 ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}" MORPHEUS_TEST_HOMESERVER={{hs}} scripts/e2e-cargo.sh --test {{file}} {{name}} -- --nocapture --test-threads=1
+e2e-android-native-run file="android_native" name="": hs-seed-if-needed
+    nix develop .#android-emulator -c env MORPHEUS_TEST_HOMESERVER={{hs}} scripts/android-e2e-run.sh {{file}} {{name}}
 
 # Run on the virtual phone (start it with `just android-emulator` first)
 android-virtual: sweep
@@ -252,6 +252,10 @@ hs-reset: hs-down
 # Create users alice/bob/carol and seeded rooms
 hs-seed:
     dev/homeserver/seed.sh
+
+# Seed only when the homeserver needs it (the Android e2e runs use this): MORPHEUS_FORCE_SEED=1 seeds anyway
+hs-seed-if-needed:
+    dev/homeserver/ensure-seeded.sh
 
 # Register one user: `just hs-user dave secret [--admin]`
 hs-user name password *flags:

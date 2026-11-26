@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# The run half of `just e2e-android-native-run`, inside `nix develop .#android-emulator`:
+# the call peer (bob in the call tests), the APK on the virtual phone, then the tests.
+#
+#   scripts/android-e2e-run.sh <test file> [test name...]
+#
+# All the host-side Rust of these runs (the call peer, the harness) is built in this one shell and into its own
+# target tree (target/android-host): the desktop shell's tree has other environment variables, and builds
+# from both in one tree rebuilt the host crates (aws-lc and 30 more, 80 to 130 s) every time the shell changed.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+file=${1:?test file}
+shift
+export ANDROID_SERIAL=${ANDROID_SERIAL:-emulator-5554}
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/target/android-host}
+
+cargo build -q -p morpheus-ffi --example call_peer
+
+# Install the APK unless this very one is on the phone already (a test-only change): `adb install` of the
+# 190 MB library takes 5 to 15 s. The phone's copy is the file itself, so its size says whether it is the same.
+apk=apps/android/app/build/outputs/apk/debug/app-debug.apk
+stamp=target/.android-installed-$ANDROID_SERIAL
+sum=$(sha256sum "$apk" | cut -d' ' -f1)
+installed=$(adb shell pm path dev.morpheus.mobile 2>/dev/null | head -n 1 | cut -d: -f2 | tr -d "\r" || true)
+remote_size=""
+[ -z "$installed" ] || remote_size=$(adb shell stat -c %s "$installed" 2>/dev/null | tr -d '\r' || true)
+if [ -n "$installed" ] && [ "$remote_size" = "$(stat -c %s "$apk")" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$sum" ]; then
+    echo "app: this APK is installed already"
+else
+    adb install -r "$apk" || { adb uninstall dev.morpheus.mobile; adb install "$apk"; }
+    echo "$sum" > "$stamp"
+fi
+
+MORPHEUS_E2E_ANDROID_NATIVE=1 exec scripts/e2e-cargo.sh --test "$file" -- --nocapture --test-threads=1 "$@"
