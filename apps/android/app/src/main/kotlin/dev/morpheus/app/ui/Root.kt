@@ -108,6 +108,7 @@ fun Root(model: AppModel) {
                                 Box(
                                     Modifier.fillMaxSize()
                                         .layout { m, c -> val p = m.measure(c); layout(p.width, p.height) { p.place((sign * (1f - at) * p.width).toInt(), 0) } }
+                                        .testTag("chat-page")
                                         .background(MaterialTheme.colorScheme.background)
                                         .onGloballyPositioned { dev.morpheus.app.AppState.slide(1, it.positionInWindow().x) },
                                 ) { RoomScreen(model, shownRoom) }

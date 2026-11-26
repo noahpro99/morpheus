@@ -141,7 +141,9 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         slide.leaveSign = 0
         _room.value = room
         keep("room", room.id)
-        keep("last-chats", uniffi.morpheus_ffi.lastChatsOpened(kept?.getString("last-chats", null).orEmpty(), room.id, room.isDm))
+        val record = uniffi.morpheus_ffi.lastChatsOpened(_lastChats.value, room.id, room.isDm, if (room.isDm) null else serverOf(room.id))
+        keep("last-chats", record)
+        _lastChats.value = record
         AppState.room = room.id
         AppState.screen = "room"
     }
@@ -445,7 +447,20 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     /** What a swipe along `list` would do now (the last chats are kept across launches). */
     fun swipeStep(list: uniffi.morpheus_ffi.SwipeList, fingerLeft: Boolean): uniffi.morpheus_ffi.SwipeStep =
-        uniffi.morpheus_ffi.listSwipe(kept?.getString("last-chats", null).orEmpty(), list, fingerLeft)
+        uniffi.morpheus_ffi.listSwipe(_lastChats.value, list, fingerLeft, _scopeKey.value)
+
+    /** The rail entry (server) a channel belongs to: the one shown when it is in that, else the first that lists it (#499). */
+    private fun serverOf(roomId: String): String {
+        val servers = sidebar.value?.scopes.orEmpty().filter { it.kind != uniffi.morpheus_ffi.ScopeKind.DMS && it.sections.any { s -> s.rooms.any { r -> r.id == roomId } } }
+        return servers.firstOrNull { it.key == _scopeKey.value }?.key ?: servers.firstOrNull()?.key ?: _scopeKey.value
+    }
+
+    /** The channel last opened in this server (its row is marked in the list). */
+    fun lastChannelIn(server: String, record: String): String? = uniffi.morpheus_ffi.lastChatInServer(record, server)
+
+    /** The chats opened last, as the view-model keeps them (a server's last channel is marked in its list; #499). */
+    private val _lastChats = MutableStateFlow(kept?.getString("last-chats", null).orEmpty())
+    val lastChats: StateFlow<String> = _lastChats.asStateFlow()
 
     /** The chat a drag along a list is bringing in opens under the finger now (it follows it); false when it did not open (a locked room asks first). */
     fun peekChat(roomId: String): Boolean {

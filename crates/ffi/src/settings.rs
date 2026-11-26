@@ -409,10 +409,16 @@ pub enum SwipeStep {
 
 /// The chats-opened-last record after `room` was opened (`kept` is the record as stored, empty for none).
 #[uniffi::export]
-pub fn last_chats_opened(kept: String, room: String, is_dm: bool) -> String {
+pub fn last_chats_opened(kept: String, room: String, is_dm: bool, server: Option<String>) -> String {
     let mut last = morpheus_view_model::list_swipes::LastChats::parse(&kept);
-    last.opened(&room, is_dm);
+    last.opened(&room, is_dm, server.as_deref());
     last.encode()
+}
+
+/// The channel last opened in this server (its rail key), if one was (#499).
+#[uniffi::export]
+pub fn last_chat_in_server(kept: String, server: String) -> Option<String> {
+    morpheus_view_model::list_swipes::LastChats::parse(&kept).last_in(&server).map(str::to_owned)
 }
 
 /// Whether a chat (a DM or not) goes back to the DMs list (else Servers) when a swipe sends it away (#469).
@@ -439,16 +445,16 @@ pub fn swipe_commits_with_velocity(distance: f32, velocity: f32, width: f32) -> 
     morpheus_view_model::list_swipes::swipe_commits_with_velocity(distance, velocity, width)
 }
 
-/// What a swipe on `list` does; `finger_left` is the direction the finger moved.
+/// What a swipe on `list` does; `finger_left` is the direction the finger moved; `server` is the rail entry Servers shows (#499).
 #[uniffi::export]
-pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool) -> SwipeStep {
+pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool, server: Option<String>) -> SwipeStep {
     use morpheus_view_model::list_swipes::{Finger, List, Step};
     let list = match list {
         SwipeList::Servers => List::Servers,
         SwipeList::Dms => List::Dms,
     };
     let finger = if finger_left { Finger::Left } else { Finger::Right };
-    match morpheus_view_model::list_swipes::LastChats::parse(&kept).swipe(list, finger) {
+    match morpheus_view_model::list_swipes::LastChats::parse(&kept).swipe(list, finger, server.as_deref()) {
         Step::Show(List::Servers) => SwipeStep::Show { list: SwipeList::Servers },
         Step::Show(List::Dms) => SwipeStep::Show { list: SwipeList::Dms },
         Step::Open(room) => SwipeStep::Open { room },

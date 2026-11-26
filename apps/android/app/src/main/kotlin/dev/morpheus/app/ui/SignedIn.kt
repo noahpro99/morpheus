@@ -67,6 +67,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -199,7 +200,8 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
         if (scope == null) {
             EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
         } else {
-            ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom, rounded = true)
+            val record by model.lastChats.collectAsState()
+            ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
         }
     }
 }
@@ -461,7 +463,7 @@ private fun RoomRow(room: RoomItem, onOpen: (RoomItem) -> Unit, model: AppModel,
             ListRow(
                 room.name, "room-${room.name}",
                 // As tall as the rows always were: 60 dp for a person, 48 for a channel.
-                modifier = Modifier.height(if (room.isDm) 60.dp else 44.dp).padding(end = 96.dp),
+                modifier = Modifier.height(if (room.isDm) 60.dp else 44.dp).padding(end = 96.dp).semantics { if (selected) stateDescription = t("Last opened") },
                 strong = unread, quiet = !unread,
                 leading = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {

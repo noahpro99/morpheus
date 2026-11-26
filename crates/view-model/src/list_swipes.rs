@@ -42,43 +42,75 @@ pub enum Step {
     Nothing,
 }
 
-/// The chats opened last: one DM and one server channel (a room that is not a DM), kept across launches.
+/// The chats opened last: one DM, and a channel for each server (#499; `channel` is the last one of all, used by a swipe made with no
+/// server named), kept across launches.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LastChats {
     pub dm: Option<String>,
     pub channel: Option<String>,
+    /// The last channel opened in each server (the rail's key, such as `space:!id:server`).
+    pub by_server: Vec<(String, String)>,
 }
 
 impl LastChats {
-    /// From what [`Self::encode`] made (anything else: nothing kept).
+    /// From what [`Self::encode`] made (anything else: nothing kept). Lines 3 on are `server<TAB>room`; a record from before servers
+    /// had their own has two lines.
     pub fn parse(text: &str) -> Self {
-        let mut lines = text.lines().map(|l| Some(l.to_owned()).filter(|l| !l.is_empty()));
-        Self { dm: lines.next().flatten(), channel: lines.next().flatten() }
+        let mut lines = text.lines();
+        let mut first = || lines.next().map(str::to_owned).filter(|l| !l.is_empty());
+        let (dm, channel) = (first(), first());
+        let by_server = lines
+            .filter_map(|l| l.split_once('\t'))
+            .filter(|(s, r)| !s.is_empty() && !r.is_empty())
+            .map(|(s, r)| (s.to_owned(), r.to_owned()))
+            .collect();
+        Self { dm, channel, by_server }
     }
 
-    /// One line for the DM, one for the channel.
+    /// One line for the DM, one for the last channel of all, then one per server.
     pub fn encode(&self) -> String {
-        format!("{}\n{}", self.dm.as_deref().unwrap_or(""), self.channel.as_deref().unwrap_or(""))
+        let mut out = format!("{}\n{}", self.dm.as_deref().unwrap_or(""), self.channel.as_deref().unwrap_or(""));
+        for (server, room) in &self.by_server {
+            out.push_str(&format!("\n{server}\t{room}"));
+        }
+        out
     }
 
-    /// A chat was opened: it is the last of its kind.
-    pub fn opened(&mut self, room: &str, is_dm: bool) {
-        let slot = if is_dm { &mut self.dm } else { &mut self.channel };
-        *slot = Some(room.to_owned());
+    /// A chat was opened: it is the last of its kind, and a channel is the last of its server (`server` is its rail key, when known).
+    pub fn opened(&mut self, room: &str, is_dm: bool, server: Option<&str>) {
+        if is_dm {
+            self.dm = Some(room.to_owned());
+            return;
+        }
+        self.channel = Some(room.to_owned());
+        if let Some(server) = server {
+            match self.by_server.iter_mut().find(|(s, _)| s == server) {
+                Some(entry) => entry.1 = room.to_owned(),
+                None => self.by_server.push((server.to_owned(), room.to_owned())),
+            }
+        }
     }
 
-    /// What a swipe on `list` does.
-    pub fn swipe(&self, list: List, finger: Finger) -> Step {
-        let chat = |room: &Option<String>| room.clone().map_or(Step::Nothing, Step::Open);
+    /// The channel last opened in this server.
+    pub fn last_in(&self, server: &str) -> Option<&str> {
+        self.by_server.iter().find(|(s, _)| s == server).map(|(_, r)| r.as_str())
+    }
+
+    /// What a swipe on `list` does. On Servers, with `server` (the rail entry shown) named, a swipe left opens that server's own last
+    /// channel, and nothing when none was opened there; with none named, the last channel of all.
+    pub fn swipe(&self, list: List, finger: Finger, server: Option<&str>) -> Step {
+        let chat = |room: Option<&str>| room.map_or(Step::Nothing, |r| Step::Open(r.to_owned()));
         match (list, finger == TOWARDS_DMS) {
             (List::Servers, true) => Step::Show(List::Dms),
-            (List::Dms, true) => chat(&self.dm),
+            (List::Dms, true) => chat(self.dm.as_deref()),
             (List::Dms, false) => Step::Show(List::Servers),
-            (List::Servers, false) => chat(&self.channel),
+            (List::Servers, false) => chat(match server {
+                Some(server) => self.last_in(server),
+                None => self.channel.as_deref(),
+            }),
         }
     }
 }
-
 
 /// The screen edge a chat sits at: it comes in from there when it opens and goes back out to it when it closes (#464). The rule is that
 /// whatever a swipe opens or closes moves the way the finger moves: a DM opens with a swipe right, so it comes in from the left edge and
@@ -126,8 +158,8 @@ mod tests {
 
     fn kept() -> LastChats {
         let mut last = LastChats::default();
-        last.opened("!dm:x", true);
-        last.opened("!chan:x", false);
+        last.opened("!dm:x", true, None);
+        last.opened("!chan:x", false, None);
         last
     }
 
@@ -135,35 +167,59 @@ mod tests {
     fn the_four_swipes_go_where_the_finger_moves() {
         let last = kept();
         // Swipe right: the finger moves from the left to the right.
-        assert_eq!(last.swipe(List::Servers, Finger::Right), Step::Show(List::Dms));
-        assert_eq!(last.swipe(List::Dms, Finger::Right), Step::Open("!dm:x".into()));
+        assert_eq!(last.swipe(List::Servers, Finger::Right, None), Step::Show(List::Dms));
+        assert_eq!(last.swipe(List::Dms, Finger::Right, None), Step::Open("!dm:x".into()));
         // Swipe left: the other way.
-        assert_eq!(last.swipe(List::Dms, Finger::Left), Step::Show(List::Servers));
-        assert_eq!(last.swipe(List::Servers, Finger::Left), Step::Open("!chan:x".into()));
+        assert_eq!(last.swipe(List::Dms, Finger::Left, None), Step::Show(List::Servers));
+        assert_eq!(last.swipe(List::Servers, Finger::Left, None), Step::Open("!chan:x".into()));
     }
 
     #[test]
     fn with_no_last_chat_the_chat_swipes_do_nothing_but_the_list_swipes_still_work() {
         let none = LastChats::default();
-        assert_eq!(none.swipe(List::Dms, Finger::Right), Step::Nothing);
-        assert_eq!(none.swipe(List::Servers, Finger::Left), Step::Nothing);
-        assert_eq!(none.swipe(List::Servers, Finger::Right), Step::Show(List::Dms));
-        assert_eq!(none.swipe(List::Dms, Finger::Left), Step::Show(List::Servers));
+        assert_eq!(none.swipe(List::Dms, Finger::Right, None), Step::Nothing);
+        assert_eq!(none.swipe(List::Servers, Finger::Left, None), Step::Nothing);
+        assert_eq!(none.swipe(List::Servers, Finger::Right, None), Step::Show(List::Dms));
+        assert_eq!(none.swipe(List::Dms, Finger::Left, None), Step::Show(List::Servers));
         let mut dm_only = LastChats::default();
-        dm_only.opened("!dm:x", true);
-        assert_eq!(dm_only.swipe(List::Servers, Finger::Left), Step::Nothing, "a DM is not a server channel");
+        dm_only.opened("!dm:x", true, None);
+        assert_eq!(dm_only.swipe(List::Servers, Finger::Left, None), Step::Nothing, "a DM is not a server channel");
     }
 
     #[test]
     fn dms_and_channels_are_tracked_apart_and_survive_a_restart() {
         let mut last = kept();
-        last.opened("!dm2:x", true);
+        last.opened("!dm2:x", true, None);
         assert_eq!((last.dm.as_deref(), last.channel.as_deref()), (Some("!dm2:x"), Some("!chan:x")));
         assert_eq!(LastChats::parse(&last.encode()), last);
-        let only_channel = LastChats { dm: None, channel: Some("!c:x".into()) };
+        let only_channel = LastChats { dm: None, channel: Some("!c:x".into()), by_server: vec![] };
         assert_eq!(LastChats::parse(&only_channel.encode()), only_channel);
         assert_eq!(LastChats::parse(""), LastChats::default());
-        assert_eq!(LastChats::parse("garbage"), LastChats { dm: Some("garbage".into()), channel: None });
+        assert_eq!(LastChats::parse("garbage"), LastChats { dm: Some("garbage".into()), channel: None, by_server: vec![] });
+    }
+
+    #[test]
+    fn each_server_keeps_its_own_last_channel_and_a_swipe_left_opens_the_one_shown() {
+        let mut last = LastChats::default();
+        last.opened("!x:s", false, Some("space:!a:s"));
+        last.opened("!y:s", false, Some("space:!b:s"));
+        // Server A shown: its channel, whatever was opened last anywhere.
+        assert_eq!(last.swipe(List::Servers, Finger::Left, Some("space:!a:s")), Step::Open("!x:s".into()));
+        assert_eq!(last.swipe(List::Servers, Finger::Left, Some("space:!b:s")), Step::Open("!y:s".into()));
+        // A server nothing was opened in: nothing (not another server's channel).
+        assert_eq!(last.swipe(List::Servers, Finger::Left, Some("space:!c:s")), Step::Nothing);
+        // Opening another channel of A replaces only A's.
+        last.opened("!x2:s", false, Some("space:!a:s"));
+        assert_eq!(last.last_in("space:!a:s"), Some("!x2:s"));
+        assert_eq!(last.last_in("space:!b:s"), Some("!y:s"));
+        assert_eq!(last.by_server.len(), 2);
+        // A DM touches none of it.
+        last.opened("!dm:s", true, Some("space:!a:s"));
+        assert_eq!(last.last_in("space:!a:s"), Some("!x2:s"));
+        // They survive a restart, and a record from before (two lines) still reads.
+        assert_eq!(LastChats::parse(&last.encode()), last);
+        let old = LastChats::parse("!dm:x\n!chan:x");
+        assert_eq!((old.dm.as_deref(), old.channel.as_deref(), old.by_server.len()), (Some("!dm:x"), Some("!chan:x"), 0));
     }
 
     #[test]
@@ -177,7 +233,7 @@ mod tests {
             // The one that opens it moves away from there.
             let opening = if is_dm { TOWARDS_DMS } else { TOWARDS_SERVERS };
             assert_ne!(opening, edge);
-            assert!(matches!(kept().swipe(list_of_chat(is_dm), opening), Step::Open(_)));
+            assert!(matches!(kept().swipe(list_of_chat(is_dm), opening, None), Step::Open(_)));
         }
         // The lists: a swipe towards the DMs brings them in from the left, one towards Servers brings Servers in from the right.
         assert_eq!(list_edge(List::Dms), Finger::Left);
@@ -204,7 +260,7 @@ mod tests {
         assert_eq!(list_of_chat(false), List::Servers);
         // Each list's own swipe still opens its last chat.
         let last = kept();
-        assert_eq!(last.swipe(List::Dms, Finger::Right), Step::Open("!dm:x".into()));
-        assert_eq!(last.swipe(List::Servers, Finger::Left), Step::Open("!chan:x".into()));
+        assert_eq!(last.swipe(List::Dms, Finger::Right, None), Step::Open("!dm:x".into()));
+        assert_eq!(last.swipe(List::Servers, Finger::Left, None), Step::Open("!chan:x".into()));
     }
 }
