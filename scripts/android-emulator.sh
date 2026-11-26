@@ -67,7 +67,8 @@ if ! listed; then
         args+=(-no-snapshot-load)
     fi
     echo "emulator: starting ${args[*]}"
-    TMPDIR=/tmp setsid nohup emulator "${args[@]}" >target/emulator-"$port".log 2>&1 < /dev/null &
+    # The emulator outlives this job: it must not inherit the job's lane locks (fds 8, 9), or the lane stays locked while it runs.
+    TMPDIR=/tmp setsid nohup emulator "${args[@]}" >target/emulator-"$port".log 2>&1 </dev/null 8>&- 9>&- &
     adb start-server >/dev/null 2>&1 || true
 fi
 
