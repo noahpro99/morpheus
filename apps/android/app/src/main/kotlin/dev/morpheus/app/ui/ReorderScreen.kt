@@ -59,7 +59,7 @@ fun ReorderScreen(app: AppModel) {
         next.add(at + by, next.removeAt(at))
         app.setRailOrder(next)
     }
-    ScreenScaffold("reorder-screen", { TopBar(t("Servers"), backTag = "reorder-back", onBack = { app.closeReorder() }) }) { inner ->
+    ScreenScaffold("reorder-screen", { TopBar(t("Servers")) }) { inner ->
         LazyColumn(Modifier.fillMaxSize().padding(inner)) {
             items(rows, key = { it.key }) { row ->
                 val at = rows.indexOf(row)

@@ -164,6 +164,8 @@ class TestBridge(private val app: Application) {
         "sample" -> {
             // A quick tap (when `x` and `y` are given), then every 10 ms for `ms` where these tags are: [x, width] or null.
             if (request.has("x")) tapAt(request.getDouble("x").toFloat(), request.getDouble("y").toFloat())
+            // Or the system back (`back`: true) in place of the tap.
+            if (request.optBoolean("back")) onMain { pressBack() }
             // Or a drag (`swipe`: x1, y1, x2, y2, ms) that runs while the samples are taken.
             request.optJSONObject("swipe")?.let { s ->
                 Thread { swipe(s.getDouble("x1").toFloat(), s.getDouble("y1").toFloat(), s.getDouble("x2").toFloat(), s.getDouble("y2").toFloat(), s.getLong("ms"), false, 0) }.start()
@@ -213,15 +215,7 @@ class TestBridge(private val app: Application) {
             view.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
             view.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
         }
-        "back" -> onMain {
-            // A dialog (a sheet, an alert) over the activity takes the back key itself.
-            windows().lastOrNull { it.over && it.touchable }?.let { win ->
-                // The window's own back dispatcher (from API 33 a dialog gets no back key, the system calls its callback).
-                val dispatcher = win.view.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
-                if (dispatcher != null) { dispatcher.onBackPressed(); return@onMain }
-            }
-            (activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed() ?: error("no window")
-        }
+        "back" -> onMain { pressBack() }
         "attach" -> {
             val hook = RoomHooks.attach ?: error("no room is open")
             hook(request.getString("name"), request.getString("mime"), request.getString("text").toByteArray())
@@ -428,6 +422,16 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_DOWN, down, x, y)
         Thread.sleep(40)
         touch(MotionEvent.ACTION_UP, down, x, y)
+    }
+
+    /** The system back, as the gesture or the button sends it: to the window over the activity (a sheet, an alert) if there is one, else the activity. Runs on the main thread. */
+    private fun pressBack() {
+        windows().lastOrNull { it.over && it.touchable }?.let { win ->
+            // The window's own back dispatcher (from API 33 a dialog gets no back key, the system calls its callback).
+            val dispatcher = win.view.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
+            if (dispatcher != null) { dispatcher.onBackPressed(); return }
+        }
+        (activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed() ?: error("no window")
     }
 
     private fun tapAt(x: Float, y: Float) {

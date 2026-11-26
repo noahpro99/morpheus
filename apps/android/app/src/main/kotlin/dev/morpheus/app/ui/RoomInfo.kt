@@ -65,7 +65,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
 
     Box(Modifier.fillMaxSize().testTag("room-info")) {
         LaunchedEffect(problem) { problem?.let { Toasts.say(it, "info-error", long = true) } }
-        ScreenScaffold("room-info-screen", { TopBar(t("Room details"), backTag = "info-back", onBack = { onClose() }) }) { inner ->
+        ScreenScaffold("room-info-screen", { TopBar(t("Room details")) }) { inner ->
             LazyColumn(Modifier.fillMaxSize().padding(inner)) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(Space.xs), modifier = Modifier.padding(top = Space.md)) {

@@ -54,7 +54,7 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
     val newKey by model.newKey.collectAsState()
     var key by rememberSaveable { mutableStateOf("") }
 
-    ScreenScaffold("security", { TopBar(t("Encryption"), backTag = "back", onBack = { app.closeSecurity() }) }) { inner ->
+    ScreenScaffold("security", { TopBar(t("Encryption")) }) { inner ->
         Column(Modifier.padding(inner).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val current = status
             if (flow != null) {

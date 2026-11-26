@@ -160,8 +160,6 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
             TopBar(
                 if (threadRoot == null) title else t("Thread"),
-                backTag = if (threadRoot == null) "back" else "thread-back",
-                onBack = { onClose() },
                 titleTag = if (threadRoot == null) "room-title" else "thread-title",
                 onTitle = if (threadRoot == null) ({ info = true }) else null,
             ) {

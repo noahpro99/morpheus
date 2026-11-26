@@ -70,7 +70,7 @@ fun SettingsScreen(app: AppModel) {
 
     // What went wrong is said in a toast.
     LaunchedEffect(problem) { problem?.let { Toasts.say(it, "settings-error", long = true) } }
-    ScreenScaffold("settings-screen", { TopBar(t("Settings"), backTag = "settings-back", onBack = { app.closeSettings() }, titleTag = "settings-title") }) { inner ->
+    ScreenScaffold("settings-screen", { TopBar(t("Settings"), titleTag = "settings-title") }) { inner ->
         if (page == null) SettingsGroups(app, t, Modifier.padding(inner)) else Column(
             Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(vertical = Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),

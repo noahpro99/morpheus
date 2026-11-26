@@ -101,7 +101,7 @@ fun InboxScreen(model: AppModel, modifier: Modifier = Modifier) {
         .filter { !it.muted && (it.unread > 0UL || it.highlights > 0UL) }
         .sortedByDescending { it.highlights }
     ScreenScaffold("inbox-screen", modifier = modifier, topBar = {
-        TopBar(t("Inbox"), backTag = "inbox-back", onBack = { model.closeInbox() }) {
+        TopBar(t("Inbox")) {
             if (rooms.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_lucide_check_check, t("Mark read"), "mark-read", { model.markRoomsRead(rooms.map { it.id }) })
         }
     }) { inner ->

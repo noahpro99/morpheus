@@ -78,7 +78,6 @@ fun ShareScreen(model: AppModel, share: Share) {
     ScreenScaffold("share-screen", {
         TopBar(
             if (chosen == null) t("Share to") else t("Send to %{name}", "name" to chosen.name),
-            backTag = "share-back", onBack = { if (chosen != null) picked = null else ShareInbox.cancel() },
         )
     }) { inner ->
       Column(Modifier.fillMaxSize().padding(inner)) {

@@ -76,21 +76,21 @@ class ScreenShots(private val light: Boolean) {
 
     @Test
     fun empty_list() = shoot("empty-list") {
-        ScreenScaffold("empty", topBar = { TopBar("DMs", backTag = null) }) { pad ->
+        ScreenScaffold("empty", topBar = { TopBar("DMs") }) { pad ->
             EmptyState(R.drawable.ic_lucide_messages_square, "No conversations yet", "Start one with the + button.", Modifier.padding(pad))
         }
     }
 
     @Test
     fun loading_list() = shoot("loading-list") {
-        ScreenScaffold("loading", topBar = { TopBar("Rooms", backTag = null) }) { pad ->
+        ScreenScaffold("loading", topBar = { TopBar("Rooms") }) { pad ->
             SkeletonRows(modifier = Modifier.padding(pad))
         }
     }
 
     @Test
     fun settings_rows() = shoot("settings-rows") {
-        ScreenScaffold("settings", topBar = { TopBar("Settings", onBack = {}) }) { pad ->
+        ScreenScaffold("settings", topBar = { TopBar("Settings") }) { pad ->
             Column(Modifier.padding(pad).fillMaxWidth()) {
                 SectionHeader("Look")
                 ChoiceRow("System", chosen = true, tag = "a", onPick = {})
@@ -108,7 +108,7 @@ class ScreenShots(private val light: Boolean) {
     @Test
     fun room_list() = shoot("room-list") {
         ScreenScaffold("rooms", topBar = {
-            TopBar("Rooms", backTag = null) {
+            TopBar("Rooms") {
                 IconAction(R.drawable.ic_lucide_plus, "New", "new", {})
             }
         }) { pad ->
@@ -123,7 +123,7 @@ class ScreenShots(private val light: Boolean) {
 
     @Test
     fun search_and_badges() = shoot("search-and-badges") {
-        ScreenScaffold("search", topBar = { TopBar("Search", onBack = {}) }) { pad ->
+        ScreenScaffold("search", topBar = { TopBar("Search") }) { pad ->
             Column(Modifier.padding(pad).padding(16.dp)) {
                 SearchField("", {}, "Search messages", "q1")
                 SearchField("hello", {}, "Search messages", "q2", Modifier.padding(top = 16.dp))

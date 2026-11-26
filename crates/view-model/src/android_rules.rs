@@ -10,6 +10,8 @@
 //!    it one (a ListItem's slots, a Button, a dialog's title and text, ...).
 //! 3. No emoji or symbol characters as icons (icons are drawables; [`EMOJI_ALLOWED`] lists the exceptions).
 //! 4. No hand-made radio, switch, checkbox, search field, or clickable box posing as a button.
+//! 5. No back button: no back or arrow-left icon, no `navigationIcon`, no "Back" label (#481). Android has system back (the
+//!    gesture and the button), and a screen's `BackHandler` must reach the same place; [`BACK_ALLOWED`] lists what is not a back button.
 
 use std::path::{Path, PathBuf};
 
@@ -47,6 +49,13 @@ const EMOJI_ALLOWED: &[(&str, &str, &str)] = &[
     ("ui/RoomScreen.kt", "Say hi! 👋", "the button's label is the greeting it sends: a message, not an icon"),
     ("ui/RoomScreen.kt", "quickReactions", "the reactions offered on a message are emoji: they are what gets sent, not icons"),
 ];
+
+/// Where a back-looking icon or label is right: (file, the text, why). A back button is never right; this is for the icon used as
+/// something else (a calendar's previous month, a carousel).
+const BACK_ALLOWED: &[(&str, &str, &str)] = &[];
+
+/// What marks a back button in the source.
+const BACK_MARKS: &[&str] = &["ic_lucide_chevron_left", "ic_lucide_arrow_left", "ArrowBack", "navigationIcon", "t(\"Back\")", "backTag", "onBack =", "onBack:", "-back\"", "testTag(\"back\")"];
 
 /// Where a hand-made control is right: (file, the pattern, why).
 const HAND_MADE_ALLOWED: &[(&str, &str, &str)] = &[];
@@ -244,6 +253,7 @@ struct Used {
     text_style: Vec<(String, String)>,
     emoji: Vec<(String, String)>,
     hand_made: Vec<(String, String)>,
+    back: Vec<(String, String)>,
 }
 
 fn find_all(hay: &[u8], needle: &str) -> Vec<usize> {
@@ -345,6 +355,16 @@ fn violations() -> (Vec<String>, Used) {
                 continue;
             }
             out.push(format!("{file}:{}: emoji or symbol character: icons are drawables (R.drawable.ic_lucide_*): {}", n + 1, line.trim()));
+        }
+
+        // 5. Back buttons.
+        for (n, line) in code_str.lines().enumerate() {
+            let Some(mark) = BACK_MARKS.iter().find(|m| line.contains(**m)) else { continue };
+            if let Some((_, text, _)) = BACK_ALLOWED.iter().find(|(f, t, _)| *f == file && line.contains(t)) {
+                used.back.push((file.clone(), (*text).to_owned()));
+                continue;
+            }
+            out.push(format!("{file}:{}: back button ({mark}): no on-screen back; system back goes back: {}", n + 1, line.trim()));
         }
 
         // 4. Hand-made Material 3 controls.
@@ -451,6 +471,12 @@ fn the_android_kotlin_follows_the_material_3_rules() {
         assert!(!why.is_empty());
         if !used.hand_made.iter().any(|(uf, up)| uf == f && up == p) {
             stale.push(format!("HAND_MADE_ALLOWED {f} {p}"));
+        }
+    }
+    for (f, t, why) in BACK_ALLOWED {
+        assert!(!why.is_empty());
+        if !used.back.iter().any(|(uf, ut)| uf == f && ut == t) {
+            stale.push(format!("BACK_ALLOWED {f} {t}"));
         }
     }
     assert!(found.is_empty() && stale.is_empty(), "\n{} Material 3 rule violation(s):\n{}\nstale allow-list entries: {stale:?}\n", found.len(), found.join("\n"));

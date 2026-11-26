@@ -132,13 +132,19 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
         contentColor = MaterialTheme.colorScheme.onSurface,
         dragHandle = null,
     ) {
-        // Back closes the sheet from wherever it is (Material's own goes from full to half first).
-        androidx.activity.compose.BackHandler(enabled = live) { model.closeSheet() }
         androidx.compose.ui.viewinterop.AndroidView(factory = { c -> android.view.View(c).also { inSheet[0] = it } }, modifier = Modifier.size(0.dp))
         // What a tap on a message has always shown is tagged "actions" (the old tests look for it).
         if (live && request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
         var shown by remember { mutableStateOf<List<MenuRow>>(request.rows) }
         var trail by remember { mutableStateOf<List<MenuRow>>(emptyList()) }
+        // Back goes up one level of a submenu, and closes the sheet from the top (Material's own goes from full to half first).
+        androidx.activity.compose.BackHandler(enabled = live) {
+            if (trail.isEmpty()) model.closeSheet()
+            else {
+                shown = if (trail.size == 1) request.rows else trail[trail.size - 2].children
+                trail = trail.dropLast(1)
+            }
+        }
         // Tall enough that half the screen is a stop and nearly all of it is the other.
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).pointerInput(Unit) {
             awaitPointerEventScope {
@@ -148,12 +154,6 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
             Column(Modifier.fillMaxWidth().testTag("sheet-handle"), horizontalAlignment = Alignment.CenterHorizontally) {
                 BottomSheetDefaults.DragHandle()
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.lg).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (trail.isNotEmpty()) {
-                        IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), "sheet-back", {
-                            shown = if (trail.size == 1) request.rows else trail[trail.size - 2].children
-                            trail = trail.dropLast(1)
-                        })
-                    }
                     Text(trail.lastOrNull()?.label ?: request.title, Modifier.weight(1f).testTag("sheet-title"), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }

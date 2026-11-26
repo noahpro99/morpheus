@@ -73,7 +73,7 @@ fun NewScreen(app: AppModel) {
     }
 
     LaunchedEffect(problem) { problem?.let { Toasts.say(it, "new-error", long = true) } }
-    ScreenScaffold("new-screen", { TopBar(t("New"), backTag = "new-back", onBack = { app.closeNew() }) }) { inner ->
+    ScreenScaffold("new-screen", { TopBar(t("New")) }) { inner ->
       Column(Modifier.fillMaxSize().padding(inner)) {
         // Material 3 tabs that scroll, so every label is whole.
         androidx.compose.material3.ScrollableTabRow(

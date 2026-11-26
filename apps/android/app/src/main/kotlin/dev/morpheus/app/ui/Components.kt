@@ -83,14 +83,12 @@ fun IconAction(@androidx.annotation.DrawableRes icon: Int, description: String, 
     ) { GlyphIcon(icon, tint = tint) }
 }
 
-/** The bar on top of a screen: a Material 3 TopAppBar (back, a title, actions) in the colour of the rail, a hairline below. */
+/** The bar on top of a screen: a Material 3 TopAppBar (a title and actions; no back button: the system back goes back) in the colour of the rail, a hairline below. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopBar(
     title: String,
     modifier: Modifier = Modifier,
-    backTag: String? = "back",
-    onBack: (() -> Unit)? = null,
     titleTag: String? = null,
     onTitle: (() -> Unit)? = null,
     titleStyle: androidx.compose.ui.text.TextStyle? = null,
@@ -114,17 +112,12 @@ fun TopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             },
-            navigationIcon = {
-                if (onBack != null) IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_left, t("Back"), backTag ?: "back", onBack)
-                else Box(Modifier.width(Space.lg))
-            },
             actions = actions,
             windowInsets = WindowInsets(0),
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = fill,
                 scrolledContainerColor = fill,
                 titleContentColor = MaterialTheme.colorScheme.onBackground,
-                navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
                 actionIconContentColor = MaterialTheme.colorScheme.onBackground,
             ),
         )

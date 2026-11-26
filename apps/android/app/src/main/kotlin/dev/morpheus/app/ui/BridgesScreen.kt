@@ -69,7 +69,7 @@ fun BridgesScreen(app: AppModel) {
     LaunchedEffect(Unit) { find() }
 
     LaunchedEffect(note) { note?.let { Toasts.say(it, "bridges-note", long = true) } }
-    ScreenScaffold("bridges-screen", { TopBar(t("Bridges"), backTag = "bridges-back", onBack = { app.closeBridges() }) }) { inner ->
+    ScreenScaffold("bridges-screen", { TopBar(t("Bridges")) }) { inner ->
         Column(
             Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
