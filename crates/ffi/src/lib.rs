@@ -41,6 +41,7 @@ mod security;
 mod settings;
 mod theme_row;
 mod share;
+mod switcher;
 mod sidebar;
 mod sidebar_cache;
 mod timeline_cache;

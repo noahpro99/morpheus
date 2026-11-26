@@ -94,10 +94,12 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean =
     val tab = if (restoring && saved == Tab.Profile) Tab.Servers else saved
     // Back from Direct messages or Profile goes to Servers, the home; only from there does it leave the app.
     androidx.activity.compose.BackHandler(enabled = tab != Tab.Servers) { model.selectTab(Tab.Servers) }
-    Column(Modifier.fillMaxSize().testTag("signed-in")) {
-        ListsPane(model, tab, state, onOpenRoom, Modifier.weight(1f).fillMaxWidth())
-        if (tab != Tab.Profile) SecurityBanner(model)
-        BottomBar(model, tab)
+    Box(Modifier.fillMaxSize().testTag("signed-in")) {
+        Column(Modifier.fillMaxSize()) {
+            ListsPane(model, tab, state, onOpenRoom, Modifier.weight(1f).fillMaxWidth())
+            if (tab != Tab.Profile) SecurityBanner(model)
+        }
+        if (tab != Tab.Profile) SwipeHint(model, Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp, start = Space.lg, end = Space.lg))
     }
 }
 
@@ -177,135 +179,57 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     }
 }
 
-/** The rail of servers and the channels of the one it points at (also the pane a swipe in a chat uncovers). */
+/** The rail of servers and the channels of the one it points at, with the search bar under them (the quick switcher, #500). */
 @Composable
 fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier = Modifier, selectedRoom: String? = null) {
     val sidebar by model.sidebar.collectAsState()
     val key by model.scopeKey.collectAsState()
     val bar = sidebar
     if (bar == null) {
-        Row(modifier.fillMaxSize()) {
-            Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background))
-            Column(Modifier.weight(1f).fillMaxHeight().background(Palette.Surface).padding(top = Space.xl)) { SkeletonRows(8, avatars = false) }
+        Column(modifier.fillMaxSize().background(Palette.Background)) {
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background))
+                Column(Modifier.weight(1f).fillMaxHeight().background(Palette.Surface).padding(top = Space.xl)) { SkeletonRows(8, avatars = false) }
+            }
+            ListSearchBar(model, t("Search"))
         }
         return
     }
     val scopes = bar.scopes.filter { it.kind != ScopeKind.DMS }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
-    Row(modifier.fillMaxSize().background(Palette.Background)) {
-        Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = { model.openSheet(it.title) {
-            // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
-            model.morpheus.serverMenuRows(it.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
-        } }) { model.selectScope(it.key) }
-        if (scope == null) {
-            EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation with the + button."), Modifier.weight(1f).background(Palette.Surface))
-        } else {
-            val record by model.lastChats.collectAsState()
-            ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
+    // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
+    val manage: (ScopeItem) -> Unit = { shown ->
+        model.openSheet(shown.title) {
+            (if (shown.kind == ScopeKind.SERVER) model.morpheus.serverMenuRows(shown.key.removePrefix("space:")) else emptyList()) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
         }
+    }
+    Column(modifier.fillMaxSize().background(Palette.Background)) {
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
+            if (scope == null) {
+                EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation from the search bar."), Modifier.weight(1f).background(Palette.Surface))
+            } else {
+                val record by model.lastChats.collectAsState()
+                ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
+            }
+        }
+        if (scope == null) ListSearchBar(model, t("Search"))
+        else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
     }
 }
 
-/** Direct messages: one list of people, the same row as a channel. */
+/** Direct messages: one list of people, the same row as a channel, newest at the bottom, with the search bar under it. */
 @Composable
 fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
     val bar by model.sidebar.collectAsState()
     val scope = bar?.scopes?.firstOrNull { it.kind == ScopeKind.DMS }
-    if (scope == null) {
-        Column(Modifier.fillMaxSize().background(Palette.Surface).padding(top = Space.xl)) { SkeletonRows(8) }
-    } else {
-        ChannelList(scope, emptyList(), model, onOpenRoom, Modifier.fillMaxSize(), null)
-    }
-}
-
-/** The three tabs, DMs first: a pill behind the icon of the one in use, an unread mark on the ones with news. */
-@Composable
-fun BottomBar(model: AppModel, tab: Tab) {
-    val bar by model.sidebar.collectAsState()
-    val scopes = bar?.scopes.orEmpty()
-    val serverNews = scopes.filter { it.kind != ScopeKind.DMS }.sumOf { it.highlights }
-    val serverUnread = scopes.any { it.kind != ScopeKind.DMS && it.hasUnread }
-    val dmRooms = scopes.firstOrNull { it.kind == ScopeKind.DMS }?.sections?.flatMap { it.rooms }.orEmpty().filter { !it.muted }
-    val dmUnread = dmRooms.sumOf { it.unread + it.highlights }
-    // Material 3 NavigationBar for the bar and its colours; the items keep their own gestures (a long press, a double tap).
-    androidx.compose.material3.NavigationBar(
-        Modifier.fillMaxWidth().height(Size.tabBar).testTag("tab-bar"),
-        containerColor = MaterialTheme.colorScheme.background,
-        windowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-    ) {
-        run {
-            TabItem(Tab.Dms, tab, t("DMs"), "tab-dms", mentions = dmUnread, onClick = { model.selectTab(Tab.Dms) }) { on ->
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_messages_square, Modifier.testTag("tab-dms-bubble"), tint = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            TabItem(Tab.Servers, tab, t("Servers"), "tab-servers", mentions = serverNews, dot = serverUnread, onClick = { model.selectTab(Tab.Servers) }) { on ->
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            TabItem(Tab.Profile, tab, t("You"), "tab-profile", onClick = { model.selectTab(Tab.Profile) },
-                onLong = { model.openSheet(t("You")) { model.morpheus.accountMenuRows() } },
-                onSecondTap = { model.nextAccount() },
-            ) { on ->
-                // Your own picture, ringed when this is the tab in use.
-                val me = when (val s = model.screen.collectAsState().value) {
-                    is dev.morpheus.app.Screen.SignedIn -> s.account.userId
-                    is dev.morpheus.app.Screen.Restoring -> s.account.userId
-                    else -> ""
-                }
-                val names by People.names.collectAsState()
-                val own by model.ownProfile.collectAsState()
-                val ownKey by model.ownAvatarKey.collectAsState()
-                val name = own?.name ?: People.nameOf(me, names)
-                Box(
-                    Modifier.size(32.dp).then(if (on) Modifier.border(2.dp, Palette.Accent, CircleShape).testTag("tab-profile-ring") else Modifier),
-                    contentAlignment = Alignment.Center,
-                ) { Avatar(own?.avatar, name, 24.dp, Modifier.testTag("tab-profile-avatar"), key = ownKey) }
-            }
+    Column(Modifier.fillMaxSize().background(Palette.Surface)) {
+        if (scope == null) {
+            Column(Modifier.weight(1f).fillMaxWidth().padding(top = Space.xl)) { SkeletonRows(8) }
+        } else {
+            ChannelList(scope, emptyList(), model, onOpenRoom, Modifier.weight(1f).fillMaxWidth(), null)
         }
-    }
-}
-
-@Composable
-private fun RowScope.TabItem(
-    me: Tab, current: Tab, label: String, tag: String,
-    mentions: ULong = 0UL, dot: Boolean = false, onClick: () -> Unit, onLong: (() -> Unit)? = null, onSecondTap: (() -> Unit)? = null,
-    icon: @Composable (Boolean) -> Unit,
-) {
-    var lastTap by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val on = me == current
-    // No ripple or state layer on a press (it flashed behind the buttons, #466): the selected indicator is what moves. It grows on the item being
-    // selected and shrinks on the one being left, in step with the list slide (Material 3 NavigationBar indicator motion, #465 tokens).
-    val grow by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, Motion.slide(), label = "indicator")
-    Column(
-        Modifier
-            .weight(1f).fillMaxHeight()
-            // Taps by pointerInput, not clickable: that would merge the icon and avatar into one node (the tests look inside).
-            .pointerInput(onClick, onLong, onSecondTap) {
-                // A tap acts at once (no wait to see whether a second comes); a second one close behind it is the double tap.
-                detectTapGestures(
-                    onLongPress = onLong?.let { long -> { long() } },
-                    onTap = {
-                        val now = android.os.SystemClock.uptimeMillis()
-                        if (onSecondTap != null && now - lastTap < 350) { lastTap = 0; onSecondTap() } else { lastTap = now; onClick() }
-                    },
-                )
-            }
-            .semantics { role = Role.Tab; onClick { onClick(); true } }
-            .semantics { selected = on }
-            .testTag(tag),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(contentAlignment = Alignment.TopEnd) {
-            Box(
-                Modifier.height(32.dp).width(64.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(Modifier.height(32.dp).width(64.dp * grow).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer).testTag("$tag-indicator"))
-                icon(on)
-            }
-            if (mentions > 0UL) MentionPill(mentions, "$tag-badge", Modifier.padding(end = Space.xs))
-            else if (dot) Box(Modifier.padding(top = 4.dp, end = 16.dp).size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface).testTag("$tag-dot"))
-        }
-        Text(label, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelMedium, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+        ListSearchBar(model, t("Search DMs")) { MeButton(model) }
     }
 }
 
@@ -417,19 +341,11 @@ private fun ChannelList(
     Column(
         modifier.then(if (rounded) Modifier.clip(RoundedCornerShape(topStart = Radius.lg)) else Modifier).background(Palette.Surface).testTag("channel-panel"),
     ) {
-        TopBar(
-            if (scope.kind == ScopeKind.DMS) t("DMs") else scope.title,
-            backTag = null, titleTag = "scope-title", titleStyle = MaterialTheme.typography.titleLarge, container = MaterialTheme.colorScheme.surface,
-        ) {
-            val unreadIds = scope.sections.flatMap { it.rooms }.filter { it.unread > 0UL || it.highlights > 0UL }.map { it.id }
-            if (unreadIds.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_lucide_check_check, t("Mark read"), "mark-read", { model.markRoomsRead(unreadIds) }, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("New"), "new-button", { model.openNew() })
-        }
         if (scope.sections.all { it.rooms.isEmpty() } && invites.isEmpty()) {
             EmptyState(
                 if (scope.kind == ScopeKind.DMS) dev.morpheus.app.R.drawable.ic_lucide_messages_square else dev.morpheus.app.R.drawable.ic_lucide_hash,
                 if (scope.kind == ScopeKind.DMS) t("No conversations yet") else t("No channels yet"),
-                t("Start one with the + button."),
+                t("Start one from the search bar."),
             )
             return@Column
         }
@@ -438,15 +354,19 @@ private fun ChannelList(
             val listState = rememberLazyListState()
             // A new invitation goes above the rooms: the list stays on the room it was showing, so go and look.
             LaunchedEffect(invites.size) { if (invites.isNotEmpty()) listState.animateScrollToItem(0) }
+            // The DMs are anchored at the bottom, near the thumb: the most recent at the bottom, older ones going up (#471). The list is laid out
+            // from the bottom, so a section's rooms come before its heading (the heading is drawn above them).
+            val fromBottom = scope.kind == ScopeKind.DMS
             PullDown(Modifier.fillMaxSize().testTag("rooms-list")) {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = Space.lg)) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = fromBottom, contentPadding = PaddingValues(vertical = Space.lg)) {
                 if (invites.isNotEmpty()) {
                     item(key = "invites-heading") { SectionHeader(t("Invites")) }
                     items(invites, key = { "invite-${it.id}" }) { invite -> InviteCard(invite, model) }
                 }
                 for ((index, section) in scope.sections.withIndex()) {
-                    section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
+                    if (!fromBottom) section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
                     items(section.rooms, key = { it.id }) { room -> RoomRow(room, onOpenRoom, model, room.id == selectedRoom) }
+                    if (fromBottom) section.title?.let { item(key = "section-$index-$it") { SectionHeader(it) } }
                 }
             }
             }
@@ -564,9 +484,9 @@ private fun SecurityBanner(model: AppModel) {
 
 /** An invitation: who asked, to what, and the two answers. */
 @Composable
-private fun InviteCard(invite: InviteItem, model: AppModel) {
+fun InviteCard(invite: InviteItem, model: AppModel, modifier: Modifier = Modifier) {
     androidx.compose.material3.Card(
-        Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs).testTag("invite-${invite.name}"),
+        modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs).testTag("invite-${invite.name}"),
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Column(Modifier.padding(Space.md), verticalArrangement = Arrangement.spacedBy(Space.xs)) {

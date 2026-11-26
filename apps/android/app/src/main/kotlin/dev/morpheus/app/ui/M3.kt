@@ -26,11 +26,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -246,7 +249,10 @@ fun ScreenScaffold(tag: String, topBar: @Composable () -> Unit, modifier: Modifi
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun SearchField(query: String, onQuery: (String) -> Unit, hint: String, tag: String, modifier: Modifier = Modifier) {
+fun SearchField(
+    query: String, onQuery: (String) -> Unit, hint: String, tag: String, modifier: Modifier = Modifier,
+    focus: androidx.compose.ui.focus.FocusRequester? = null, onFocused: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null,
+) {
     val scheme = MaterialTheme.colorScheme
     val fill = ComposerColours.fill(scheme)
     val ink = ComposerColours.text(scheme)
@@ -264,10 +270,13 @@ fun SearchField(query: String, onQuery: (String) -> Unit, hint: String, tag: Str
         inputField = {
             androidx.compose.material3.SearchBarDefaults.InputField(
                 query = query, onQueryChange = onQuery, onSearch = {}, expanded = false, onExpandedChange = {},
-                modifier = Modifier.testTag(tag),
+                modifier = Modifier.testTag(tag)
+                    .semantics { contentDescription = hint }
+                    .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
+                    .then(if (onFocused != null) Modifier.onFocusChanged { if (it.hasFocus) onFocused() } else Modifier),
                 placeholder = { Text(hint) },
                 leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, tint = muted) },
-                trailingIcon = if (query.isEmpty()) null else ({
+                trailingIcon = if (trailing != null) trailing else if (query.isEmpty()) null else ({
                     IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Clear"), "$tag-clear", { onQuery("") }, tint = muted)
                 }),
                 colors = colours.inputFieldColors,

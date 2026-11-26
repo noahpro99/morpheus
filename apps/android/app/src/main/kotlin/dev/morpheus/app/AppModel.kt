@@ -141,6 +141,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         slide.leaveSign = 0
         _room.value = room
         keep("room", room.id)
+        rememberRecent(room.id)
         val record = uniffi.morpheus_ffi.lastChatsOpened(_lastChats.value, room.id, room.isDm, if (room.isDm) null else serverOf(room.id))
         keep("last-chats", record)
         _lastChats.value = record
@@ -367,6 +368,64 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    /** The quick switcher (the bottom search bar of each list, #500, #455), over whatever is on screen. */
+    private val _switcherOpen = MutableStateFlow(false)
+    val switcherOpen: StateFlow<Boolean> = _switcherOpen.asStateFlow()
+
+    fun openSwitcher() { _switcherOpen.value = true }
+
+    fun closeSwitcher() { _switcherOpen.value = false }
+
+    /** What the switcher shows for `query`, best first (the core's palette match, shared with the desktop's Ctrl+K). */
+    fun switcherSearch(query: String): List<uniffi.morpheus_ffi.SwitcherHit> =
+        morpheus.switcherSearch(query, recentRooms(), _room.value?.id, false)
+
+    /** The rooms opened last, newest first (kept across launches). */
+    private fun recentRooms(): List<String> = kept?.getString("recent-rooms", null).orEmpty().split('\n').filter { it.isNotEmpty() }
+
+    private fun rememberRecent(roomId: String) {
+        keep("recent-rooms", (listOf(roomId) + recentRooms().filter { it != roomId }).take(20).joinToString("\n"))
+    }
+
+    /** What a row of the switcher does. */
+    fun pickSwitcherHit(hit: uniffi.morpheus_ffi.SwitcherHit) {
+        closeSwitcher()
+        when (hit.kind) {
+            uniffi.morpheus_ffi.SwitcherKind.SERVER -> { selectScope("space:" + hit.id); selectTab(Tab.Servers) }
+            uniffi.morpheus_ffi.SwitcherKind.CHANNEL, uniffi.morpheus_ffi.SwitcherKind.DM -> openRoomWhenKnown(hit.id)
+            uniffi.morpheus_ffi.SwitcherKind.SETTING -> openSettings()
+            uniffi.morpheus_ffi.SwitcherKind.ACTION -> when {
+                hit.id == "Inbox" -> openInbox()
+                hit.id.startsWith("Settings") -> openSettings()
+                else -> openNew()
+            }
+        }
+    }
+
+    /** The inbox the bell opens: invites, and the rooms with news. */
+    private val _inboxOpen = MutableStateFlow(false)
+    val inboxOpen: StateFlow<Boolean> = _inboxOpen.asStateFlow()
+
+    fun openInbox() {
+        _inboxOpen.value = true
+        AppState.screen = "inbox"
+    }
+
+    fun closeInbox() {
+        _inboxOpen.value = false
+        AppState.screen = _screen.value.name()
+    }
+
+    /** The first-time hint that the lists are a swipe apart (shown once, #500). */
+    private val _swipeHint = MutableStateFlow(kept?.getString("swipe-hint-seen", null) == null)
+    val swipeHint: StateFlow<Boolean> = _swipeHint.asStateFlow()
+
+    fun dismissSwipeHint() {
+        if (!_swipeHint.value) return
+        keep("swipe-hint-seen", "1")
+        _swipeHint.value = false
+    }
+
     private val _newOpen = MutableStateFlow(false)
     val newOpen: StateFlow<Boolean> = _newOpen.asStateFlow()
 
@@ -543,6 +602,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     val tab: StateFlow<Tab> = _tab.asStateFlow()
 
     fun selectTab(tab: Tab) {
+        dismissSwipeHint()
         keep("tab", tab.name)
         // The bar on a room's channels pane: a tab leaves the room for it.
         if (_room.value != null) closeRoom()

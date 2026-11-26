@@ -72,6 +72,8 @@ fun Root(model: AppModel) {
                     val security by model.security.collectAsState()
                     val shown = security
                     val newOpen by model.newOpen.collectAsState()
+                    val inboxOpen by model.inboxOpen.collectAsState()
+                    val switcherOpen by model.switcherOpen.collectAsState()
                     val settingsOpen by model.settingsOpen.collectAsState()
                     val bridgesOpen by model.bridgesOpen.collectAsState()
                     val reorderOpen by model.reorderOpen.collectAsState()
@@ -98,6 +100,7 @@ fun Root(model: AppModel) {
                                     if (settingsOpen) { if (bridgesOpen) BridgesScreen(model) else SettingsScreen(model) }
                                     else if (reorderOpen) ReorderScreen(model)
                                     else if (newOpen) NewScreen(model)
+                                    else if (inboxOpen) InboxScreen(model)
                                     else if (securityOpen && shown != null) SecurityScreen(model, shown)
                                     else SignedInScreen(model, signedIn, restoring = restoring) { model.open(it) }
                                 }
@@ -114,6 +117,7 @@ fun Root(model: AppModel) {
                                 ) { RoomScreen(model, shownRoom) }
                             }
                             RoomPageHost(model)
+                            if (switcherOpen) QuickFind(model)
                         }
                     }
                 }

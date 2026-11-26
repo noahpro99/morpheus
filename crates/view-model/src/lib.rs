@@ -80,6 +80,7 @@ pub mod rich;
 pub mod rows;
 pub mod search;
 pub mod share;
+pub mod switcher;
 pub mod text_buffer;
 pub mod theme;
 pub mod theme_history;
