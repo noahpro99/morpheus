@@ -104,9 +104,15 @@ fn opposite(finger: Finger) -> Finger {
     }
 }
 
-/// Does a drag of `distance` pixels (either way) across a pane `width` pixels wide go through, or spring back? A sixth of the width.
+/// Does a drag of `distance` pixels (either way) across a pane `width` pixels wide go through, or spring back? A tenth of the width (#486).
 pub fn swipe_commits(distance: f32, width: f32) -> bool {
-    distance.abs() > width / 6.0
+    distance.abs() > width / 10.0
+}
+
+/// [`swipe_commits`], or a quick flick: the finger left going `velocity` pixels a second the same way as the drag, faster than two fifths of a
+/// pane width in a second, goes through after any drag past the touch slop (a fortieth of the width here).
+pub fn swipe_commits_with_velocity(distance: f32, velocity: f32, width: f32) -> bool {
+    swipe_commits(distance, width) || (distance.abs() > width / 40.0 && velocity * distance > 0.0 && velocity.abs() > width * 0.4)
 }
 
 /// The list a chat goes back to.
@@ -179,10 +185,16 @@ mod tests {
     }
 
     #[test]
-    fn a_drag_goes_through_past_a_sixth_of_the_width() {
-        assert!(swipe_commits(200.0, 1080.0));
-        assert!(swipe_commits(-200.0, 1080.0));
-        assert!(!swipe_commits(150.0, 1080.0));
+    fn a_drag_goes_through_past_a_tenth_of_the_width_or_on_a_quick_flick() {
+        assert!(swipe_commits(120.0, 1080.0));
+        assert!(swipe_commits(-120.0, 1080.0));
+        assert!(!swipe_commits(100.0, 1080.0));
+        // A flick commits a short drag; a slow one, a tiny one, or one lifted going the other way does not.
+        assert!(swipe_commits_with_velocity(60.0, 2000.0, 1080.0));
+        assert!(swipe_commits_with_velocity(-60.0, -2000.0, 1080.0));
+        assert!(!swipe_commits_with_velocity(60.0, 300.0, 1080.0));
+        assert!(!swipe_commits_with_velocity(10.0, 2000.0, 1080.0));
+        assert!(!swipe_commits_with_velocity(60.0, -2000.0, 1080.0));
     }
 
     #[test]

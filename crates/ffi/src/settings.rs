@@ -433,6 +433,12 @@ pub fn swipe_commits(distance: f32, width: f32) -> bool {
     morpheus_view_model::list_swipes::swipe_commits(distance, width)
 }
 
+/// [`swipe_commits`] or a quick flick: the finger lifted going `velocity` pixels a second (#486).
+#[uniffi::export]
+pub fn swipe_commits_with_velocity(distance: f32, velocity: f32, width: f32) -> bool {
+    morpheus_view_model::list_swipes::swipe_commits_with_velocity(distance, velocity, width)
+}
+
 /// What a swipe on `list` does; `finger_left` is the direction the finger moved.
 #[uniffi::export]
 pub fn list_swipe(kept: String, list: SwipeList, finger_left: bool) -> SwipeStep {

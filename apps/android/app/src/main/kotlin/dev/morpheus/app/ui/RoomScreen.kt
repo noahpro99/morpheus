@@ -658,14 +658,15 @@ private fun RoomPages(app: AppModel, room: RoomItem, panes: Boolean, isDm: Boole
         return
     }
     var leaveDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val flick = remember { FlickTracker() }
     val dragScope = androidx.compose.runtime.rememberCoroutineScope()
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     Box(Modifier.fillMaxSize().testTag("room-pager").pointerInput(Unit) {
         detectHorizontalDragGestures(
-            onDragStart = { leaveDrag = 0f; app.slide.dragging = true },
+            onDragStart = { leaveDrag = 0f; flick.reset(); app.slide.dragging = true },
             onDragEnd = {
-                if (uniffi.morpheus_ffi.swipeCommits(leaveDrag, size.width.toFloat())) {
+                if (flick.commits(leaveDrag, size.width.toFloat())) {
                     // Put the keyboard away as the chat goes.
                     focusManager.clearFocus()
                     keyboard?.hide()
@@ -676,7 +677,8 @@ private fun RoomPages(app: AppModel, room: RoomItem, panes: Boolean, isDm: Boole
                 app.slide.dragging = false
             },
             onDragCancel = { leaveDrag = 0f; app.slide.leaveSign = 0; app.slide.dragging = false },
-        ) { _, amount ->
+        ) { change, amount ->
+            flick.add(change, amount)
             leaveDrag += amount
             // The chat goes the way the finger goes, whichever that is.
             if (leaveDrag != 0f) app.slide.leaveSign = if (leaveDrag < 0f) -1 else 1

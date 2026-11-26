@@ -102,7 +102,7 @@ fun SignedInScreen(model: AppModel, state: Screen.SignedIn, restoring: Boolean =
 
 /**
  * The place the bar names. DMs and Servers are two pages side by side (DMs on the left, as the bar has them): a drag moves them with
- * the finger, a swipe past a sixth of the width commits (to the other list, or on to the last chat; which direction does what is in
+ * the finger, a swipe past a tenth of the width (or a quick flick) commits (to the other list, or on to the last chat; which direction does what is in
  * view-model list_swipes), a shorter one springs back, and a tap on the bar slides them the same way (#459). While they are at rest only
  * the one shown is composed. The lists scroll vertically, so this takes only sideways drags. You is not one of the pages.
  */
@@ -130,6 +130,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     BoxWithConstraints(modifier.clipToBounds().pointerInput(model, tab) {
         var total = 0f
         var peeking = false
+        val flick = FlickTracker()
         val list = if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS
         fun endPeek() {
             if (!peeking) return
@@ -138,12 +139,12 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
             scope.launch { slide.f.snapTo(0f) }
         }
         detectHorizontalDragGestures(
-            onDragStart = { total = 0f; dragging = true; peeking = false },
+            onDragStart = { total = 0f; flick.reset(); dragging = true; peeking = false },
             onDragEnd = {
                 dragging = false
-                val commits = uniffi.morpheus_ffi.swipeCommits(total, size.width.toFloat())
+                val commits = flick.commits(total, size.width.toFloat())
                 if (peeking) {
-                    // The chat came in under the finger: past a sixth it stays and comes the rest of the way, else it goes back out.
+                    // The chat came in under the finger: past a tenth it stays and comes the rest of the way, else it goes back out.
                     peeking = false
                     if (commits) model.peekCommitted() else model.closeRoom()
                 } else if (commits) {
@@ -155,8 +156,9 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
                 settle++
             },
             onDragCancel = { dragging = false; endPeek(); slide.dragging = false; total = 0f; settle++ },
-        ) { _, amount ->
+        ) { change, amount ->
             total += amount
+            flick.add(change, amount)
             // What the finger is bringing in, a chat (it opens at once and follows the finger) or the other list.
             val step = model.swipeStep(list, fingerLeft = total < 0f)
             if (step is uniffi.morpheus_ffi.SwipeStep.Open) {
