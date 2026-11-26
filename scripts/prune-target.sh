@@ -40,3 +40,19 @@ if [ "$size" -gt "$cap_gb" ]; then
   size=$(gb)
 fi
 echo "target/: ${before} GB -> ${size} GB"
+
+# The private e2e repo's target/ (it was 24 GB): the same cargo-sweep rule.
+e2e_target=${MORPHEUS_E2E_DIR:-../morpheus-e2e}/target
+if [ -d "$e2e_target" ]; then
+  if command -v cargo-sweep >/dev/null 2>&1; then
+    cargo-sweep sweep --recursive --time 2 "$e2e_target" >/dev/null 2>&1 || true
+  fi
+  echo "morpheus-e2e/target: $(( $(du -sk "$e2e_target" 2>/dev/null | cut -f1) / 1048576 )) GB"
+fi
+
+# Every `nix develop` leaves a /tmp/nix-shell.* dir of its own; thousands (23 GB) piled up.
+# Remove the user's that are over 6 hours old (a running job's is younger, or in use by a long one: -mmin is
+# on the dir itself, so a job over 6 hours old could lose it; none runs that long).
+find /tmp -maxdepth 1 -type d -name 'nix-shell.*' -user "$(id -un)" -mmin +360 -exec rm -rf {} + 2>/dev/null || true
+# And the per-job TMPDIRs of local-run.sh / envy-run.sh that a killed job left behind.
+find /tmp -maxdepth 1 -type d -name 'morpheus-job.*' -user "$(id -un)" -mmin +360 -exec rm -rf {} + 2>/dev/null || true
