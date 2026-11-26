@@ -28,7 +28,8 @@ on:
 
 concurrency:
   group: android-checks-${{ github.ref }}
-  cancel-in-progress: true
+  # On main every run finishes: the first one fills the caches, and a push every few minutes would cancel it forever.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
