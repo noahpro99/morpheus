@@ -1,7 +1,8 @@
 package dev.morpheus.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,14 +51,15 @@ fun railEntries(scopes: List<ScopeItem>, rows: List<RailRowItem>, open: Set<Stri
     return out
 }
 
-/** A folder on the rail: a rounded square with a folder glyph, the accent when the scope shown is in it, a dot when it holds news; a tap opens or closes it. */
+/** A folder on the rail (a long press opens its menu: rename, ungroup): a rounded square with a folder glyph, the accent when the scope shown is in it, a dot when it holds news; a tap opens or closes it. */
 @androidx.compose.runtime.Composable
-internal fun RailFolderBadge(folder: RailEntry.Folder, toggle: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+internal fun RailFolderBadge(folder: RailEntry.Folder, manage: () -> Unit, toggle: () -> Unit) {
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
     androidx.compose.foundation.layout.Box(Modifier.size(Size.rail, Size.railItem), contentAlignment = Alignment.Center) {
         androidx.compose.foundation.layout.Box(
             Modifier.size(48.dp).clip(shape).background(if (folder.selected) Palette.Accent else Palette.Raised)
-                .clickable { toggle() }
+                .combinedClickable(onClick = toggle, onLongClick = manage)
                 .semantics { contentDescription = folder.name }
                 .testTag("rail-folder-${folder.name}"),
             contentAlignment = Alignment.Center,

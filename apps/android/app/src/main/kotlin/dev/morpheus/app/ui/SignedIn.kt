@@ -222,7 +222,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
                 val record by model.lastChats.collectAsState()
                 ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
             }
-            Rail(scopes, railRows, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
+            Rail(scopes, railRows, scope?.key, { f -> model.openSheet(f.name) { model.morpheus.folderMenuRows(f.id, f.name) } }, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
         }
         if (scope == null) ListSearchBar(model, t("Search"))
         else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
@@ -248,7 +248,7 @@ fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
 }
 
 @Composable
-private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRowItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
+private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRowItem>, selected: String?, onFolder: (RailEntry.Folder) -> Unit, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
     // A long press on a server picks it up: drag it to where it goes. Let go without moving and the servers screen
     // (folders, order) opens. The order is the account's, so every device has it.
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.railItem + Space.lg).toPx() }
@@ -266,7 +266,7 @@ private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRow
     ) {
         items(entries, key = { it.key }) { entry ->
             if (entry is RailEntry.Folder) {
-                RailFolderBadge(entry) { openFolders = if (entry.id in openFolders) openFolders - entry.id else openFolders + entry.id }
+                RailFolderBadge(entry, { onFolder(entry) }) { openFolders = if (entry.id in openFolders) openFolders - entry.id else openFolders + entry.id }
                 return@items
             }
             val scope = (entry as RailEntry.Scope).item

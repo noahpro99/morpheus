@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -48,14 +51,17 @@ fun ModViewPage(app: AppModel, page: PageRequest) {
             busy = false
         }
     }
-    PageFrame(app, "Mod view", "page-mod-view") {
+    ScreenScaffold("page-mod-view", { TopBar(t("Mod view")) }) { inner ->
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().padding(inner).padding(Space.lg).testTag("mod-list"), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+        item {
         Text(userId, Modifier.testTag("mod-user"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(reason, { reason = it }, Modifier.fillMaxWidth().testTag("mod-reason"), singleLine = true, label = { Text(t("Reason (optional)")) })
         Note(ok, error)
+        }
         val list = rows
-        if (list == null) Skeleton(Modifier.fillMaxWidth().height(48.dp))
-        else if (list.isEmpty()) Text(t("You share no rooms with them."), Modifier.testTag("mod-none"), color = Palette.Muted)
-        else for (row in list) Column(Modifier.fillMaxWidth().testTag("mod-row-${row.name}"), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        if (list == null) item { Skeleton(Modifier.fillMaxWidth().height(48.dp)) }
+        else if (list.isEmpty()) item { Text(t("You share no rooms with them."), Modifier.testTag("mod-none"), color = Palette.Muted) }
+        else items(list, key = { it.roomId }) { row -> Column(Modifier.fillMaxWidth().testTag("mod-row-${row.name}"), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             Text(row.name, style = MaterialTheme.typography.titleMedium)
             Text(row.state, Modifier.testTag("mod-state-${row.name}"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
             if (row.roles.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -69,6 +75,7 @@ fun ModViewPage(app: AppModel, page: PageRequest) {
                 if (row.ban) TextButton({ act(t("Banned.")) { app.morpheus.modBan(row.roomId, userId, reason) } }, Modifier.testTag("mod-ban-${row.name}"), enabled = !busy) { Text(t("Ban")) }
                 if (row.unban) TextButton({ act(t("Unbanned.")) { app.morpheus.modUnban(row.roomId, userId) } }, Modifier.testTag("mod-unban-${row.name}"), enabled = !busy) { Text(t("Unban")) }
             }
-        }
+        } }
+    }
     }
 }
