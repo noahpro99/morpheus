@@ -242,6 +242,33 @@ class TestBridge(private val app: Application) {
         }
         "welcome" -> { AppState.welcome = request.getBoolean("on"); true }
         "manage_url" -> { AppState.manageUrl = request.getString("url"); true }
+        "paste_image" -> {
+            // As a keyboard or a paste hands a picture over: a content URI in a clip, offered to the window's receive-content listener.
+            val dir = java.io.File(app.cacheDir, "opened").apply { mkdirs() }
+            val file = java.io.File(dir, request.getString("name"))
+            file.writeBytes(android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))
+            val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.files", file)
+            onMain {
+                val view = activity?.currentFocus ?: root() ?: error("no window")
+                val clip = android.content.ClipData("picture", arrayOf("image/png"), android.content.ClipData.Item(uri))
+                val info = androidx.core.view.ContentInfoCompat.Builder(clip, androidx.core.view.ContentInfoCompat.SOURCE_CLIPBOARD).build()
+                var left = androidx.core.view.ViewCompat.performReceiveContent(view, info)
+                if (left != null) {
+                    // The keyboard's own way in: the text input session's commitContent.
+                    val editor = android.view.inputmethod.EditorInfo()
+                    val connection = view.onCreateInputConnection(editor) ?: error("no text input is open")
+                    val content = androidx.core.view.inputmethod.InputContentInfoCompat(uri, android.content.ClipDescription("picture", arrayOf("image/png")), null)
+                    val taken = androidx.core.view.inputmethod.InputConnectionCompat.commitContent(connection, editor, content, androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+                    if (!taken) error("nothing took the picture")
+                }
+            }
+            true
+        }
+        "pick_emoji_picture" -> {
+            val hook = RoomHooks.emoji ?: error("no page takes an emoji picture")
+            hook(request.getString("name"), android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))
+            true
+        }
         "pick_picture" -> {
             val hook = RoomHooks.picture ?: error("no page takes a picture")
             hook(request.getString("name"), android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))

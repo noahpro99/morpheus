@@ -236,6 +236,11 @@ class RoomModel(
 
     suspend fun emojiSections(query: String): List<EmojiSection> = emojiSectionsOf(query)
 
+    /** The panel as this device keeps it: the tone, the tones and the sections with the emoji used lately first (#420). */
+    fun emojiPanel(query: String): uniffi.morpheus_ffi.EmojiPanelInfo = morpheus.emojiPanel(query)
+    fun noteEmojiUsed(glyph: String) = morpheus.noteEmojiUsed(glyph)
+    fun setEmojiTone(number: UByte) = morpheus.setEmojiTone(number)
+
     suspend fun customEmoji(query: String): List<CustomEmojiSection> = try {
         timeline?.customEmoji(query).orEmpty()
     } catch (_: Exception) {

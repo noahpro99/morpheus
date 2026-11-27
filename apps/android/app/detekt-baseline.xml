@@ -19,51 +19,71 @@
     <ID>ComposableParamOrder:Components.kt$SkeletonRows</ID>
     <ID>ComposableParamOrder:Components.kt$UnreadBadge</ID>
     <ID>ComposableParamOrder:M3.kt$ConfirmDialog</ID>
-    <ID>ComposableParamOrder:SignedIn.kt$TabItem</ID>
+    <ID>CompositionLocalAllowlist:Avatar.kt$LocalOpenProfile</ID>
+    <ID>CompositionLocalAllowlist:Avatar.kt$LocalProfileRoom</ID>
+    <ID>CompositionLocalAllowlist:SelectText.kt$LocalSelection</ID>
     <ID>ContentSlotReused:RoomScreen.kt$chat</ID>
     <ID>LambdaParameterEventTrailing:M3.kt$onPick</ID>
     <ID>LambdaParameterEventTrailing:M3.kt$onToggle</ID>
     <ID>LambdaParameterInRestartableEffect:ActionSheet.kt$onGone</ID>
     <ID>LambdaParameterInRestartableEffect:RoomInfo.kt$onClose</ID>
+    <ID>LambdaParameterInRestartableEffect:RoomTools.kt$onError</ID>
+    <ID>ModifierMissing:Attachments.kt$AttachmentTiles</ID>
     <ID>ModifierMissing:BridgesScreen.kt$BridgesScreen</ID>
-    <ID>ModifierMissing:CallScreen.kt$CallBar</ID>
     <ID>ModifierMissing:CallScreen.kt$CallScreen</ID>
+    <ID>ModifierMissing:ChatBits.kt$StateOrText</ID>
+    <ID>ModifierMissing:ColourPicker.kt$ColourPicker</ID>
     <ID>ModifierMissing:Components.kt$SkeletonBar</ID>
     <ID>ModifierMissing:ComposerExtras.kt$CustomEmojiImage</ID>
     <ID>ModifierMissing:ComposerExtras.kt$EmojiPanel</ID>
     <ID>ModifierMissing:ComposerExtras.kt$SuggestionStrip</ID>
+    <ID>ModifierMissing:FastScroll.kt$FastScroll</ID>
     <ID>ModifierMissing:Links.kt$LinkedText</ID>
     <ID>ModifierMissing:Links.kt$PreviewCardView</ID>
-    <ID>ModifierMissing:Members.kt$MembersPane</ID>
+    <ID>ModifierMissing:MediaBodies.kt$VideoCard</ID>
     <ID>ModifierMissing:NewScreen.kt$NewScreen</ID>
+    <ID>ModifierMissing:ReorderPage.kt$ReorderPage</ID>
     <ID>ModifierMissing:ReorderScreen.kt$ReorderScreen</ID>
     <ID>ModifierMissing:RingCard.kt$RingCard</ID>
     <ID>ModifierMissing:RoomInfo.kt$RoomInfo</ID>
     <ID>ModifierMissing:RoomPages.kt$PicturePicker$Show</ID>
     <ID>ModifierMissing:RoomScreen.kt$RoomScreen</ID>
+    <ID>ModifierMissing:RoomTools.kt$EmojiPackSection</ID>
+    <ID>ModifierMissing:RoomTools.kt$FriendPicker</ID>
+    <ID>ModifierMissing:RoomTools.kt$PermissionsSection</ID>
     <ID>ModifierMissing:Root.kt$Root</ID>
     <ID>ModifierMissing:SearchPanel.kt$SearchPanel</ID>
     <ID>ModifierMissing:SecurityScreen.kt$SecurityScreen</ID>
+    <ID>ModifierMissing:SelectText.kt$SelectMark</ID>
+    <ID>ModifierMissing:SelectText.kt$SelectTextPage</ID>
+    <ID>ModifierMissing:SelectText.kt$SelectionBar</ID>
     <ID>ModifierMissing:SettingsScreen.kt$SettingsScreen</ID>
     <ID>ModifierMissing:ShareScreen.kt$ShareScreen</ID>
     <ID>ModifierMissing:SignIn.kt$SignInScreen</ID>
-    <ID>ModifierMissing:SignedIn.kt$BottomBar</ID>
     <ID>ModifierMissing:SignedIn.kt$DmsPane</ID>
     <ID>ModifierMissing:SignedIn.kt$SignedInScreen</ID>
     <ID>ModifierWithoutDefault:Components.kt$modifier</ID>
+    <ID>ModifierWithoutDefault:MediaBodies.kt$modifier</ID>
+    <ID>ModifierWithoutDefault:RichText.kt$modifier</ID>
     <ID>ModifierWithoutDefault:RoomScreen.kt$modifier</ID>
     <ID>ModifierWithoutDefault:SettingsScreen.kt$modifier</ID>
     <ID>ModifierWithoutDefault:SignedIn.kt$modifier</ID>
     <ID>MultipleEmitters:NewScreen.kt$Browse</ID>
+    <ID>MultipleEmitters:NewScreen.kt$Friends</ID>
+    <ID>MultipleEmitters:NewScreen.kt$OneField</ID>
     <ID>MultipleEmitters:VoiceSettings.kt$CameraCheck</ID>
     <ID>MultipleEmitters:VoiceSettings.kt$KeptPeople</ID>
     <ID>MultipleEmitters:VoiceSettings.kt$MicCheck</ID>
-    <ID>MultipleEmitters:NewScreen.kt$Friends</ID>
-    <ID>MultipleEmitters:NewScreen.kt$OneField</ID>
+    <ID>MutableStateAutoboxing:FastScroll.kt$mutableStateOf(0)</ID>
+    <ID>UnstableCollections:Attachments.kt$List&lt;Staged&gt;</ID>
     <ID>UnstableCollections:ComposerExtras.kt$List&lt;SuggestionItem&gt;</ID>
+    <ID>UnstableCollections:Links.kt$List&lt;uniffi.morpheus_ffi.RichLine&gt;</ID>
+    <ID>UnstableCollections:PictureViewer.kt$List&lt;MediaHandle&gt;</ID>
     <ID>UnstableCollections:ReorderScreen.kt$List&lt;RailRowItem&gt;</ID>
-    <ID>UnstableCollections:RoomScreen.kt$List&lt;TimelineRow&gt;</ID>
+    <ID>UnstableCollections:RoomScreen.kt$List&lt;Staged&gt;</ID>
     <ID>UnstableCollections:RoomScreen.kt$List&lt;String&gt;</ID>
+    <ID>UnstableCollections:RoomScreen.kt$List&lt;TimelineRow&gt;</ID>
+    <ID>UnstableCollections:SelectText.kt$List&lt;uniffi.morpheus_ffi.MessageItem&gt;</ID>
     <ID>UnstableCollections:ShareScreen.kt$List&lt;ShareTarget&gt;</ID>
     <ID>UnstableCollections:SignedIn.kt$List&lt;InviteItem&gt;</ID>
     <ID>UnstableCollections:SignedIn.kt$List&lt;ScopeItem&gt;</ID>

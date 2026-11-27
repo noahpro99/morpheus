@@ -18,6 +18,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -85,14 +90,28 @@ fun CustomEmojiImage(media: MediaHandle, size: Int) {
 @Composable
 fun EmojiPanel(model: RoomModel, height: androidx.compose.ui.unit.Dp, onPick: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
-    var sections by remember { mutableStateOf<List<EmojiSection>>(emptyList()) }
+    var panel by remember { mutableStateOf<uniffi.morpheus_ffi.EmojiPanelInfo?>(null) }
+    val sections = panel?.sections.orEmpty()
     var custom by remember { mutableStateOf<List<CustomEmojiSection>>(emptyList()) }
     LaunchedEffect(query) {
-        sections = model.emojiSections(query)
+        panel = model.emojiPanel(query)
         custom = model.customEmoji(query)
     }
     androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().height(height).background(Palette.Surface).testTag("emoji-panel")) {
         SearchField(query, { query = it }, t("Search emoji"), "emoji-search", Modifier.padding(8.dp))
+        // The skin tone: a raised hand in each, the chosen one marked; kept on this device.
+        panel?.let { shown ->
+            LazyRow(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(shown.tones, key = { it.number.toInt() }) { tone ->
+                    val chosen = tone.number == shown.tone
+                    androidx.compose.material3.FilledTonalIconToggleButton(
+                        chosen, { model.setEmojiTone(tone.number); panel = model.emojiPanel(query) },
+                        Modifier.size(44.dp).semantics { stateDescription = if (chosen) "selected" else "" }.testTag("emoji-tone-${tone.number}"),
+                        colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconToggleButtonColors(containerColor = Color.Transparent),
+                    ) { Text(tone.hand, style = MaterialTheme.typography.titleLarge) }
+                }
+            }
+        }
         LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.fillMaxWidth()) {
             for (pack in custom) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -107,11 +126,11 @@ fun EmojiPanel(model: RoomModel, height: androidx.compose.ui.unit.Dp, onPick: (S
             }
             for (section in sections) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(section.heading, Modifier.padding(8.dp), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
+                    Text(section.heading, Modifier.padding(8.dp).testTag("emoji-section-${section.heading}"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 gridItems(section.cells, key = { section.heading + it }) { glyph ->
                     Box(
-                        Modifier.size(44.dp).clickable { onPick(glyph) }.testTag("emoji-$glyph"),
+                        Modifier.size(44.dp).clickable { model.noteEmojiUsed(glyph); onPick(glyph) }.testTag("emoji-$glyph"),
                         contentAlignment = Alignment.Center,
                     ) { Text(glyph, style = MaterialTheme.typography.headlineSmall) }
                 }

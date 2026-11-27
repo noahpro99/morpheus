@@ -104,13 +104,8 @@ fun SettingsScreen(app: AppModel) {
                 ToggleRow(t("Material You"), MaterialYou.enabled, "theme-material-you", supporting = t("Use the colours of your wallpaper (Android 12 and up)")) { MaterialYou.set(context, it) }
             }
             var colour by remember { mutableStateOf("") }
-            Text(
-                if (look.colour != null) "${t("Custom colour")} #${look.colour}" else t("Custom colour"),
-                Modifier.padding(horizontal = Space.lg).testTag("custom-colour-label"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
-            )
-            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                OutlinedTextField(colour, { colour = it }, Modifier.weight(1f).testTag("colour-input"), placeholder = { Text("2a4d8f") }, singleLine = true)
-                Button({ attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.setCustomColour(colour)) } }, Modifier.testTag("colour-apply"), enabled = colour.isNotBlank()) { Text(t("Use")) }
+            ColourPicker(app.morpheus, colour, { colour = it }, if (look.colour != null) "${t("Custom colour")} #${look.colour}" else t("Custom colour")) {
+                attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.setCustomColour(colour)); app.morpheus.noteRecentColour(colour) }
             }
             val clipboard = LocalClipboardManager.current
             val code = remember(look) { app.morpheus.themeCode() }

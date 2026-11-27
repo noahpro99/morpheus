@@ -18,6 +18,10 @@ object RoomHooks {
     /** What the open page does with a picture that was picked (the e2e bridge calls it too). */
     @Volatile
     var picture: ((name: String, bytes: ByteArray) -> Unit)? = null
+
+    /** What the Edit room page does with a picture chosen as a custom emoji (the e2e bridge calls it too). */
+    @Volatile
+    var emoji: ((name: String, bytes: ByteArray) -> Unit)? = null
 }
 
 /** A picked file: its name, type and bytes. */
@@ -89,4 +93,17 @@ fun Context.copyImage(bytes: ByteArray, mime: String): Boolean = try {
     true
 } catch (_: Exception) {
     false
+}
+
+/** [read] without waiting for a thread: for a grant that is gone once the call that carried it returns (a picture from the keyboard). */
+fun Context.readNow(uri: Uri): Picked? = try {
+    var name = "file"
+    contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+        if (it.moveToFirst()) name = it.getString(0) ?: name
+    }
+    val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+    if (!name.contains('.')) name += "." + (android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "bin")
+    contentResolver.openInputStream(uri)?.use { Picked(name, mime, it.readBytes()) }
+} catch (_: Exception) {
+    null
 }

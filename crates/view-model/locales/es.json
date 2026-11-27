@@ -962,5 +962,17 @@
   "Custom theme": "Tema personalizado",
   "Recent custom themes": "Temas personalizados recientes",
   "Preview": "Vista previa",
-  "On": "Activado"
+  "On": "Activado",
+  "Rename %{name}": "Renombrar %{name}",
+  "No custom emoji yet.": "Aún no hay emoji personalizados.",
+  "Only people who may change this room can add emoji.": "Solo quienes pueden cambiar esta sala pueden añadir emoji.",
+  "Add emoji…": "Añadir emoji…",
+  "Invite %{count} friends": "Invitar a %{count} amigos",
+  "Invited %{count} people.": "Se invitó a %{count} personas.",
+  "Copy invite link": "Copiar enlace de invitación",
+  "Only a public room has a link. Invite people by name instead.": "Solo una sala pública tiene enlace. Invita a las personas por su nombre.",
+  "Reorder channels…": "Reordenar canales…",
+  "Reorder channels": "Reordenar canales",
+  "Hold a handle and drag a channel, or a category, to where it should go.": "Mantén pulsado el asa y arrastra un canal o una categoría adonde deba ir.",
+  "Choose a picture (PNG, JPEG, GIF or WebP) and give it a name.": "Elige una imagen (PNG, JPEG, GIF o WebP) y ponle un nombre."
 }

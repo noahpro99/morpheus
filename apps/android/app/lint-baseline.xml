@@ -8,7 +8,7 @@
         errorLine2="                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/CallService.kt"
-            line="40"
+            line="42"
             column="55"/>
     </issue>
 
@@ -19,7 +19,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/MainActivity.kt"
-            line="92"
+            line="134"
             column="13"/>
     </issue>
 
@@ -30,7 +30,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/MainActivity.kt"
-            line="93"
+            line="135"
             column="13"/>
     </issue>
 
@@ -41,7 +41,7 @@
         errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Theme.kt"
-            line="114"
+            line="120"
             column="35"/>
     </issue>
 
@@ -52,7 +52,7 @@
         errorLine2="                                                                       ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Theme.kt"
-            line="114"
+            line="120"
             column="72"/>
     </issue>
 
@@ -63,7 +63,7 @@
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="22"
+            line="23"
             column="9"/>
     </issue>
 
@@ -74,7 +74,7 @@
         errorLine2="                                                                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/CallModel.kt"
-            line="232"
+            line="372"
             column="101"/>
     </issue>
 
@@ -85,7 +85,7 @@
         errorLine2="                                                                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/CallModel.kt"
-            line="247"
+            line="388"
             column="90"/>
     </issue>
 
@@ -96,7 +96,7 @@
         errorLine2="                                                          ~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Components.kt"
-            line="184"
+            line="177"
             column="59"/>
     </issue>
 
@@ -107,7 +107,7 @@
         errorLine2="                  ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Avatar.kt"
-            line="72"
+            line="90"
             column="19"/>
     </issue>
 
@@ -118,7 +118,7 @@
         errorLine2="                  ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/ComposerExtras.kt"
-            line="78"
+            line="83"
             column="19"/>
     </issue>
 
@@ -129,7 +129,7 @@
         errorLine2="                ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Links.kt"
-            line="101"
+            line="105"
             column="17"/>
     </issue>
 
@@ -140,7 +140,62 @@
         errorLine2="                  ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Links.kt"
-            line="103"
+            line="107"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val drawable by produceState&lt;Drawable?>(null, media.key()) {"
+        errorLine2="                    ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/MediaBodies.kt"
+            line="56"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val poster by produceState&lt;ImageBitmap?>(null, body.thumbnail?.key()) { value = body.thumbnail?.let { Images.load(it, 720, 720) } }"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/MediaBodies.kt"
+            line="83"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val file by produceState&lt;File?>(null, media.key()) {"
+        errorLine2="                ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/MediaBodies.kt"
+            line="112"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, media.key()) { value = Images.load(media, 2048, 2048) }"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/PictureViewer.kt"
+            line="85"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, media.key()) { value = Images.load(media, 96, 96) }"
+        errorLine2="                  ~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/RichText.kt"
+            line="90"
             column="19"/>
     </issue>
 
@@ -151,18 +206,7 @@
         errorLine2="                  ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/RoomScreen.kt"
-            line="561"
-            column="19"/>
-    </issue>
-
-    <issue
-        id="ProduceStateDoesNotAssignValue"
-        message="produceState calls should assign `value` inside the producer lambda"
-        errorLine1="    val bitmap by produceState&lt;ImageBitmap?>(null, media.key()) { value = Images.load(media, 2048, 2048) }"
-        errorLine2="                  ~~~~~~~~~~~~">
-        <location
-            file="src/main/kotlin/dev/morpheus/app/ui/RoomScreen.kt"
-            line="654"
+            line="615"
             column="19"/>
     </issue>
 
@@ -184,14 +228,14 @@
         errorLine2="                   ~~~~~~~~~~~~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/ShareScreen.kt"
-            line="155"
+            line="154"
             column="20"/>
     </issue>
 
     <issue
         id="UnusedMaterial3ScaffoldPaddingParameter"
         message="Content padding parameter _ is not used"
-        errorLine1="        ) { _ -> Box(Modifier.fillMaxSize()) {"
+        errorLine1="        ) { _ -> Box(Modifier.fillMaxSize().tapHaptics()) {"
         errorLine2="            ~">
         <location
             file="src/main/kotlin/dev/morpheus/app/ui/Root.kt"
@@ -200,6 +244,16 @@
     </issue>
 
 
+    <issue
+        id="DiscouragedApi"
+        message="Use of this function is discouraged because resource reflection makes it harder to perform build optimizations and compile-time verification of code. It is much more efficient to retrieve resources by identifier (e.g. `R.foo.bar`) than by name (e.g. `getIdentifier(&quot;bar&quot;, &quot;foo&quot;, null)`)."
+        errorLine1="    val id = context.resources.getIdentifier(&quot;ic_lucide_&quot; + name.replace(&apos;-&apos;, &apos;_&apos;), &quot;drawable&quot;, context.packageName)"
+        errorLine2="                               ~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/SettingsScreen.kt"
+            line="236"
+            column="32"/>
+    </issue>
 
     <issue
         id="ExportedContentProvider"
@@ -219,7 +273,7 @@
         errorLine2="         ~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="24"
+            line="25"
             column="10"/>
     </issue>
 
@@ -230,7 +284,7 @@
         errorLine2="                             ~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="17"
+            line="18"
             column="30"/>
     </issue>
 
@@ -248,8 +302,30 @@
         errorLine2="        ^">
         <location
             file="src/main/kotlin/dev/morpheus/app/CallModel.kt"
-            line="255"
+            line="396"
             column="9"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var height by remember { mutableStateOf(0) }"
+        errorLine2="                             ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/FastScroll.kt"
+            line="52"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="FrequentlyChangedStateReadInComposition"
+        message="Frequently changing state should not be directly read in composable function"
+        errorLine1="    val index = state.firstVisibleItemIndex"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/kotlin/dev/morpheus/app/ui/FastScroll.kt"
+            line="63"
+            column="17"/>
     </issue>
 
 </issues>

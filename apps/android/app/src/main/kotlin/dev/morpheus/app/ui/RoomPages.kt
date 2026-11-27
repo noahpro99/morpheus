@@ -69,6 +69,7 @@ fun RoomPageHost(app: AppModel) {
             "edit" -> EditPage(app, page)
             "privacy" -> PrivacyPage(app, page)
             "overview" -> OverviewPage(app, page)
+            "reorder" -> ReorderPage(app, page.roomId)
             "reactions" -> ReactionsPage(app, page)
             "pinned" -> PinnedPage(app, page)
             "full-message" -> FullMessagePage(app, page)
@@ -100,7 +101,7 @@ fun RoomPageHost(app: AppModel) {
 internal fun PageFrame(app: AppModel, title: String, tag: String, content: @Composable () -> Unit) {
     ScreenScaffold(tag, { TopBar(t(title)) }) { inner ->
         val pageScroll = rememberScrollState()
-        Column(Modifier.stretch(pageScroll).fillMaxSize().padding(inner).verticalScroll(pageScroll).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
+        Column(Modifier.stretch(pageScroll).fillMaxSize().padding(inner).testTag("page-list").verticalScroll(pageScroll).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
     }
 }
 
@@ -210,11 +211,15 @@ private fun EditPage(app: AppModel, page: PageRequest) {
         picker.Show()
         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().testTag("edit-name"), singleLine = true, label = { Text(t("Name")) })
         OutlinedTextField(topic, { topic = it }, Modifier.fillMaxWidth().testTag("edit-topic"), label = { Text(t("Topic")) })
+        // A server's channels and categories are dragged into order on a page of their own (#424).
+        if (details?.isSpace == true) TextButton({ app.openPage(dev.morpheus.app.PageRequest("reorder", page.roomId)) }, Modifier.testTag("edit-reorder")) { Text(t("Reorder channels…")) }
         Button({
             scope.launch {
                 try { app.morpheus.editRoom(page.roomId, name, topic); ok = t("Saved."); error = null } catch (e: Exception) { error = e.message; ok = null }
             }
         }, Modifier.testTag("edit-save")) { Text(t("Save")) }
+        PermissionsSection(app, page.roomId, { ok = it; error = null }, { error = it; ok = null })
+        EmojiPackSection(app, page.roomId, { ok = it; error = null }, { error = it; ok = null })
         Note(ok, error)
         OutlinedButton({ app.openPage(PageRequest("permissions", page.roomId)) }, Modifier.fillMaxWidth().testTag("edit-permissions")) { Text(t("Permissions")) }
         OutlinedButton({ app.openPage(PageRequest("emoji", page.roomId)) }, Modifier.fillMaxWidth().testTag("edit-emoji")) { Text(t("Custom emoji")) }

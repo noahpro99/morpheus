@@ -143,11 +143,14 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val selection = remember(room.id, threadRoot) { MessageSelection() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch { context.read(uri)?.let { model.sendFile(it.name, it.mime, it.bytes) } }
+    // Files wait in the box as tiles and go with the next message, after its text (#418).
+    var staged by remember(room.id, threadRoot) { mutableStateOf(listOf<Staged>()) }
+    val stage: (String, String, ByteArray) -> Unit = { name, mime, bytes -> staged = staged + Staged(System.nanoTime(), name, mime, bytes) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        scope.launch { for (uri in uris) context.read(uri)?.let { stage(it.name, it.mime, it.bytes) } }
     }
     if (threadRoot == null) DisposableEffect(model) {
-        RoomHooks.attach = { name, mime, bytes -> model.sendFile(name, mime, bytes) }
+        RoomHooks.attach = { name, mime, bytes -> stage(name, mime, bytes) }
         onDispose { RoomHooks.attach = null }
     }
 
@@ -246,7 +249,12 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             Composer(
                 model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, title = if (threadRoot == null) title else null, dm = isDm, encrypted = encrypted, room = listed, server = serverOfRoom,
                 onComposing = { composing = it; pulled = false }, onEmpty = { boxEmpty = it }, onAttach = { picker.launch("*/*") },
-            ) { model.send(it) }
+                staged = staged, onUnstage = { gone -> staged = staged.filterNot { it.id == gone.id } }, onReceive = stage,
+            ) { text ->
+                // The text first, then each file; while a message is edited the files wait (the desktop's take_send).
+                if (text.isNotEmpty()) model.send(text)
+                if (editing == null) { for (file in staged) model.sendFile(file.name, file.mime, file.bytes); staged = emptyList() }
+            }
             if (threadRoot == null) {
                 val inThis = app.calls.snapshot.collectAsState().value?.roomId == room.id
                 ChatActions(
@@ -647,7 +655,8 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit,
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun Composer(
     model: RoomModel, draftKey: String, editing: MessageItem?, focus: androidx.compose.ui.focus.FocusRequester,
-    title: String?, dm: Boolean, encrypted: Boolean, room: RoomItem, server: uniffi.morpheus_ffi.ScopeItem?, onComposing: (Boolean) -> Unit, onEmpty: (Boolean) -> Unit, onAttach: () -> Unit, onSend: (String) -> Unit,
+    title: String?, dm: Boolean, encrypted: Boolean, room: RoomItem, server: uniffi.morpheus_ffi.ScopeItem?, onComposing: (Boolean) -> Unit, onEmpty: (Boolean) -> Unit, onAttach: () -> Unit,
+    staged: List<Staged>, onUnstage: (Staged) -> Unit, onReceive: (String, String, ByteArray) -> Unit, onSend: (String) -> Unit,
 ) {
     // What is typed is kept with its cursor or selected range for this chat or thread (#460), and comes back when it is opened again.
     var field by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
@@ -685,6 +694,7 @@ private fun Composer(
     }
     Column(Modifier.background(Palette.Background)) {
     SuggestionStrip(suggestions) { setText(it.draftAfter); suggestions = emptyList() }
+    AttachmentTiles(staged, onUnstage)
     // One rounded filled field (attach inside it on the left, emoji on the right) with the send button beside it, 8 dp from the
     // edges and from each other; every colour on the field is read against the field's fill (the contrast rule, #266).
     val scheme = MaterialTheme.colorScheme
@@ -704,6 +714,7 @@ private fun Composer(
         val touching by touches.collectIsPressedAsState()
         // A touch on the box while the emoji panel stands in the keyboard's place brings the keyboard back and closes the panel (#484).
         LaunchedEffect(touching) { if (touching && panel) { panel = false; keyboard?.show() } }
+        ReceivesFiles(LocalContext.current, { onReceive(it.name, it.mime, it.bytes) }) {
         Row(Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).clip(RoundedCornerShape(28.dp)).background(fill).testTag("composer-field"), verticalAlignment = Alignment.Bottom) {
         IconAction(dev.morpheus.app.R.drawable.ic_ms_add, t("Attach a file"), "attach", onAttach, Modifier.padding(start = inset, bottom = inset), tint = hint)
         androidx.compose.material3.TextField(
@@ -730,9 +741,10 @@ private fun Composer(
             Modifier.padding(end = inset, bottom = inset).size(Size.target).semantics { contentDescription = t("Emoji") }.testTag("emoji-button"),
         ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_mood, tint = hint) }
         }
+        }
         // Send is there only when there is something to send, and comes and goes on the motion tokens (#484).
         androidx.compose.animation.AnimatedVisibility(
-            text.isNotBlank(),
+            text.isNotBlank() || (staged.isNotEmpty() && editing == null),
             enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedDecelerate)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.Short4)) + androidx.compose.animation.expandHorizontally(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedDecelerate)),
             exit = androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(Motion.Short3, easing = Motion.EmphasizedAccelerate)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.Short3)) + androidx.compose.animation.shrinkHorizontally(androidx.compose.animation.core.tween(Motion.Short3, easing = Motion.EmphasizedAccelerate)),
         ) {

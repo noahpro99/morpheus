@@ -11,7 +11,7 @@ use morpheus_view_model::{
     emoji_picker,
 };
 
-use crate::{MediaHandle, RoomTimeline};
+use crate::{MediaHandle, Morpheus, RoomTimeline};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum SuggestionKind {
@@ -66,6 +66,58 @@ pub fn emoji_sections(query: String) -> Vec<EmojiSection> {
             cells: section.cells,
         })
         .collect()
+}
+
+/// One skin tone the panel offers: its number and a raised hand in it.
+#[derive(uniffi::Record)]
+pub struct ToneChoice {
+    pub number: u8,
+    pub hand: String,
+}
+
+/// The emoji panel as this device has it: the tone chosen, the tones offered and the sections (recently used first).
+#[derive(uniffi::Record)]
+pub struct EmojiPanelInfo {
+    pub tone: u8,
+    pub tones: Vec<ToneChoice>,
+    pub sections: Vec<EmojiSection>,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The emoji panel for `query` in the kept skin tone, with the emoji used lately in front (#420).
+    pub fn emoji_panel(&self, query: String) -> EmojiPanelInfo {
+        let kept = emoji_picker::Remembered::load(&self.dir);
+        let sections = emoji_picker::sections(&query, emoji_picker::tone_of(kept.tone), &kept.recent)
+            .into_iter()
+            .map(|section| EmojiSection {
+                heading: if section.heading.is_empty() { section.group.to_owned() } else { section.heading.to_owned() },
+                cells: section.cells,
+            })
+            .collect();
+        EmojiPanelInfo {
+            tone: kept.tone.unwrap_or(0),
+            tones: emoji_picker::TONES.iter().map(|(number, _, tone)| ToneChoice { number: *number, hand: emoji_picker::hand(*tone).to_owned() }).collect(),
+            sections,
+        }
+    }
+
+    /// `glyph` was used: it comes first among the recent ones (a custom emoji, `:name:`, is not kept here).
+    pub fn note_emoji_used(&self, glyph: String) {
+        if glyph.starts_with(':') {
+            return;
+        }
+        let mut kept = emoji_picker::Remembered::load(&self.dir);
+        kept.note_used(&glyph);
+        let _ = kept.save(&self.dir);
+    }
+
+    /// Keep skin tone `number` (0 is the default).
+    pub fn set_emoji_tone(&self, number: u8) {
+        let mut kept = emoji_picker::Remembered::load(&self.dir);
+        kept.set_tone(number);
+        let _ = kept.save(&self.dir);
+    }
 }
 
 /// The draft with `glyph` added after it.
