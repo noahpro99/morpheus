@@ -322,9 +322,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                         ScopeKind.SERVER -> ServerIcon(scope.avatar, scope.title, 48.dp, key = scope.avatarKey)
                         else -> GlyphIcon(
                             when (scope.kind) {
-                                ScopeKind.FAVORITES -> dev.morpheus.app.R.drawable.ic_ms_star
-                                ScopeKind.NETWORK -> dev.morpheus.app.R.drawable.ic_ms_link
-                                else -> dev.morpheus.app.R.drawable.ic_ms_tag
+                                ScopeKind.FAVORITES -> if (on) dev.morpheus.app.R.drawable.ic_ms_star_fill else dev.morpheus.app.R.drawable.ic_ms_star
+                                ScopeKind.NETWORK -> if (on) dev.morpheus.app.R.drawable.ic_ms_link_fill else dev.morpheus.app.R.drawable.ic_ms_link
+                                else -> if (on) dev.morpheus.app.R.drawable.ic_ms_tag_fill else dev.morpheus.app.R.drawable.ic_ms_tag
                             },
                             tint = if (on) onColour(Palette.Accent) else Palette.Text,
                         )
@@ -417,7 +417,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                         if (room.isDm) {
                             Avatar(room.avatar, room.name, Size.avatar, Modifier.testTag("dm-avatar-${room.name}"), key = room.avatarKey, userId = room.dmUser)
                         } else {
-                            GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_ms_volume_up else dev.morpheus.app.R.drawable.ic_ms_tag, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            GlyphIcon(if (room.isVoice) (if (selected) dev.morpheus.app.R.drawable.ic_ms_volume_up_fill else dev.morpheus.app.R.drawable.ic_ms_volume_up) else (if (selected) dev.morpheus.app.R.drawable.ic_ms_tag_fill else dev.morpheus.app.R.drawable.ic_ms_tag), Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_keep_fill, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp)
                         if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_notifications_off_fill, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)

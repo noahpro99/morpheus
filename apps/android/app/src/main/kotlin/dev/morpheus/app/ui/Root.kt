@@ -125,7 +125,7 @@ fun Root(model: AppModel) {
                             }
                             RoomPageHost(model)
                             if (going != null && !callOpen) FloatingCall(model.calls, going)
-                            if (switcherOpen) QuickFind(model)
+                            if (switcherOpen) SwipeBack(Modifier.fillMaxSize()) { QuickFind(model) }
                         }
                     }
                 }
