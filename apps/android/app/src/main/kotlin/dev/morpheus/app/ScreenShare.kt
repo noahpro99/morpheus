@@ -63,13 +63,16 @@ class ScreenShare(private val context: Context) : ScreenDriver {
         val worker = HandlerThread("morpheus-screen").also { it.start() }
         val images = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         images.setOnImageAvailableListener({ source ->
-            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
+            // (A share ending closes the reader while a picture is being read: that picture is let go, not a crash.)
+            val image = try { source.acquireLatestImage() } catch (_: IllegalStateException) { null } ?: return@setOnImageAvailableListener
             try {
                 val plane = image.planes[0]
                 val buffer = plane.buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
                 callScreenFrame(bytes, plane.rowStride.toUInt(), image.width.toUInt(), image.height.toUInt())
+                AppState.screenFrames++
+            } catch (_: IllegalStateException) {
             } finally {
                 image.close()
             }
@@ -93,6 +96,7 @@ class ScreenShare(private val context: Context) : ScreenDriver {
     private fun stop(keepProjection: Boolean) {
         display?.release()
         display = null
+        reader?.setOnImageAvailableListener(null, null)
         reader?.close()
         reader = null
         thread?.quitSafely()

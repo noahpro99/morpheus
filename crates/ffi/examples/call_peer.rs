@@ -52,6 +52,9 @@ impl CallListener for Calls {
             CallPhase::Ended => "ended",
         };
         println!("call {phase} watchers={} {}", snapshot.watchers, people.join(" "));
+        // What the call screen would draw: a kind and a user for each card, `+` for a card with a feed (a picture to receive).
+        let cards: Vec<String> = snapshot.cards.iter().map(|c| format!("{:?}:{}{}", c.kind, c.user_id, if c.feed.is_some() { "+" } else { "" })).collect();
+        println!("cards {}", cards.join(" "));
     }
 }
 
@@ -99,6 +102,12 @@ async fn main() {
         tokio::select! {
             _ = tick.tick() => {
                 let feeds = FEEDS.lock().expect("lock").clone();
+                if let Some(diag) = morpheus_call::call_diag() {
+                    let tracks: Vec<String> = diag.tracks.iter().map(|t| format!("{}:{}:{}:{}x{}:{:.0}fps:{:.0}bps", t.direction, t.label, t.implementation, t.width, t.height, t.fps, t.bitrate.unwrap_or(0.0))).collect();
+                    if !tracks.is_empty() {
+                        println!("tracks {}", tracks.join(" "));
+                    }
+                }
                 for (user, feed) in feeds {
                     if let Some(frame) = call.as_ref().and_then(|c| c.frame(feed)) {
                         println!("frame {user} {}x{} seq={}", frame.width, frame.height, frame.seq);

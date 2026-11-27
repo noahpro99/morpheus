@@ -865,6 +865,10 @@ object AppState {
     @Volatile
     var pipArmed: Boolean = false
 
+    /** Pictures of the phone's screen handed to the call since the app started (#432; the debug bridge reads it). */
+    @Volatile
+    var screenFrames: Long = 0
+
     /** What the debug bridge adds to the clock the room screen reads, to see a day roll over (0 otherwise). */
     @Volatile
     var clockOffsetMs: Long = 0L
