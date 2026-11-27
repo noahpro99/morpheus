@@ -83,45 +83,7 @@ fun SettingsScreen(app: AppModel) {
         ) {
             if (page == "Appearance") {
             Heading(t("Appearance"))
-            val context = androidx.compose.ui.platform.LocalContext.current
-            Row(Modifier.padding(horizontal = Space.lg).testTag("setting-theme"), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                for (choice in app.morpheus.themes()) {
-                    val chosen = look.theme == choice.key && look.colour == null && !(MaterialYou.enabled && MaterialYou.offered())
-                    OutlinedCard(
-                        { attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.setTheme(choice.key)) } },
-                        Modifier.testTag("theme-${choice.key}"),
-                        border = BorderStroke(2.dp, if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
-                    ) { Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Row(Modifier.size(width = 64.dp, height = 36.dp)) {
-                            Box(Modifier.weight(1f).fillMaxSize().background(argb(choice.sidebar)))
-                            Box(Modifier.weight(2f).fillMaxSize().background(argb(choice.chat)))
-                        }
-                        Text(t(choice.label), style = MaterialTheme.typography.bodySmall)
-                    } }
-                }
-            }
-            if (MaterialYou.offered()) {
-                ToggleRow(t("Material You"), MaterialYou.enabled, "theme-material-you", supporting = t("Use the colours of your wallpaper (Android 12 and up)")) { MaterialYou.set(context, it) }
-            }
-            var colour by remember { mutableStateOf("") }
-            ColourPicker(app.morpheus, colour, { colour = it }, if (look.colour != null) "${t("Custom colour")} #${look.colour}" else t("Custom colour")) {
-                attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.setCustomColour(colour)); app.morpheus.noteRecentColour(colour) }
-            }
-            val clipboard = LocalClipboardManager.current
-            val code = remember(look) { app.morpheus.themeCode() }
-            Text(t("Theme code"), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
-                Text(code, Modifier.weight(1f).testTag("theme-code"), style = MaterialTheme.typography.bodyMedium)
-                TextButton({ clipboard.setText(AnnotatedString(code)) }, Modifier.testTag("code-copy")) { Text(t("Copy")) }
-            }
-            // A message that carried a theme code opened this page with the code ready to use.
-            val offered by app.themeCodeToTry.collectAsState()
-            var pasted by remember { mutableStateOf(offered ?: "") }
-            LaunchedEffect(offered) { offered?.let { pasted = it; app.themeCodeTried() } }
-            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                OutlinedTextField(pasted, { pasted = it }, Modifier.weight(1f).testTag("code-input"), placeholder = { Text(t("Paste a theme code.")) }, singleLine = true)
-                Button({ attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }
-            }
+            ThemeSettings(app, t, look, ::attempt)
 
             Heading(t("Zoom"))
             val zoom by app.uiZoom.collectAsState()

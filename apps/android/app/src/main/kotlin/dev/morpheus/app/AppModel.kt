@@ -248,7 +248,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
                     is uniffi.morpheus_ffi.MenuOutcome.Switched -> accountChanged()
                     is uniffi.morpheus_ffi.MenuOutcome.AddAccount -> beginAddAccount()
                     is uniffi.morpheus_ffi.MenuOutcome.SignOut -> signOut()
-                    is uniffi.morpheus_ffi.MenuOutcome.Page -> _page.value = PageRequest(outcome.kind, outcome.roomId, outcome.extra)
+                    is uniffi.morpheus_ffi.MenuOutcome.Page -> if (outcome.kind == "edit-profile") { openSettings(); openSettingsPage("Account", null) } else _page.value = PageRequest(outcome.kind, outcome.roomId, outcome.extra)
                     is uniffi.morpheus_ffi.MenuOutcome.NotYet -> _error.value = t("%{name} is not on the phone yet.", "name" to outcome.label)
                     else -> request.onOutcome(outcome)
                 }
@@ -1044,6 +1044,10 @@ object AppState {
     /** The call screen keeps the display on (video is being watched; the debug bridge reports it). */
     @Volatile
     var keepScreenOn: Boolean = false
+
+    /** The last theme code handed to the share sheet (the debug bridge reports it). */
+    @Volatile
+    var lastShare: String = ""
 
     /** The last text a button copied for sharing (an invite link; the debug bridge reports it). */
     @Volatile

@@ -40,18 +40,18 @@ import uniffi.morpheus_ffi.Morpheus
  * would make, the colours used lately and Use. The sums are `view_model::theme` (through ffi), the desktop's.
  */
 @Composable
-fun ColourPicker(morpheus: Morpheus, text: String, onText: (String) -> Unit, label: String, onUse: () -> Unit) {
+fun ColourPicker(morpheus: Morpheus, text: String, onText: (String) -> Unit, label: String, refreshKey: Int = 0, showPreview: Boolean = true, showUse: Boolean = true, onUse: () -> Unit) {
     val hsv = remember(text) { uniffi.morpheus_ffi.colourHsv(text) }
     val preview = remember(text) { uniffi.morpheus_ffi.themePreview(text) }
     var seen by remember { mutableIntStateOf(0) }
-    val recent = remember(seen) { morpheus.recentColours() }
+    val recent = remember(seen, refreshKey) { morpheus.recentColours() }
     Column(Modifier.padding(horizontal = Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         // Where the colour sits on each slider (a colour not typed yet starts them in the middle); moving one writes the hex.
         val (h, s, v) = hsv?.let { Triple(it.h, it.s, it.v) } ?: Triple(220f, 0.5f, 0.5f)
         PickerSlider(t("Hue"), h, 0f..360f, "colour-hue") { onText(uniffi.morpheus_ffi.colourFromHsv(it, s, v)) }
         PickerSlider(t("Saturation"), s, 0f..1f, "colour-saturation") { onText(uniffi.morpheus_ffi.colourFromHsv(h, it, v)) }
         PickerSlider(t("Value"), v, 0f..1f, "colour-value") { onText(uniffi.morpheus_ffi.colourFromHsv(h, s, it)) }
-        preview?.let { ThemePreviewCard(it, text) }
+        if (showPreview) preview?.let { ThemePreviewCard(it, text) }
         if (recent.isNotEmpty()) {
             Text(t("Recent colours"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.testTag("recent-colours")) {
@@ -67,7 +67,7 @@ fun ColourPicker(morpheus: Morpheus, text: String, onText: (String) -> Unit, lab
         Text(label, Modifier.testTag("custom-colour-label"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             OutlinedTextField(text, onText, Modifier.weight(1f).testTag("colour-input"), placeholder = { Text("2a4d8f") }, singleLine = true)
-            Button({ onUse(); seen++ }, Modifier.testTag("colour-apply"), enabled = text.isNotBlank()) { Text(t("Use")) }
+            if (showUse) Button({ onUse(); seen++ }, Modifier.testTag("colour-apply"), enabled = text.isNotBlank()) { Text(t("Use")) }
         }
     }
 }

@@ -361,6 +361,7 @@ class TestBridge(private val app: Application) {
                 .put("noise_applied_key", dev.morpheus.app.CallModel.current?.noiseApplied() ?: JSONObject.NULL)
                 .put("last_link", AppState.lastLink)
                 .put("last_copy", AppState.lastCopy)
+                .put("last_share", AppState.lastShare)
                 .put("colour_source", AppState.colourSource)
                 .put("sdk", android.os.Build.VERSION.SDK_INT)
                 .put("colour_pairs", JSONArray(AppState.colourPairs.map { JSONArray().put(it.first).put(it.second.toLong() and 0xFFFFFF).put(it.third.toLong() and 0xFFFFFF) }))

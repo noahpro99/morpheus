@@ -213,3 +213,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// How a look would draw: the two halves of its swatch (the rail and the chat) and its accent, `0xRRGGBB`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ThemeSwatch {
+    pub sidebar: u32,
+    pub chat: u32,
+    pub accent: u32,
+}
+
+#[uniffi::export]
+pub fn look_swatch(theme: String, colour: Option<String>) -> Result<ThemeSwatch, crate::FfiError> {
+    let base = Theme::from_key(&theme);
+    match colour {
+        Some(text) => {
+            let c = theme::parse_hex(&text).ok_or_else(|| crate::FfiError::Failed {
+                reason: format!("\"{}\" is not a colour (six hex digits, like 2a4d8f).", text.trim()),
+            })?;
+            let p = derive(c);
+            Ok(ThemeSwatch { sidebar: p.bg_sidebar, chat: p.bg_chat, accent: c })
+        }
+        None => {
+            let (sidebar, chat) = theme::swatch(base);
+            Ok(ThemeSwatch { sidebar, chat, accent: 0 })
+        }
+    }
+}

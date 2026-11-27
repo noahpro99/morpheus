@@ -230,3 +230,90 @@ pub fn call_mic_frames_cleaned() -> u64 {
         0
     }
 }
+
+const SCREEN_QUALITY_FILE: &str = "screen-quality.json";
+
+/// One choice of the shared screen's size or speed.
+#[derive(Clone, uniffi::Record)]
+pub struct ShareChoice {
+    pub key: String,
+    pub label: String,
+    pub selected: bool,
+}
+
+/// How the phone's screen share is sent: the size (a phone is tall: the box turns with it) and the speed.
+#[derive(Clone, uniffi::Record)]
+pub struct ShareSetup {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+}
+
+/// The size a `width` x `height` phone screen is sent at under `quality`: fitted in the resolution's box turned the way the screen is.
+fn fit_for_phone(quality: morpheus_call::ScreenQuality, width: u32, height: u32) -> (u32, u32) {
+    if height > width {
+        let (w, h) = quality.fit(height, width);
+        (h, w)
+    } else {
+        quality.fit(width, height)
+    }
+}
+
+impl Morpheus {
+    fn screen_quality(&self) -> morpheus_call::ScreenQuality {
+        std::fs::read_to_string(self.dir.join(SCREEN_QUALITY_FILE)).map(|json| morpheus_call::ScreenQuality::from_json(&json)).unwrap_or_default()
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The sizes the shared screen can be sent at (the desktop's 720p, 1080p, Source), the kept one selected.
+    pub fn share_resolutions(&self) -> Vec<ShareChoice> {
+        let q = self.screen_quality();
+        morpheus_call::ScreenResolution::ALL.into_iter().map(|r| ShareChoice { key: r.key().to_owned(), label: r.label().to_owned(), selected: r == q.resolution }).collect()
+    }
+
+    /// The frame rates offered (15, 30, 60), the kept one selected.
+    pub fn share_frame_rates(&self) -> Vec<ShareChoice> {
+        let q = self.screen_quality();
+        morpheus_call::SCREEN_FPS.into_iter().map(|f| ShareChoice { key: f.to_string(), label: format!("{f} fps"), selected: f == q.fps }).collect()
+    }
+
+    /// Choose the size (`720`, `1080`, `source`); kept, and used by the next share.
+    pub fn set_share_resolution(&self, key: String) {
+        if let Some(resolution) = morpheus_call::ScreenResolution::from_key(&key) {
+            let _ = std::fs::write(self.dir.join(SCREEN_QUALITY_FILE), morpheus_call::ScreenQuality { resolution, ..self.screen_quality() }.to_json());
+        }
+    }
+
+    /// Choose the frame rate; kept, and used by the next share.
+    pub fn set_share_frame_rate(&self, fps: u32) {
+        let _ = std::fs::write(self.dir.join(SCREEN_QUALITY_FILE), morpheus_call::ScreenQuality { fps, ..self.screen_quality() }.normalized().to_json());
+    }
+
+    /// What to capture a `width` x `height` screen at for the share that starts now.
+    pub fn share_setup(&self, width: u32, height: u32) -> ShareSetup {
+        let q = self.screen_quality();
+        let (w, h) = fit_for_phone(q, width, height);
+        ShareSetup { width: w, height: h, fps: q.fps }
+    }
+}
+
+#[cfg(test)]
+mod share_tests {
+    use super::*;
+    use morpheus_call::{ScreenQuality, ScreenResolution};
+
+    fn q(resolution: ScreenResolution) -> ScreenQuality {
+        ScreenQuality { resolution, ..ScreenQuality::default() }
+    }
+
+    #[test]
+    fn a_tall_phone_is_fitted_in_the_box_turned_its_way() {
+        assert_eq!(fit_for_phone(q(ScreenResolution::P720), 1080, 2400), (576, 1280));
+        assert_eq!(fit_for_phone(q(ScreenResolution::P1080), 1080, 2400), (864, 1920));
+        assert_eq!(fit_for_phone(q(ScreenResolution::Source), 1080, 2400), (1080, 2400));
+        assert_eq!(fit_for_phone(q(ScreenResolution::P720), 2400, 1080), (1280, 576), "landscape fits the box as it is");
+        assert_eq!(fit_for_phone(q(ScreenResolution::P1080), 700, 1200), (700, 1200), "never enlarged");
+    }
+}

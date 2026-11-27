@@ -56,15 +56,20 @@ class ScreenShare(private val context: Context) : ScreenDriver {
         val taken = projection ?: return emptyList()
         stop(keepProjection = true)
         val metrics = context.resources.displayMetrics
-        // Sent at most 720 wide: even sizes, the screen's own proportions.
-        val scale = minOf(1f, 720f / metrics.widthPixels)
-        val width = (metrics.widthPixels * scale).toInt() and 1.inv()
-        val height = (metrics.heightPixels * scale).toInt() and 1.inv()
+        // Sent at the size and speed chosen in Voice & Video (#544): even sizes, the screen's own proportions.
+        val setup = (context.applicationContext as MorpheusApp).morpheus.shareSetup(metrics.widthPixels.toUInt(), metrics.heightPixels.toUInt())
+        val width = setup.width.toInt()
+        val height = setup.height.toInt()
+        val gap = 1000L / setup.fps.toLong()
+        var last = 0L
         val worker = HandlerThread("morpheus-screen").also { it.start() }
         val images = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         images.setOnImageAvailableListener({ source ->
             // (A share ending closes the reader while a picture is being read: that picture is let go, not a crash.)
             val image = try { source.acquireLatestImage() } catch (_: IllegalStateException) { null } ?: return@setOnImageAvailableListener
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - last < gap) { image.close(); return@setOnImageAvailableListener }
+            last = now
             try {
                 val plane = image.planes[0]
                 val buffer = plane.buffer

@@ -60,6 +60,7 @@ internal fun VoicePage(app: AppModel, t: (String) -> String) {
         SmallHeading(t("Microphone"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
         MicCheck(app, t, inCall)
         NoiseSuppression(app, t)
+        ScreenShareQuality(app, t)
         SmallHeading(t("People"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
         KeptPeople(app, t)
     }
@@ -210,4 +211,14 @@ private fun NoiseSuppression(app: AppModel, t: (String) -> String) {
     // A call going made its microphone before this changed: say so (what it uses is what the call began with).
     val applied = if (inCall) app.calls.noiseApplied() else null
     if (applied != null && applied != choices.firstOrNull { it.selected }?.key) Text(t("This call keeps the setting it started with."), Modifier.padding(horizontal = Space.lg).testTag("noise-suppression-next"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+}
+
+/** The shared screen's quality (#544): the size (720p, 1080p, Source) and the frame rate, kept, used by the next share. */
+@Composable
+private fun ScreenShareQuality(app: AppModel, t: (String) -> String) {
+    var sizes by remember { mutableStateOf(app.morpheus.shareResolutions()) }
+    var rates by remember { mutableStateOf(app.morpheus.shareFrameRates()) }
+    SectionHeader(t("Screen share quality"))
+    for (size in sizes) ChoiceRow(size.label, size.selected, "share-size-${size.key}") { app.morpheus.setShareResolution(size.key); sizes = app.morpheus.shareResolutions() }
+    for (rate in rates) ChoiceRow(rate.label, rate.selected, "share-fps-${rate.key}") { app.morpheus.setShareFrameRate(rate.key.toUInt()); rates = app.morpheus.shareFrameRates() }
 }
