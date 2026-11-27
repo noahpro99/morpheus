@@ -60,7 +60,8 @@ fun ChannelOrderPage(app: AppModel, page: PageRequest) {
     }
     ScreenScaffold("page-channel-order", { TopBar(t("Reorder channels")) }) { inner ->
         val shown = layout
-        LazyColumn(Modifier.fillMaxSize().padding(inner).testTag("channel-order-list")) {
+        val orderList = androidx.compose.foundation.lazy.rememberLazyListState()
+        LazyColumn(Modifier.stretch(orderList).fillMaxSize().padding(inner).testTag("channel-order-list"), state = orderList) {
             if (shown != null && !shown.canEdit) item { Text(t("Only people who may change this server's channels can reorder them."), Modifier.padding(Space.lg).testTag("channel-order-note"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium) }
             error?.let { item { Text(it, Modifier.padding(Space.lg).testTag("page-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) } }
             items(shown?.places.orEmpty(), key = { it.id }) { place ->
