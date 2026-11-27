@@ -18,10 +18,6 @@ object RoomHooks {
     /** What the open page does with a picture that was picked (the e2e bridge calls it too). */
     @Volatile
     var picture: ((name: String, bytes: ByteArray) -> Unit)? = null
-
-    /** What the Edit room page does with a picture chosen as a custom emoji (the e2e bridge calls it too). */
-    @Volatile
-    var emoji: ((name: String, bytes: ByteArray) -> Unit)? = null
 }
 
 /** A picked file: its name, type and bytes. */

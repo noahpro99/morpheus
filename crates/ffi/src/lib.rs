@@ -42,8 +42,6 @@ mod people;
 mod push;
 mod rings;
 mod room_info;
-mod reorder;
-mod room_extras;
 mod room_pages;
 mod room_settings;
 mod security;

@@ -264,11 +264,6 @@ class TestBridge(private val app: Application) {
             }
             true
         }
-        "pick_emoji_picture" -> {
-            val hook = RoomHooks.emoji ?: error("no page takes an emoji picture")
-            hook(request.getString("name"), android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))
-            true
-        }
         "pick_picture" -> {
             val hook = RoomHooks.picture ?: error("no page takes a picture")
             hook(request.getString("name"), android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))
