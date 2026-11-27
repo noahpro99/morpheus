@@ -193,18 +193,21 @@ private fun KeptPeople(app: AppModel, t: (String) -> String) {
 }
 
 /**
- * Noise suppression (#434): the phone's own (WebRTC's) on or off for the microphone of the next call. Partial: the desktop's stronger
- * model with Standard and Strong is not on phones yet (#531), so there is one switch. A call going keeps what it began with.
+ * Noise suppression (#434, #531): Off, Standard (the phone's own, WebRTC's) or Strong (DeepFilterNet 3, the desktop's model, run on the microphone the app captures),
+ * for the microphone of the next call; a call going keeps what it began with.
  */
 @Composable
 private fun NoiseSuppression(app: AppModel, t: (String) -> String) {
-    var on by remember { mutableStateOf(app.calls.noiseSuppressionOn()) }
+    var choices by remember { mutableStateOf(app.calls.noiseChoices()) }
     val inCall = app.calls.snapshot.collectAsState().value != null
-    ToggleRow(t("Noise suppression"), on, "noise-suppression", supporting = t("Cleans your microphone from the next call. The desktop's stronger suppression is not on phones yet.")) {
-        on = it
-        app.calls.setNoiseSuppression(it)
+    SectionHeader(t("Noise suppression"))
+    for (choice in choices) {
+        ChoiceRow(choice.label, choice.selected, "noise-${choice.key}", supporting = choice.about) {
+            app.calls.setNoiseChoice(choice.key)
+            choices = app.calls.noiseChoices()
+        }
     }
     // A call going made its microphone before this changed: say so (what it uses is what the call began with).
-    val applied = if (inCall) app.calls.noiseSuppressionApplied() else null
-    if (applied != null && applied != on) Text(t("This call keeps the setting it started with."), Modifier.padding(horizontal = Space.lg).testTag("noise-suppression-next"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+    val applied = if (inCall) app.calls.noiseApplied() else null
+    if (applied != null && applied != choices.firstOrNull { it.selected }?.key) Text(t("This call keeps the setting it started with."), Modifier.padding(horizontal = Space.lg).testTag("noise-suppression-next"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
 }

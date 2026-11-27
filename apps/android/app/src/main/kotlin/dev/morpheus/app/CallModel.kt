@@ -27,6 +27,9 @@ import uniffi.morpheus_ffi.Morpheus
 class CallModel(private val morpheus: Morpheus, private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /** The microphone, captured here while a call cleans it with the strong noise model (#531). */
+    val micPump = MicPump()
+
     private val _snapshot = MutableStateFlow<CallSnapshot?>(null)
 
     /** What the call screen shows; null when there is no call. */
@@ -107,6 +110,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         CallSounds.changed(before, snapshot)
         speakers.value = snapshot.roomId to snapshot.people.filter { it.speaking }.map { it.userId }.toSet()
         ringbackStep(snapshot)
+        if (snapshot.phase == CallPhase.CONNECTED) micPump.start() else if (snapshot.phase == CallPhase.ENDED || snapshot.phase == CallPhase.FAILED) micPump.stop()
         // The notification's Mute and Deafen say what the call is now.
         if (before != null && (before.muted != snapshot.muted || before.deafened != snapshot.deafened) && snapshot.phase != CallPhase.ENDED) {
             CallService.update(context, snapshot.roomId, snapshot.roomName, snapshot.muted, snapshot.deafened)
@@ -312,9 +316,12 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     fun volumes() = morpheus.callVolumes()
 
     /** Noise suppression (#434): kept, and used by the microphone of the next call; a call going keeps what it began with. */
-    fun noiseSuppressionOn() = morpheus.noiseSuppressionOn()
-    fun setNoiseSuppression(on: Boolean) = morpheus.setNoiseSuppressionOn(on)
-    fun noiseSuppressionApplied(): Boolean? = morpheus.appliedNoiseSuppressionOn()
+    fun noiseChoices() = morpheus.noiseChoices()
+    fun setNoiseChoice(key: String) = morpheus.setNoiseChoice(key)
+
+    /** What the call going made its microphone with: `off`, `standard` or `strong`; null outside a call. */
+    fun noiseApplied(): String? = morpheus.appliedNoiseChoice()
+    fun noiseSuppressionApplied(): Boolean? = noiseApplied()?.let { it != "off" }
     fun setInputVolume(volume: Float) = morpheus.setCallInputVolume(volume)
 
     fun setOutputVolume(volume: Float) {

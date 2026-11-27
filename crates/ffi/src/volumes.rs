@@ -36,7 +36,8 @@ impl Morpheus {
     fn noise_mode(&self) -> morpheus_call::NoiseSuppression {
         std::fs::read_to_string(self.dir.join(NOISE_FILE))
             .map(|json| morpheus_call::NoiseSuppression::from_json(&json))
-            .unwrap_or_default()
+            // A phone starts on Standard: Strong (DeepFilterNet) is a choice, until a phone has measured how it runs (#531).
+            .unwrap_or(morpheus_call::NoiseSuppression::Standard)
     }
 
     fn account_id(&self) -> String {
@@ -57,21 +58,28 @@ impl Morpheus {
 
 #[uniffi::export]
 impl Morpheus {
-    /// Whether the call's noise suppression is on (#434): WebRTC's, the only one a phone has (the desktop's stronger model is #531). On
-    /// unless Off was chosen.
-    pub fn noise_suppression_on(&self) -> bool {
-        self.noise_mode().platform_on()
+    /// The noise suppression choices (#434, #531): Off, Standard (the phone's own, WebRTC's) and Strong (DeepFilterNet, the desktop's model), the kept one selected.
+    pub fn noise_choices(&self) -> Vec<NoiseChoice> {
+        let chosen = self.noise_mode();
+        morpheus_call::NoiseSuppression::ALL
+            .into_iter()
+            .map(|mode| NoiseChoice { key: mode.key().to_owned(), label: morpheus_view_model::i18n::t(mode.label()), about: morpheus_view_model::i18n::t(mode.about()), selected: mode == chosen })
+            .collect()
     }
 
-    /// Turn the call's noise suppression on or off; kept, and applied from the next call (the microphone of one going is made already).
-    pub fn set_noise_suppression_on(&self, on: bool) {
-        let mode = if on { morpheus_call::NoiseSuppression::Standard } else { morpheus_call::NoiseSuppression::Off };
-        let _ = std::fs::write(self.dir.join(NOISE_FILE), mode.to_json());
+    /// Choose one (kept; the microphone of the next call is made with it).
+    pub fn set_noise_choice(&self, key: String) {
+        if let Some(mode) = morpheus_call::NoiseSuppression::from_key(&key) {
+            let _ = std::fs::write(self.dir.join(NOISE_FILE), mode.to_json());
+        }
     }
 
-    /// Whether the call going made its microphone with noise suppression on or off; `None` outside a call.
-    pub fn applied_noise_suppression_on(&self) -> Option<bool> {
-        morpheus_call::applied_platform_noise_suppression()
+    /// What the call going made its microphone with (`off`, `standard` or `strong`); `None` outside a call.
+    pub fn applied_noise_choice(&self) -> Option<String> {
+        if morpheus_call::applied_noise_suppression() == Some(morpheus_call::NoiseSuppression::Strong) {
+            return Some("strong".to_owned());
+        }
+        morpheus_call::applied_platform_noise_suppression().map(|on| if on { "standard" } else { "off" }.to_owned())
     }
 
     /// The microphone's and the speaker's volume, as last kept.
@@ -172,4 +180,53 @@ impl Morpheus {
 #[uniffi::export]
 pub fn mic_test_level(previous: f32, samples: Vec<i16>) -> f32 {
     morpheus_view_model::mic_meter::mic_level(previous, &samples)
+}
+
+/// One choice of noise suppression.
+#[derive(Clone, uniffi::Record)]
+pub struct NoiseChoice {
+    pub key: String,
+    pub label: String,
+    pub about: String,
+    pub selected: bool,
+}
+
+/// A call going wants the phone's microphone frames (Strong noise suppression, #531): the app captures it and gives it to [`push_call_mic`].
+#[uniffi::export]
+pub fn call_mic_wanted() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        morpheus_call::mic_wanted()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
+/// The phone's microphone: 16-bit samples, 48 kHz, mono, any number at a time; cleaned and sent into the call. False when no call wants them.
+#[uniffi::export]
+pub fn push_call_mic(samples: Vec<i16>) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        morpheus_call::push_mic(&samples)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = samples;
+        false
+    }
+}
+
+/// How many cleaned 10 ms frames the strong noise model has sent into calls (tests read it).
+#[uniffi::export]
+pub fn call_mic_frames_cleaned() -> u64 {
+    #[cfg(target_os = "android")]
+    {
+        morpheus_call::frames_cleaned()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        0
+    }
 }

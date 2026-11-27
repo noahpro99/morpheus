@@ -31,6 +31,9 @@ sha2 = "0.10"
 # changed its API).
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 cpal = "0.18"
+
+# A phone cleans its microphone the same way (the app captures it): src/android_mic.rs.
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos", target_os = "android"))'.dependencies]
 deep_filter = { git = "https://github.com/Rikorose/DeepFilterNet", rev = "7b14b895fe7fc42cab72b4a4c1e49c982bd6404b", default-features = false, features = ["tract", "default-model"] }
 ndarray = "0.15"
 tract-core = "=0.21.4"

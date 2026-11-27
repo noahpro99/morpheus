@@ -77,9 +77,15 @@ mod screen_sources_win;
 pub(crate) use screen_sources_win::WindowsSources;
 pub use platform_camera::{PlatformCamera, camera_frame, camera_preview_on, set_platform_camera, start_camera_preview, stop_camera_preview};
 pub use platform_screen::{PlatformScreen, screen_frame, set_platform_screen};
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos", target_os = "android"))]
 #[path = "denoise.rs"]
 mod denoise;
+#[cfg(any(target_os = "android", test))]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[path = "android_mic.rs"]
+mod android_mic;
+#[cfg(target_os = "android")]
+pub use android_mic::{frames_cleaned, mic_wanted, push_mic};
 #[cfg(target_os = "windows")]
 #[path = "ducking.rs"]
 mod ducking;
@@ -466,13 +472,40 @@ impl Call {
                 if let Err(err) = devices::apply(&platform, false) {
                     warn!(%err, "chosen device unavailable, using the default");
                 }
-                (platform.rtc_source(), Some(platform), MicGuard(None))
+                #[allow(unused_mut)]
+                let mut return_source: Option<NativeAudioSource> = None;
+                // Strong (#531): the app captures the microphone and this cleans it with DeepFilterNet; the platform's own recording is off.
+                #[cfg(target_os = "android")]
+                if crate::noise_suppression() == crate::NoiseSuppression::Strong {
+                    let source = NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 0);
+                    if android_mic::attach(source.clone()) {
+                        use livekit::webrtc::peer_connection_factory::native::PeerConnectionFactoryExt as _;
+                        livekit::rtc_engine::lk_runtime::LkRuntime::instance().pc_factory().set_adm_recording_enabled(false);
+                        crate::noise::note_applied(Some(crate::NoiseSuppression::Strong));
+                        return_source = Some(source);
+                    }
+                }
+                match return_source {
+                    Some(source) => (RtcAudioSource::Native(source), Some(platform), MicGuard(Some(0))),
+                    None => (platform.rtc_source(), Some(platform), MicGuard(None)),
+                }
             }
             AudioMode::Tone => {
                 let source =
                     NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 100);
-                tasks.push(tokio::spawn(play_tone(source.clone())));
-                (RtcAudioSource::Native(source), None, MicGuard(None))
+                #[allow(unused_mut)]
+                let mut return_tone_cleaned = false;
+                // Strong on a phone: the tone goes through the cleaner, as a microphone would (#531).
+                #[cfg(target_os = "android")]
+                if crate::noise_suppression() == crate::NoiseSuppression::Strong && android_mic::attach(source.clone()) {
+                    crate::noise::note_applied(Some(crate::NoiseSuppression::Strong));
+                    tasks.push(tokio::spawn(android_mic::tone_through_cleaner()));
+                    return_tone_cleaned = true;
+                }
+                if !return_tone_cleaned {
+                    tasks.push(tokio::spawn(play_tone(source.clone())));
+                }
+                (RtcAudioSource::Native(source), None, MicGuard(if return_tone_cleaned { Some(0) } else { None }))
             }
         };
         let mic = LocalAudioTrack::create_audio_track("microphone", source);
