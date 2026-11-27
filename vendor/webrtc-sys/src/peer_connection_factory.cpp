@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <atomic>
 #include "livekit/peer_connection_factory.h"
 
 #include <memory>
@@ -371,13 +372,19 @@ std::shared_ptr<AudioTrack> PeerConnectionFactory::create_audio_track(
           peer_factory_->CreateAudioTrack(label.c_str(), source->get().get())));
 }
 
+static std::atomic<bool> g_device_noise_suppression{true};
+
+void set_device_noise_suppression(bool on) {
+  g_device_noise_suppression.store(on);
+}
+
 std::shared_ptr<AudioTrack> PeerConnectionFactory::create_device_audio_track(
     rust::String label) const {
   // Create an audio source that uses the ADM for capture
   webrtc::AudioOptions audio_options;
   audio_options.echo_cancellation = true;
   audio_options.auto_gain_control = true;
-  audio_options.noise_suppression = true;
+  audio_options.noise_suppression = g_device_noise_suppression.load();
 
   webrtc::scoped_refptr<webrtc::AudioSourceInterface> audio_source =
       peer_factory_->CreateAudioSource(audio_options);

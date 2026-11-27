@@ -310,6 +310,11 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     }
 
     fun volumes() = morpheus.callVolumes()
+
+    /** Noise suppression (#434): kept, and used by the microphone of the next call; a call going keeps what it began with. */
+    fun noiseSuppressionOn() = morpheus.noiseSuppressionOn()
+    fun setNoiseSuppression(on: Boolean) = morpheus.setNoiseSuppressionOn(on)
+    fun noiseSuppressionApplied(): Boolean? = morpheus.appliedNoiseSuppressionOn()
     fun setInputVolume(volume: Float) = morpheus.setCallInputVolume(volume)
 
     fun setOutputVolume(volume: Float) {

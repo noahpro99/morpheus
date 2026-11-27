@@ -59,6 +59,7 @@ internal fun VoicePage(app: AppModel, t: (String) -> String) {
         CameraCheck(app, t, inCall)
         SmallHeading(t("Microphone"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
         MicCheck(app, t, inCall)
+        NoiseSuppression(app, t)
         SmallHeading(t("People"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
         KeptPeople(app, t)
     }
@@ -115,7 +116,7 @@ private fun CameraCheck(app: AppModel, t: (String) -> String, inCall: Boolean) {
         val shown = picture
         Box(Modifier.padding(horizontal = Space.lg).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Divider), contentAlignment = Alignment.Center) {
             if (shown != null) Image(shown, t("Camera preview"), Modifier.fillMaxWidth().testTag("camera-preview-picture"), contentScale = ContentScale.Fit)
-            else Text("…", color = Palette.Muted)
+            else Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
@@ -155,13 +156,13 @@ private fun MicCheck(app: AppModel, t: (String) -> String, inCall: Boolean) {
             else if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) begin()
             else ask.launch(android.Manifest.permission.RECORD_AUDIO)
         }, Modifier.testTag("mic-test")) { Text(if (on) t("Stop testing") else t("Test microphone")) }
-        Text("${Math.round(level * 100)}%", Modifier.testTag("mic-test-level"))
+        Text("${Math.round(level * 100)}%", Modifier.testTag("mic-test-level"), style = MaterialTheme.typography.bodyLarge)
     }
     Box(Modifier.padding(horizontal = Space.lg).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Palette.Divider)) {
         Box(Modifier.fillMaxWidth(level.coerceIn(0f, 1f)).height(8.dp).background(MaterialTheme.colorScheme.primary))
     }
     Text(t("Shows how loud you are. Nothing is played back."), Modifier.padding(horizontal = Space.lg), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
-    test.problem?.let { Text(it, Modifier.padding(horizontal = Space.lg).testTag("mic-test-failed"), color = MaterialTheme.colorScheme.error) }
+    test.problem?.let { Text(it, Modifier.padding(horizontal = Space.lg).testTag("mic-test-failed"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
 }
 
 /** What the debug bridge reads of the running test. */
@@ -189,4 +190,21 @@ private fun KeptPeople(app: AppModel, t: (String) -> String) {
             ToggleRow(t("Muted for me"), muted, "kept-mute-$local") { _ -> muted = !muted; app.calls.setPersonVolume(person.userId, volume, muted) }
         }
     }
+}
+
+/**
+ * Noise suppression (#434): the phone's own (WebRTC's) on or off for the microphone of the next call. Partial: the desktop's stronger
+ * model with Standard and Strong is not on phones yet (#531), so there is one switch. A call going keeps what it began with.
+ */
+@Composable
+private fun NoiseSuppression(app: AppModel, t: (String) -> String) {
+    var on by remember { mutableStateOf(app.calls.noiseSuppressionOn()) }
+    val inCall = app.calls.snapshot.collectAsState().value != null
+    ToggleRow(t("Noise suppression"), on, "noise-suppression", supporting = t("Cleans your microphone from the next call. The desktop's stronger suppression is not on phones yet.")) {
+        on = it
+        app.calls.setNoiseSuppression(it)
+    }
+    // A call going made its microphone before this changed: say so (what it uses is what the call began with).
+    val applied = if (inCall) app.calls.noiseSuppressionApplied() else null
+    if (applied != null && applied != on) Text(t("This call keeps the setting it started with."), Modifier.padding(horizontal = Space.lg).testTag("noise-suppression-next"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
 }

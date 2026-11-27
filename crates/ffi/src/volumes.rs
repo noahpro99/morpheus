@@ -9,6 +9,8 @@ use morpheus_view_model::calls::{
 
 use crate::Morpheus;
 
+const NOISE_FILE: &str = "noise-suppression.json";
+
 /// The microphone's and the speaker's volume (1 as it is, up to 2).
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct CallVolumes {
@@ -30,6 +32,13 @@ pub struct PersonVolumeItem {
 }
 
 impl Morpheus {
+    /// The noise suppression kept (the desktop keeps it in the same file): Strong when nothing was chosen.
+    fn noise_mode(&self) -> morpheus_call::NoiseSuppression {
+        std::fs::read_to_string(self.dir.join(NOISE_FILE))
+            .map(|json| morpheus_call::NoiseSuppression::from_json(&json))
+            .unwrap_or_default()
+    }
+
     fn account_id(&self) -> String {
         self.account().map(|a| a.user_id).unwrap_or_default()
     }
@@ -39,6 +48,7 @@ impl Morpheus {
         let prefs = read_device_prefs(&self.dir);
         morpheus_call::set_input_volume(prefs.input_volume);
         morpheus_call::set_output_volume(prefs.output_volume);
+        morpheus_call::set_noise_suppression(self.noise_mode());
         for (user, volume) in read_person_volumes(&self.dir, &self.account_id()) {
             morpheus_call::set_user_volume(&user, volume.voice_gain());
         }
@@ -47,6 +57,23 @@ impl Morpheus {
 
 #[uniffi::export]
 impl Morpheus {
+    /// Whether the call's noise suppression is on (#434): WebRTC's, the only one a phone has (the desktop's stronger model is #531). On
+    /// unless Off was chosen.
+    pub fn noise_suppression_on(&self) -> bool {
+        self.noise_mode().platform_on()
+    }
+
+    /// Turn the call's noise suppression on or off; kept, and applied from the next call (the microphone of one going is made already).
+    pub fn set_noise_suppression_on(&self, on: bool) {
+        let mode = if on { morpheus_call::NoiseSuppression::Standard } else { morpheus_call::NoiseSuppression::Off };
+        let _ = std::fs::write(self.dir.join(NOISE_FILE), mode.to_json());
+    }
+
+    /// Whether the call going made its microphone with noise suppression on or off; `None` outside a call.
+    pub fn applied_noise_suppression_on(&self) -> Option<bool> {
+        morpheus_call::applied_platform_noise_suppression()
+    }
+
     /// The microphone's and the speaker's volume, as last kept.
     pub fn call_volumes(&self) -> CallVolumes {
         let prefs = read_device_prefs(&self.dir);

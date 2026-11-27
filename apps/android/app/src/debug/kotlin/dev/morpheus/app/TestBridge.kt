@@ -316,6 +316,7 @@ class TestBridge(private val app: Application) {
                 .put("pip_armed", AppState.pipArmed)
                 .put("call_watchers", dev.morpheus.app.CallModel.current?.snapshot?.value?.watchers?.toLong() ?: JSONObject.NULL)
                 .put("screen_frames", AppState.screenFrames)
+                .put("noise_applied", dev.morpheus.app.CallModel.current?.noiseSuppressionApplied() ?: JSONObject.NULL)
                 .put("last_link", AppState.lastLink)
                 .put("colour_source", AppState.colourSource)
                 .put("sdk", android.os.Build.VERSION.SDK_INT)

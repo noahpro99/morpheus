@@ -924,5 +924,6 @@
   "Sharing your screen": "Compartiendo tu pantalla",
   "Stop sharing": "Dejar de compartir",
   "Cleans your microphone from the next call. The desktop's stronger suppression is not on phones yet.": "Limpia tu micrófono desde la próxima llamada. La supresión más fuerte del escritorio aún no está en los móviles.",
-  "Call: %{name}": "Llamada: %{name}"
+  "Call: %{name}": "Llamada: %{name}",
+  "This call keeps the setting it started with.": "Esta llamada mantiene el ajuste con el que empezó."
 }

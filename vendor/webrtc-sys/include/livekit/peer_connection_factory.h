@@ -89,6 +89,10 @@ class PeerConnectionFactory {
   webrtc::Environment env_;
 };
 
+// Morpheus patch (#434): whether the next device audio tracks have WebRTC noise
+// suppression on (it was always on). Read when a track is created.
+void set_device_noise_suppression(bool on);
+
 std::shared_ptr<PeerConnectionFactory> create_peer_connection_factory();
 std::shared_ptr<PeerConnectionFactory>
 create_peer_connection_factory_with_zero_playout_delay();

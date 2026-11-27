@@ -451,6 +451,14 @@ impl Call {
             let captured = MicGuard(mic::attach_call(source.clone(), mode));
             (RtcAudioSource::Native(source), platform, captured)
         };
+        // The microphone track takes the platform noise suppression as chosen when it is made, so a change applies from the next call (#434).
+        // (A test tone has no processing, but the setting is read and kept the same way.)
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        {
+            let ns = crate::noise_suppression().platform_on();
+            livekit::webrtc::native::set_device_noise_suppression(ns);
+            crate::noise::note_platform_applied(Some(ns));
+        }
         #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
         let (source, platform, captured) = match mode {
             AudioMode::Platform => {
@@ -1092,6 +1100,8 @@ impl Drop for MicGuard {
         if let Some(id) = self.0.take() {
             mic::detach_call(id);
         }
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        crate::noise::note_platform_applied(None);
     }
 }
 

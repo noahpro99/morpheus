@@ -69,6 +69,10 @@ pub mod video_track;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native {
     pub use webrtc_sys::webrtc::ffi::create_random_uuid;
+    // Morpheus patch (#434): WebRTC noise suppression of the microphone tracks made from now on.
+    pub fn set_device_noise_suppression(on: bool) {
+        webrtc_sys::peer_connection_factory::ffi::set_device_noise_suppression(on);
+    }
     // Morpheus patch: the Media Foundation encoder (Windows) and the
     // hardware decoding switch.
     pub use webrtc_sys::webrtc::ffi::{

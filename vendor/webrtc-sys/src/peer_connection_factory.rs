@@ -87,6 +87,8 @@ pub mod ffi {
         type PeerConnection = crate::peer_connection::ffi::PeerConnection;
         type PeerConnectionFactory;
 
+        // Morpheus patch (#434): noise suppression of the device audio tracks made from now on.
+        fn set_device_noise_suppression(on: bool);
         fn create_peer_connection_factory() -> SharedPtr<PeerConnectionFactory>;
         fn create_peer_connection_factory_with_zero_playout_delay(
         ) -> SharedPtr<PeerConnectionFactory>;

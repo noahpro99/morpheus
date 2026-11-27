@@ -63,6 +63,12 @@ impl NoiseSuppression {
             .unwrap_or_default()
     }
 
+    /// Whether the platform (WebRTC) noise suppression runs on a microphone this mode is chosen for: every mode but Off. A phone has no
+    /// stronger model yet (#531), so Strong is Standard there.
+    pub fn platform_on(self) -> bool {
+        self != Self::Off
+    }
+
     fn code(self) -> u8 {
         match self {
             Self::Off => 1,
@@ -119,6 +125,23 @@ pub(crate) fn note_applied(mode: Option<NoiseSuppression>) {
 /// captured (a call, the mic test), else `None`.
 pub fn applied_noise_suppression() -> Option<NoiseSuppression> {
     NoiseSuppression::from_code(APPLIED.load(Ordering::Relaxed))
+}
+
+
+/// Whether the WebRTC noise suppression of the call going was on or off when its microphone was made (`None`: no such call). It is
+/// read once, so a change of mode applies from the next call (#434).
+static PLATFORM_APPLIED: AtomicU8 = AtomicU8::new(0);
+
+pub(crate) fn note_platform_applied(on: Option<bool>) {
+    PLATFORM_APPLIED.store(on.map_or(0, |on| if on { 2 } else { 1 }), Ordering::Relaxed);
+}
+
+/// See [`note_platform_applied`].
+pub fn applied_platform_noise_suppression() -> Option<bool> {
+    match PLATFORM_APPLIED.load(Ordering::Relaxed) {
+        0 => None,
+        code => Some(code == 2),
+    }
 }
 
 
@@ -606,6 +629,25 @@ mod tests {
             NoiseSuppression::Strong
         );
         assert_eq!(NoiseSuppression::from_json(""), NoiseSuppression::Strong);
+    }
+
+    /// #434: a phone has the platform suppression only: on for every mode but Off (Strong is Standard there, #531).
+    #[test]
+    fn the_platform_suppression_is_on_unless_off_is_chosen() {
+        assert!(!NoiseSuppression::Off.platform_on());
+        assert!(NoiseSuppression::Standard.platform_on());
+        assert!(NoiseSuppression::Strong.platform_on());
+    }
+
+    #[test]
+    fn the_platform_suppression_of_a_call_is_what_was_noted() {
+        note_platform_applied(None);
+        assert_eq!(applied_platform_noise_suppression(), None);
+        note_platform_applied(Some(false));
+        assert_eq!(applied_platform_noise_suppression(), Some(false));
+        note_platform_applied(Some(true));
+        assert_eq!(applied_platform_noise_suppression(), Some(true));
+        note_platform_applied(None);
     }
 }
 
