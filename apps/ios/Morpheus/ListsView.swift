@@ -136,9 +136,13 @@ struct RoomRowContent: View {
 
     var body: some View {
             HStack {
-                Image(systemName: room.isDm ? "person.fill" : (room.isVoice ? "speaker.wave.2.fill" : "number"))
-                    .foregroundStyle(model.theme.muted)
-                    .accessibilityHidden(true)
+                if room.isDm {
+                    Avatar(name: room.name, media: room.avatar)
+                } else {
+                    Image(systemName: room.isVoice ? "speaker.wave.2.fill" : "number")
+                        .foregroundStyle(model.theme.muted)
+                        .accessibilityHidden(true)
+                }
                 Text(room.name)
                     .fontWeight(room.unread > 0 ? .semibold : .regular)
                     .foregroundStyle(room.muted ? model.theme.muted : model.theme.text)

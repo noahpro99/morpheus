@@ -241,6 +241,7 @@ struct MessageView: View {
         VStack(alignment: .leading, spacing: 2) {
             if message.showHeader {
                 HStack(spacing: 8) {
+                    Avatar(name: message.senderName, media: message.senderAvatar, size: 24)
                     Text(message.senderName).font(.subheadline.bold()).foregroundStyle(model.theme.accent)
                     Text(message.time).font(.caption).foregroundStyle(model.theme.muted)
                 }
