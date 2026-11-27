@@ -36,6 +36,19 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     private val _open = MutableStateFlow(false)
     val open: StateFlow<Boolean> = _open.asStateFlow()
 
+    private val _pip = MutableStateFlow(false)
+
+    /** The app is in a small picture-in-picture window (#433): the call shows only its main picture. */
+    val pip: StateFlow<Boolean> = _pip.asStateFlow()
+
+    private val _pipRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** The call screen asks the activity to enter picture-in-picture. */
+    val pipRequests: kotlinx.coroutines.flow.SharedFlow<Unit> = _pipRequests
+    fun enterPip() { _pipRequests.tryEmit(Unit) }
+
+    fun setPip(on: Boolean) { _pip.value = on; AppState.pip = on }
+
     private val _speaker = MutableStateFlow(true)
 
     /** The call plays from the loudspeaker (Discord-style) rather than the earpiece. */

@@ -1785,6 +1785,8 @@ async fn watch_screen_audio(
     let mut mono = Vec::with_capacity(FRAME);
     // What WebRTC says it plays at, asked every fifth window.
     let mut played = 0f32;
+    // Whether sound came, so an entry that went since (the share ended) is not made again from silence.
+    let mut had = false;
     let mut windows = 0u32;
     loop {
         // Deafened, WebRTC plays it silent (after this sink: the samples
@@ -1835,12 +1837,16 @@ async fn watch_screen_audio(
                         played,
                     },
                 );
+                had = true;
                 window.clear();
             }
             Ok(None) => break,
             // Nothing arriving (deafened, or the sharer's computer is quiet).
             Err(_) => {
                 window.clear();
+                if had && crate::screen_audio::screen_audio(&who).is_none() {
+                    break;
+                }
                 crate::screen_audio::note_heard(
                     &who,
                     crate::ScreenAudio {
@@ -2083,6 +2089,7 @@ async fn forward_events(
     // Tasks that stop when this one does (a JoinHandle dropped keeps its task
     // running: after the call, each held its track, stream and decoder, #190).
     let mut voice_tasks: HashMap<String, Aborting> = HashMap::new();
+    let mut screen_tasks: HashMap<String, Aborting> = HashMap::new();
     let mut measure_tasks: HashMap<String, Aborting> = HashMap::new();
     let mut media_tasks: Vec<Aborting> = Vec::new();
     while let Some(event) = events.recv().await {
@@ -2175,13 +2182,15 @@ async fn forward_events(
                     track.disable();
                 }
                 apply_screen_volume(&track, crate::screen_volume(&identity));
-                media_tasks.retain(|t| !t.is_finished());
-                media_tasks.push(Aborting(tokio::spawn(watch_screen_audio(
-                    track,
+                screen_tasks.insert(
                     identity.clone(),
-                    mode == AudioMode::Platform,
-                    deafened.clone(),
-                ))));
+                    Aborting(tokio::spawn(watch_screen_audio(
+                        track,
+                        identity.clone(),
+                        mode == AudioMode::Platform,
+                        deafened.clone(),
+                    ))),
+                );
                 CallEvent::ScreenAudio { identity, on: true }
             }
             RoomEvent::TrackUnsubscribed {
@@ -2191,6 +2200,10 @@ async fn forward_events(
             } => {
                 let identity = participant.identity().to_string();
                 if publication.source() == TrackSource::ScreenshareAudio {
+                    // (Its task would note silence again and bring the entry back.)
+                    if let Some(task) = screen_tasks.remove(&identity) {
+                        task.abort();
+                    }
                     crate::screen_audio::forget_heard(&identity);
                     CallEvent::ScreenAudio {
                         identity,

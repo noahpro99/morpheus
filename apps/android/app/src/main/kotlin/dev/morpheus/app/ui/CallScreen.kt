@@ -37,6 +37,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -96,6 +100,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
     BackHandler { if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }
     val speaker by calls.speaker.collectAsState()
     var panel by remember { mutableStateOf<String?>(null) }
+    var focused by remember { mutableStateOf<String?>(null) }
     var showPing by remember { mutableStateOf(false) }
     var signal by remember { mutableStateOf(uniffi.morpheus_ffi.callConnectionSignal()) }
     LaunchedEffect(snapshot.phase) { while (snapshot.phase == CallPhase.CONNECTED) { signal = uniffi.morpheus_ffi.callConnectionSignal(); delay(1000) } }
@@ -186,6 +191,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 }
             }
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_message_circle, t("Open chat"), "call-chat", onChat)
+            if (snapshot.phase == CallPhase.CONNECTED && android.os.Build.VERSION.SDK_INT >= 26) IconAction(dev.morpheus.app.R.drawable.ic_lucide_minimize_2, t("Picture in picture"), "call-pip", { calls.enterPip() })
             if (snapshot.phase == CallPhase.CONNECTED) SignalBars(signal) { showPing = !showPing }
             if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_user_plus, t("Invite to call"), "call-invite-button", { panel = if (panel == INVITE_PANEL) null else INVITE_PANEL })
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
@@ -202,6 +208,8 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
             OutputPanel(calls) { panel = null }
         } else if (panel != null && person != null) {
             CardMenuPanel(calls, snapshot, person, screenPanel) { panel = null }
+        } else if (snapshot.cards.firstOrNull { it.key == focused } != null) {
+            FocusedCard(calls, snapshot.cards.first { it.key == focused }) { focused = null }
         } else {
             LazyVerticalGrid(
                 GridCells.Fixed(if (snapshot.cards.size <= 1) 1 else 2),
@@ -209,7 +217,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card, card.userId in hidden) { panel = it } }
+                items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card, card.userId in hidden, { focused = card.key }) { panel = it } }
             }
         }
         Controls(calls, snapshot, speaker, openOutput = { panel = if (panel == OUTPUT_PANEL) null else OUTPUT_PANEL }) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
@@ -217,7 +225,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
 }
 
 @Composable
-private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, videoHidden: Boolean, openVolume: (String) -> Unit) {
+private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, videoHidden: Boolean, focus: () -> Unit, openVolume: (String) -> Unit) {
     val person = snapshot.people.firstOrNull { it.userId == card.userId }
     Box(
         Modifier
@@ -225,6 +233,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
             .aspectRatio(if (card.kind == CardKind.PERSON) 1f else 16f / 9f)
             .clip(RoundedCornerShape(12.dp))
             .background(Palette.Raised)
+            .pointerInput(card.kind) { if (card.kind != CardKind.UNWATCHED_SCREEN) detectTapGestures(onTap = { focus() }) }
             .border(if (card.speaking) 4.dp else 0.dp, if (card.speaking) speakingGreen else Color.Transparent, RoundedCornerShape(12.dp))
             .testTag(if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) "card-screen-${card.name}" else "card-${card.name}"),
         contentAlignment = Alignment.Center,
@@ -266,7 +275,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
 
 /** A camera or a shared screen: the pictures of its feed as they arrive. */
 @Composable
-private fun VideoPicture(calls: CallModel, card: CallCard) {
+private fun VideoPicture(calls: CallModel, card: CallCard, zoom: Modifier = Modifier) {
     val feed = card.feed ?: return
     var picture by remember(feed) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(feed) {
@@ -282,7 +291,7 @@ private fun VideoPicture(calls: CallModel, card: CallCard) {
     }
     val shown = picture
     if (shown != null) {
-        Image(shown, card.name, Modifier.fillMaxSize().testTag(if (card.kind == CardKind.SCREEN) "video-screen-${card.name}" else "video-${card.name}"), contentScale = ContentScale.Fit)
+        Image(shown, card.name, Modifier.fillMaxSize().then(zoom).testTag(if (card.kind == CardKind.SCREEN) "video-screen-${card.name}" else "video-${card.name}"), contentScale = ContentScale.Fit)
     } else {
         Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     }
@@ -516,6 +525,66 @@ private fun SignalBars(signal: uniffi.morpheus_ffi.ConnectionSignal, onClick: ()
             for (i in 0 until 3) {
                 Box(Modifier.width(4.dp).height((8 + 4 * i).dp).clip(RoundedCornerShape(1.dp)).background(if (i < signal.bars.toInt()) lit else Palette.Divider))
             }
+        }
+    }
+}
+
+/** The most a shared screen zooms in. */
+private const val MAX_ZOOM = 5f
+
+/**
+ * One card filling the call's room (#435): a person's avatar, a camera, or a shared screen, which pinches to zoom (and pans while zoomed);
+ * a double tap zooms to 2x and back. `focus-zoom` says the zoom ("1.0", "2.0"...). Back, or the close button, returns to the cards.
+ */
+@Composable
+private fun ColumnScope.FocusedCard(calls: CallModel, card: CallCard, close: () -> Unit) {
+    BackHandler { close() }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val zoomable = card.kind == CardKind.SCREEN
+    Box(
+        Modifier.weight(1f).fillMaxWidth().background(Color.Black).clip(RectangleShape).testTag("focus-view")
+            .then(
+                if (!zoomable) Modifier else Modifier
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, drag, scale, _ ->
+                            zoom = (zoom * scale).coerceIn(1f, MAX_ZOOM)
+                            pan = if (zoom == 1f) androidx.compose.ui.geometry.Offset.Zero else pan + drag
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectTapGestures(onDoubleTap = {
+                            zoom = if (zoom > 1f) 1f else 2f
+                            pan = androidx.compose.ui.geometry.Offset.Zero
+                        })
+                    },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (card.kind) {
+            CardKind.SCREEN, CardKind.CAMERA -> VideoPicture(calls, card, Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y })
+            else -> Avatar(card.avatar, card.name, 160.dp)
+        }
+        IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, t("Back to the call"), "focus-close", close, Modifier.align(Alignment.TopStart), tint = Color.White)
+        Text(
+            if (card.kind == CardKind.SCREEN) t("%{name}'s screen", "name" to card.name) else card.name,
+            Modifier.align(Alignment.BottomStart).padding(12.dp).testTag("focus-name"), color = Color.White, style = MaterialTheme.typography.bodyMedium,
+        )
+        if (zoomable) Box(Modifier.size(1.dp).semantics { stateDescription = "%.1f".format(java.util.Locale.ROOT, zoom) }.testTag("focus-zoom"))
+    }
+}
+
+/** The call in the small picture-in-picture window (#433): its main picture alone (a shared screen, else a camera, else the first person), no controls. */
+@Composable
+fun PipCall(calls: CallModel, snapshot: CallSnapshot) {
+    val card = snapshot.cards.firstOrNull { it.kind == CardKind.SCREEN }
+        ?: snapshot.cards.firstOrNull { it.kind == CardKind.CAMERA && it.userId != snapshot.people.firstOrNull { p -> p.me }?.userId }
+        ?: snapshot.cards.firstOrNull { it.kind == CardKind.PERSON && it.userId != snapshot.people.firstOrNull { p -> p.me }?.userId }
+        ?: snapshot.cards.firstOrNull()
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("pip-view"), contentAlignment = Alignment.Center) {
+        if (card != null) when (card.kind) {
+            CardKind.SCREEN, CardKind.CAMERA -> VideoPicture(calls, card)
+            else -> Avatar(card.avatar, card.name, 64.dp)
         }
     }
 }

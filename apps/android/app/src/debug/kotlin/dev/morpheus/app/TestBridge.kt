@@ -301,6 +301,7 @@ class TestBridge(private val app: Application) {
         "state" -> onMain {
             JSONObject()
                 .put("screen", AppState.screen)
+                .put("pip", AppState.pip)
                 .put("last_link", AppState.lastLink)
                 .put("colour_source", AppState.colourSource)
                 .put("sdk", android.os.Build.VERSION.SDK_INT)

@@ -80,7 +80,9 @@ fun Root(model: AppModel) {
                     val call by model.calls.snapshot.collectAsState()
                     val callOpen by model.calls.open.collectAsState()
                     val going = call
-                    if (going != null && callOpen) CallScreen(model.calls, going) { model.openRoomWhenKnown(going.roomId); model.calls.show(false) }
+                    val inPip by model.calls.pip.collectAsState()
+                    if (going != null && inPip) PipCall(model.calls, going)
+                    else if (going != null && callOpen) CallScreen(model.calls, going) { model.openRoomWhenKnown(going.roomId); model.calls.show(false) }
                     else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
                         Box(Modifier.weight(1f)) {
                             // The room covers the lists and the lists under it stay exactly where they are (they are only drawn while the room is

@@ -50,6 +50,9 @@ class MainActivity : ComponentActivity() {
                 val bars = if (light) SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) else SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
             }
+            // A call with video leaves into a small window when the app is left (#433).
+            androidx.compose.runtime.LaunchedEffect(Unit) { app.calls.snapshot.collect { s -> videoCall = s != null && s.phase == uniffi.morpheus_ffi.CallPhase.CONNECTED && s.cards.any { (it.kind == uniffi.morpheus_ffi.CardKind.CAMERA || it.kind == uniffi.morpheus_ffi.CardKind.SCREEN) && s.people.none { p -> p.me && p.userId == it.userId } }; pipParams() } }
+            androidx.compose.runtime.LaunchedEffect(Unit) { app.calls.pipRequests.collect { enterPip() } }
             AppState.mark("activity: setContent")
             MorpheusTheme { Root(app) }
         }
@@ -60,6 +63,30 @@ class MainActivity : ComponentActivity() {
         }
         if (savedInstanceState == null) ShareInbox.receive(this, intent)
         openRoomOf(intent)
+    }
+
+    private var videoCall = false
+
+    private fun pipParams() {
+        if (android.os.Build.VERSION.SDK_INT < 26) return
+        val b = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9))
+        if (android.os.Build.VERSION.SDK_INT >= 31) b.setAutoEnterEnabled(videoCall)
+        try { setPictureInPictureParams(b.build()) } catch (_: Exception) {}
+    }
+
+    private fun enterPip() {
+        if (android.os.Build.VERSION.SDK_INT < 26) return
+        try { enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()) } catch (_: Exception) {}
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (videoCall && android.os.Build.VERSION.SDK_INT < 31) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (modelMade) model.calls.setPip(isInPictureInPictureMode)
     }
 
     private val camera = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { model.calls.cameraAnswered(it) }
