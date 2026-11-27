@@ -41,6 +41,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         # What the static Rust library (matrix-sdk, libwebrtc) links against.
         OTHER_LDFLAGS:
+          - -ObjC
           - -lc++
           - -lresolv
           - -lz
