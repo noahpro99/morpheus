@@ -224,6 +224,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         val request = _sheet.value ?: return
         closeSheet()
         if (path == "reorder") { openReorder(); return }
+        if (path.startsWith("reorder-channels:")) { openPage(PageRequest("channel-order", path.removePrefix("reorder-channels:"))); return }
         if (path == "select-messages") { request.onOutcome(uniffi.morpheus_ffi.MenuOutcome.Page("select-messages", "", "")); return }
         viewModelScope.launch {
             try {
@@ -1031,6 +1032,10 @@ object AppState {
     /** The last web link opened from a message (the debug bridge reports it). */
     @Volatile
     var lastLink: String = ""
+
+    /** The last text a button copied for sharing (an invite link; the debug bridge reports it). */
+    @Volatile
+    var lastCopy: String = ""
 
     /** Times the keyboard was asked for and put away by a swipe (the debug bridge reports them; #344). */
     @Volatile

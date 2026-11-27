@@ -2,6 +2,20 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>ModifierMissing:AccountSettings.kt$AccountPage</ID>
+    <ID>ModifierMissing:ChannelOrderPage.kt$ChannelOrderPage</ID>
+    <ID>ModifierMissing:HelpSettings.kt$HelpPage</ID>
+    <ID>ModifierMissing:LinkPreviewPage.kt$LinkPreviewPage</ID>
+    <ID>ModifierMissing:ModViewPage.kt$ModViewPage</ID>
+    <ID>ModifierMissing:RoomSettingsSections.kt$EmojiSection</ID>
+    <ID>ModifierMissing:RoomSettingsSections.kt$PermissionsSection</ID>
+    <ID>ModifierMissing:SecuritySettings.kt$SecurityPage</ID>
+    <ID>MultipleEmitters:AccountSettings.kt$AccountPage</ID>
+    <ID>MultipleEmitters:HelpSettings.kt$HelpPage</ID>
+    <ID>MultipleEmitters:RoomSettingsSections.kt$EmojiSection</ID>
+    <ID>MultipleEmitters:RoomSettingsSections.kt$PermissionsSection</ID>
+    <ID>MultipleEmitters:SecuritySettings.kt$SecurityPage</ID>
+    <ID>UnstableCollections:SignedIn.kt$List&lt;uniffi.morpheus_ffi.RailRowItem&gt;</ID>
     <ID>ComposableParamOrder:Components.kt$SkeletonRows</ID>
     <ID>ComposableParamOrder:Components.kt$UnreadBadge</ID>
     <ID>ComposableParamOrder:M3.kt$ConfirmDialog</ID>

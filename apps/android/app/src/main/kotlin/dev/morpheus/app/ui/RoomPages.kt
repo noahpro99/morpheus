@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -85,6 +86,9 @@ fun RoomPageHost(app: AppModel) {
             "profile" -> ProfilePage(app, page)
             "full-profile" -> FullProfilePage(app, page)
             "mod-view" -> ModViewPage(app, page)
+            "channel-order" -> ChannelOrderPage(app, page)
+            "permissions" -> PageFrame(app, "Permissions", "page-permissions") { PermissionsSection(app, page.roomId) }
+            "emoji" -> PageFrame(app, "Custom emoji", "page-emoji") { EmojiSection(app, page.roomId) }
             "link-preview" -> LinkPreviewPage(app, page)
             "report-user" -> ReportUserPage(app, page)
         }
@@ -114,6 +118,12 @@ private fun InvitePage(app: AppModel, page: PageRequest) {
     var ok by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var friends by remember { mutableStateOf<List<uniffi.morpheus_ffi.FriendItem>?>(null) }
+    var invited by remember { mutableStateOf(setOf<String>()) }
+    var copied by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val link = remember(page.roomId) { try { app.morpheus.roomInviteLink(page.roomId) } catch (_: Exception) { "" } }
+    LaunchedEffect(Unit) { friends = try { app.morpheus.friends() } catch (_: Exception) { emptyList() } }
     PageFrame(app, "Invite people", "page-invite") {
         Text(t("Enter a full Matrix ID like @name:server"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(typed, { typed = it }, Modifier.fillMaxWidth().testTag("invite-input"), singleLine = true, placeholder = { Text("@name:server") })
@@ -122,6 +132,29 @@ private fun InvitePage(app: AppModel, page: PageRequest) {
                 try { ok = app.morpheus.invitePeople(page.roomId, typed); error = null; typed = "" } catch (e: Exception) { error = e.message; ok = null }
             }
         }, Modifier.testTag("invite-send")) { Text(t("Invite")) }
+        if (link.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text(link, Modifier.weight(1f).testTag("invite-link"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                OutlinedButton({ clipboard.setText(androidx.compose.ui.text.AnnotatedString(link)); dev.morpheus.app.AppState.lastCopy = link; copied = true }, Modifier.testTag("copy-invite-link")) { Text(t(if (copied) "Copied" else "Copy link")) }
+            }
+        }
+        val pick = friends
+        if (!pick.isNullOrEmpty()) SectionHeader(t("Friends"))
+        for (friend in pick.orEmpty()) {
+            Row(Modifier.fillMaxWidth().testTag("invite-friend-${friend.name}"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Avatar(friend.avatar, friend.name, Size.avatar)
+                Column(Modifier.weight(1f)) {
+                    Text(friend.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (friend.subtitle.isNotBlank()) Text(friend.subtitle, color = Palette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (friend.userId in invited) Text(t("Invited"), Modifier.testTag("invite-done-${friend.name}"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+                else TextButton({
+                    scope.launch {
+                        try { ok = app.morpheus.invitePeople(page.roomId, friend.userId); error = null; invited = invited + friend.userId } catch (e: Exception) { error = e.message; ok = null }
+                    }
+                }, Modifier.testTag("invite-pick-${friend.name}")) { Text(t("Invite")) }
+            }
+        }
         Note(ok, error)
     }
 }
@@ -183,6 +216,8 @@ private fun EditPage(app: AppModel, page: PageRequest) {
             }
         }, Modifier.testTag("edit-save")) { Text(t("Save")) }
         Note(ok, error)
+        OutlinedButton({ app.openPage(PageRequest("permissions", page.roomId)) }, Modifier.fillMaxWidth().testTag("edit-permissions")) { Text(t("Permissions")) }
+        OutlinedButton({ app.openPage(PageRequest("emoji", page.roomId)) }, Modifier.fillMaxWidth().testTag("edit-emoji")) { Text(t("Custom emoji")) }
     }
 }
 

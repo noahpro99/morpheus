@@ -211,7 +211,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
     val manage: (ScopeItem) -> Unit = { shown ->
         model.openSheet(shown.title) {
-            (if (shown.kind == ScopeKind.SERVER) model.morpheus.serverMenuRows(shown.key.removePrefix("space:")) else emptyList()) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
+            (if (shown.kind == ScopeKind.SERVER) model.morpheus.serverMenuRows(shown.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder-channels:${shown.key.removePrefix("space:")}", "Reorder channels", t("Reorder channels"), "move", false, false, false, null, emptyList()) else emptyList()) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
         }
     }
     Column(modifier.fillMaxSize().background(Palette.Background)) {
