@@ -52,7 +52,8 @@ fun ModViewPage(app: AppModel, page: PageRequest) {
         }
     }
     ScreenScaffold("page-mod-view", { TopBar(t("Mod view")) }) { inner ->
-    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().padding(inner).padding(Space.lg).testTag("mod-list"), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+    val modList = androidx.compose.foundation.lazy.rememberLazyListState()
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.stretch(modList).fillMaxSize().padding(inner).padding(Space.lg).testTag("mod-list"), state = modList, verticalArrangement = Arrangement.spacedBy(Space.md)) {
         item {
         Text(userId, Modifier.testTag("mod-user"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(reason, { reason = it }, Modifier.fillMaxWidth().testTag("mod-reason"), singleLine = true, label = { Text(t("Reason (optional)")) })
@@ -60,7 +61,7 @@ fun ModViewPage(app: AppModel, page: PageRequest) {
         }
         val list = rows
         if (list == null) item { Skeleton(Modifier.fillMaxWidth().height(48.dp)) }
-        else if (list.isEmpty()) item { Text(t("You share no rooms with them."), Modifier.testTag("mod-none"), color = Palette.Muted) }
+        else if (list.isEmpty()) item { Text(t("You share no rooms with them."), Modifier.testTag("mod-none"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium) }
         else items(list, key = { it.roomId }) { row -> Column(Modifier.fillMaxWidth().testTag("mod-row-${row.name}"), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             Text(row.name, style = MaterialTheme.typography.titleMedium)
             Text(row.state, Modifier.testTag("mod-state-${row.name}"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
