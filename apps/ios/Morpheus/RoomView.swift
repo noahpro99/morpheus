@@ -221,11 +221,15 @@ struct MessageActions {
 extension MessageItem {
     /// The text a message carries, for edit and copy.
     var plainText: String {
-        switch body {
-        case let .text(text, _): text
-        case let .image(caption, _, _, _): caption
-        case let .file(name, _, _, _): name
-        case let .other(summary): summary
+        switch self.body {
+        case let .text(text, _):
+            return text
+        case let .image(caption, _, _, _):
+            return caption
+        case let .file(name, _, _, _):
+            return name
+        case let .other(summary):
+            return summary
         }
     }
 }
@@ -240,59 +244,78 @@ struct MessageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if message.showHeader {
-                HStack(spacing: 8) {
-                    Avatar(name: message.senderName, media: message.senderAvatar, size: 24)
-                    Text(message.senderName).font(.subheadline.bold()).foregroundStyle(model.theme.accent)
-                    Text(message.time).font(.caption).foregroundStyle(model.theme.muted)
-                }
-                .padding(.top, 8)
-            }
-            if let reply = message.replyTo {
-                HStack(spacing: 6) {
-                    Capsule().fill(model.theme.accent).frame(width: 3)
-                    Text("\(reply.senderName ?? "") \(reply.summary ?? "")")
-                        .font(.footnote).foregroundStyle(model.theme.muted).lineLimit(1)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("reply-quote")
-            }
-            if case let .image(caption, media, width, height) = message.body {
-                MediaImage(media: media, caption: caption, width: width, height: height)
-            } else {
-            Group {
-                if message.edited {
-                    Text("\(message.plainText) ") + Text("(edited)").font(.caption).foregroundStyle(model.theme.muted)
-                } else {
-                    Text(message.plainText)
-                }
-            }
-            .foregroundStyle(model.theme.text)
-            // The instant local echo is greyed until the server has it (#397).
-            .opacity(message.sending ? 0.5 : 1)
-            .accessibilityValue(message.sending ? "sending" : "sent")
-            .accessibilityIdentifier("message")
-            }
-            if !message.reactions.isEmpty { reactions }
+            header
+            replyQuote
+            content
+            reactions
         }
         .contextMenu { menu }
     }
 
+    @ViewBuilder
+    private var header: some View {
+        if message.showHeader {
+            HStack(spacing: 8) {
+                Avatar(name: message.senderName, media: message.senderAvatar, size: 24)
+                Text(message.senderName).font(.subheadline.bold()).foregroundStyle(model.theme.accent)
+                Text(message.time).font(.caption).foregroundStyle(model.theme.muted)
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    @ViewBuilder
+    private var replyQuote: some View {
+        if let reply = message.replyTo {
+            let quoted: String = (reply.senderName ?? "") + " " + (reply.summary ?? "")
+            HStack(spacing: 6) {
+                Capsule().fill(model.theme.accent).frame(width: 3)
+                Text(quoted).font(.footnote).foregroundStyle(model.theme.muted).lineLimit(1)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("reply-quote")
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if case let .image(caption, media, width, height) = message.body {
+            MediaImage(media: media, caption: caption, width: width, height: height)
+        } else {
+            let shown: String = message.edited ? message.plainText + " (edited)" : message.plainText
+            Text(shown)
+                .foregroundStyle(model.theme.text)
+                // The instant local echo is greyed until the server has it (#397).
+                .opacity(message.sending ? 0.5 : 1)
+                .accessibilityValue(message.sending ? "sending" : "sent")
+                .accessibilityIdentifier("message")
+        }
+    }
+
+    @ViewBuilder
     private var reactions: some View {
-        HStack(spacing: 6) {
-            ForEach(message.reactions, id: \.key) { reaction in
-                Button {
-                    if let id = message.eventId { actions.react(id, reaction.key) }
-                } label: {
-                    Text("\(reaction.key) \(reaction.count)").font(.footnote)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(reaction.mine ? model.theme.accent.opacity(0.3) : model.theme.raised, in: Capsule())
-                        .foregroundStyle(model.theme.text)
+        if !message.reactions.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(message.reactions, id: \.key) { reaction in
+                    reactionChip(reaction)
                 }
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("reaction")
             }
         }
+    }
+
+    private func reactionChip(_ reaction: ReactionItem) -> some View {
+        let fill: Color = reaction.mine ? model.theme.accent.opacity(0.3) : model.theme.raised
+        let label: String = reaction.key + " " + String(reaction.count)
+        return Button {
+            if let id = message.eventId { actions.react(id, reaction.key) }
+        } label: {
+            Text(label).font(.footnote)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(fill, in: Capsule())
+                .foregroundStyle(model.theme.text)
+        }
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("reaction")
     }
 
     @ViewBuilder
