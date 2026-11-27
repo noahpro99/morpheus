@@ -427,7 +427,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
     Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent).padding(bottom = bottomPad)) {
         Column {
             ListRow(
-                room.name, "room-${room.name}",
+                if (room.isDm) dev.morpheus.app.Streamer.name(room.name) else room.name, "room-${room.name}",
                 // 60 dp for a person, 48 (the touch target) for a channel.
                 modifier = Modifier.height(if (room.isDm) 60.dp else Size.target).semantics { if (selected) stateDescription = t("Last opened") },
                 strong = unread, quiet = !unread,

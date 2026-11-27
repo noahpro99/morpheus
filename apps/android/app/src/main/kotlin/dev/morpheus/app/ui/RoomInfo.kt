@@ -98,7 +98,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                     when (row) {
                         is MemberRow.Heading -> Text(row.title, Modifier.padding(start = Space.lg, end = Space.lg, top = Space.sm).testTag("member-heading"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
                         is MemberRow.Member -> ListRow(
-                            row.member.name, "member-${row.member.name}",
+                            dev.morpheus.app.Streamer.name(row.member.name), "member-${row.member.name}",
                             leading = { Avatar(row.member.avatar, row.member.name, 36.dp) },
                             // The desktop's member menu, as the members pane had it before the pane went (#469).
                             onLongClick = {
@@ -193,8 +193,8 @@ internal fun ProfileSheet(app: AppModel, request: dev.morpheus.app.ProfileReques
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Avatar(card?.avatar ?: request.avatar, card?.name ?: request.name, 56.dp)
                 Column {
-                    Text(card?.name ?: request.name, Modifier.testTag("card-name"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(userId, Modifier.testTag("card-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+                    Text(dev.morpheus.app.Streamer.name(card?.name ?: request.name), Modifier.testTag("card-name"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(dev.morpheus.app.Streamer.id(userId), Modifier.testTag("card-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (card == null) {

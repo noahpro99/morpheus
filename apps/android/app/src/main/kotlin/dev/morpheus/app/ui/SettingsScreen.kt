@@ -23,6 +23,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -127,6 +128,15 @@ fun SettingsScreen(app: AppModel) {
                 Button({ attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.applyThemeCode(pasted)); pasted = "" } }, Modifier.testTag("code-apply"), enabled = pasted.isNotBlank()) { Text(t("Use")) }
             }
 
+            Heading(t("Zoom"))
+            val zoom by app.uiZoom.collectAsState()
+            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                OutlinedButton({ app.stepZoom(-1) }, Modifier.testTag("zoom-out")) { Text("−") }
+                Text(zoom.label, Modifier.testTag("zoom-value"), style = MaterialTheme.typography.titleMedium)
+                OutlinedButton({ app.stepZoom(1) }, Modifier.testTag("zoom-in")) { Text("+") }
+                TextButton({ app.stepZoom(0) }, Modifier.testTag("zoom-reset")) { Text(t("Reset")) }
+            }
+
             Heading(t("Time format"))
             var clock24 by remember { mutableStateOf(app.morpheus.clock24Hour()) }
             ToggleRow(t("24-hour time"), clock24, "clock-24-hour") { _ ->
@@ -201,6 +211,7 @@ fun SettingsScreen(app: AppModel) {
             if (page == "Account") AccountPage(app, t) { text, tag -> Toasts.say(text, tag, long = tag == "settings-error") }
             if (page == "Security") SecurityPage(app, t)
             if (page == "Help") HelpPage(app, t)
+            if (page == "StreamerMode") StreamerPage(app, t)
         }
     }
 }
@@ -213,7 +224,7 @@ private fun Heading(text: String) {
 }
 
 /** What the phone has under each of the desktop's groups. */
-private val supported = listOf("Account", "Security", "Help", "Notifications", "Appearance", "Bridges", "VoiceVideo")
+private val supported = listOf("Account", "Security", "Help", "Notifications", "Appearance", "Bridges", "VoiceVideo", "StreamerMode")
 
 /** The groups, each opening its page, with the search bar at the bottom (the desktop's index, through the core). */
 @Composable
@@ -227,7 +238,7 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
         androidx.compose.foundation.lazy.LazyColumn(Modifier.stretch(groupList).weight(1f).fillMaxWidth(), state = groupList, reverseLayout = true) {
             if (query.isNotBlank()) {
                 if (hits.isEmpty()) item { Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge) }
-                items(hits, key = { it.group + "/" + it.anchor }) { hit ->
+                items(hits, key = { it.group + "/" + it.anchor + "/" + it.label }) { hit ->
                     ListRow(t(hit.label), "settings-hit-${hit.anchor}", trailing = { Text(t(groups.firstOrNull { it.key == hit.group }?.label ?: hit.group), style = MaterialTheme.typography.bodyMedium) }) { app.openSettingsPage(hit.group, hit.anchor) }
                 }
             } else {

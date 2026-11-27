@@ -105,6 +105,14 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
     var signal by remember { mutableStateOf(uniffi.morpheus_ffi.callConnectionSignal()) }
     LaunchedEffect(snapshot.phase) { while (snapshot.phase == CallPhase.CONNECTED) { signal = uniffi.morpheus_ffi.callConnectionSignal(); delay(1000) } }
     val hidden by calls.hiddenVideo.collectAsState()
+    // The screen stays on while video is being watched (#541): a picture on a card (not hidden), or my own camera.
+    val watching = snapshot.camera || snapshot.cards.any { it.feed != null && it.userId !in hidden }
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(watching) {
+        view.keepScreenOn = watching
+        dev.morpheus.app.AppState.keepScreenOn = watching
+        onDispose { view.keepScreenOn = false; dev.morpheus.app.AppState.keepScreenOn = false }
+    }
     // A swipe down minimises the call to its strip (#474): the screen follows the finger, a short slow drag springs back. A drag the call's own
     // lists or sliders take (they consume it first) is theirs.
     val drop = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -261,7 +269,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
         ) {
             if (card.speaking) Box(Modifier.size(8.dp).clip(CircleShape).background(speakingGreen).testTag("speaking-${card.name}"))
             Text(
-                if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) t("%{name}'s screen", "name" to card.name) else card.name,
+                if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) t("%{name}'s screen", "name" to dev.morpheus.app.Streamer.name(card.name)) else dev.morpheus.app.Streamer.name(card.name),
                 color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (card.kind != CardKind.SCREEN && card.kind != CardKind.UNWATCHED_SCREEN) {
@@ -541,7 +549,7 @@ private fun ColumnScope.FocusedCard(calls: CallModel, card: CallCard, close: () 
         }
         IconAction(dev.morpheus.app.R.drawable.ic_ms_keyboard_arrow_down, t("Back to the call"), "focus-close", close, Modifier.align(Alignment.TopStart), tint = Color.White)
         Text(
-            if (card.kind == CardKind.SCREEN) t("%{name}'s screen", "name" to card.name) else card.name,
+            if (card.kind == CardKind.SCREEN) t("%{name}'s screen", "name" to dev.morpheus.app.Streamer.name(card.name)) else dev.morpheus.app.Streamer.name(card.name),
             Modifier.align(Alignment.BottomStart).padding(12.dp).testTag("focus-name"), color = Color.White, style = MaterialTheme.typography.bodyMedium,
         )
         if (zoomable) Box(Modifier.size(1.dp).semantics { stateDescription = "%.1f".format(java.util.Locale.ROOT, zoom) }.testTag("focus-zoom"))

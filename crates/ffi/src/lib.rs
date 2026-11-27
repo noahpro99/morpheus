@@ -52,6 +52,7 @@ mod share;
 mod switcher;
 mod sidebar;
 mod sidebar_cache;
+mod streamer;
 mod timeline_cache;
 mod transcript;
 mod timeline;

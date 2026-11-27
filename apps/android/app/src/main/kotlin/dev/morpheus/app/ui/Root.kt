@@ -31,6 +31,15 @@ import dev.morpheus.app.ShareInbox
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun Root(model: AppModel) {
+    // The app's zoom (#542): every size and the text scale with it, as the desktop's Ctrl +/-.
+    val zoom by model.uiZoom.collectAsState()
+    val base = androidx.compose.ui.platform.LocalDensity.current
+    CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(base.density * zoom.factor, base.fontScale)) { RootContent(model) }
+}
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun RootContent(model: AppModel) {
     dev.morpheus.app.AppState.mark("root: composing")
     val screen by model.screen.collectAsState()
     androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.mark("root composed: ${screen.name()}") }

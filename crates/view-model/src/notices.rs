@@ -133,8 +133,10 @@ pub struct ReadyNotice {
 
 /// A message's words for this device's settings: nothing when notifications are off here, else what the content setting lets it say.
 pub fn device_notice(data_dir: &Path, sender: &str, room: &str, body: &str, is_dm: bool, is_mention: bool) -> Option<NoticeText> {
-    crate::settings::notifications_enabled(data_dir)
-        .then(|| notice_text(crate::settings::notification_content(data_dir), sender, room, body, is_dm, is_mention))
+    // Streamer mode (turned on by hand) says nothing of who or what.
+    let streaming = crate::streamer::StreamerSettings::load(data_dir);
+    let content = if streaming.now && streaming.notifications { NotificationContent::Hidden } else { crate::settings::notification_content(data_dir) };
+    crate::settings::notifications_enabled(data_dir).then(|| notice_text(content, sender, room, body, is_dm, is_mention))
 }
 
 pub async fn ready(session: &Session, notice: Notification, data_dir: &Path) -> ReadyNotice {
@@ -201,6 +203,18 @@ mod tests {
         assert_eq!(said().expect("on").body, "Someone sent a message");
         crate::settings::set_notifications_enabled(&dir, false).expect("set");
         assert!(said().is_none(), "off on this device: nothing is shown");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn streamer_mode_by_hand_says_nothing_of_who_or_what_in_a_notification() {
+        let dir = std::env::temp_dir().join(format!("morpheus-notices-streamer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        assert_eq!(device_notice(&dir, "alice", "general", "hi", false, false).expect("on").body, "hi");
+        let mut s = crate::streamer::StreamerSettings::load(&dir);
+        s.now = true;
+        s.save(&dir).expect("save");
+        assert_eq!(device_notice(&dir, "alice", "general", "hi", false, false).expect("on").body, "Someone sent a message");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

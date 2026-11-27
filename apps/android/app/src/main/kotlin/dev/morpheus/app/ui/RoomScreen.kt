@@ -512,7 +512,7 @@ private fun MessageRow(
             if (message.showHeader) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
                     Text(
-                        message.senderName,
+                        dev.morpheus.app.Streamer.name(message.senderName),
                         Modifier.testTag("msg-sender"),
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
@@ -534,7 +534,7 @@ private fun MessageRow(
                 ) {
                     GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_reply, size = 20.dp, tint = readable(MaterialTheme.colorScheme.onSurfaceVariant, Palette.Raised))
                     Text(
-                        "${reply.senderName ?: ""}: ${reply.summary ?: "…"}",
+                        "${dev.morpheus.app.Streamer.name(reply.senderName ?: "")}: ${reply.summary ?: "…"}",
                         Modifier.testTag("msg-reply"),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,

@@ -314,6 +314,14 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     private val _appearance = MutableStateFlow(morpheus.appearance().also { dev.morpheus.app.ui.Palette.use(it.palette) })
     val appearance: StateFlow<uniffi.morpheus_ffi.Appearance> = _appearance.asStateFlow()
 
+    private val _uiZoom = MutableStateFlow(morpheus.uiZoom())
+
+    /** The zoom of the app's sizes and text (#542), kept on this device. */
+    val uiZoom: StateFlow<uniffi.morpheus_ffi.UiZoom> = _uiZoom.asStateFlow()
+
+    /** A step up (1), down (-1) or back to 100% (0). */
+    fun stepZoom(direction: Int) { _uiZoom.value = morpheus.stepUiZoom(direction) }
+
     fun useAppearance(look: uniffi.morpheus_ffi.Appearance) {
         dev.morpheus.app.ui.Palette.use(look.palette)
         _appearance.value = look
@@ -726,7 +734,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     init {
         AppState.matrixLinks = { openMatrixLink(it) }
-        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile(); startUpdateChecks() }; signedInChanged(it) }.launchIn(viewModelScope)
+        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile(); startUpdateChecks(); Streamer.update(morpheus) }; signedInChanged(it) }.launchIn(viewModelScope)
         kotlinx.coroutines.flow.combine(pendingRoom, sidebar) { id, bar -> id to bar }.onEach { (id, bar) ->
             val room = bar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == id }
             if (room != null) {
@@ -1032,6 +1040,10 @@ object AppState {
     /** The last web link opened from a message (the debug bridge reports it). */
     @Volatile
     var lastLink: String = ""
+
+    /** The call screen keeps the display on (video is being watched; the debug bridge reports it). */
+    @Volatile
+    var keepScreenOn: Boolean = false
 
     /** The last text a button copied for sharing (an invite link; the debug bridge reports it). */
     @Volatile

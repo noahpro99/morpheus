@@ -329,6 +329,7 @@ class TestBridge(private val app: Application) {
             JSONObject()
                 .put("screen", AppState.screen)
                 .put("pip", AppState.pip)
+                .put("keep_screen_on", AppState.keepScreenOn)
                 .put("pip_armed", AppState.pipArmed)
                 .put("call_watchers", dev.morpheus.app.CallModel.current?.snapshot?.value?.watchers?.toLong() ?: JSONObject.NULL)
                 .put("screen_frames", AppState.screenFrames)

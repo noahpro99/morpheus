@@ -110,6 +110,8 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         CallSounds.changed(before, snapshot)
         speakers.value = snapshot.roomId to snapshot.people.filter { it.speaking }.map { it.userId }.toSet()
         ringbackStep(snapshot)
+        val sharingNow = snapshot.people.any { it.me && it.screen }
+        if (Streamer.sharing != sharingNow) { Streamer.sharing = sharingNow; Streamer.update(morpheus) }
         if (snapshot.phase == CallPhase.CONNECTED) micPump.start() else if (snapshot.phase == CallPhase.ENDED || snapshot.phase == CallPhase.FAILED) micPump.stop()
         // The notification's Mute and Deafen say what the call is now.
         if (before != null && (before.muted != snapshot.muted || before.deafened != snapshot.deafened) && snapshot.phase != CallPhase.ENDED) {

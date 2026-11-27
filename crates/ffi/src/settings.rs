@@ -545,3 +545,39 @@ pub(crate) fn use_look(dir: &PathBuf, theme: Theme, colour: Option<u32>) -> Resu
     save(dir, &shared)?;
     Ok(appearance_of(shared))
 }
+
+/// The zoom of the app's text and sizes (the desktop's Ctrl +/-, #542): a percentage in browser-like steps from 50 to 200, kept on this device.
+#[derive(Clone, uniffi::Record)]
+pub struct UiZoom {
+    pub percent: u16,
+    /// "125%".
+    pub label: String,
+    /// The scale to draw at, 1.0 at 100%.
+    pub factor: f32,
+}
+
+fn zoom_of(percent: u16) -> UiZoom {
+    use morpheus_view_model::ui_zoom as z;
+    UiZoom { percent: z::clamp(percent), label: z::label(percent), factor: z::factor(percent) }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The zoom kept on this device (100% by default).
+    pub fn ui_zoom(&self) -> UiZoom {
+        zoom_of(morpheus_view_model::ui_zoom::load(&self.dir))
+    }
+
+    /// A step up (`1`), a step down (`-1`) or back to 100% (`0`); kept.
+    pub fn step_ui_zoom(&self, direction: i32) -> UiZoom {
+        use morpheus_view_model::ui_zoom as z;
+        let now = z::load(&self.dir);
+        let next = match direction.signum() {
+            1 => z::zoom_in(now),
+            -1 => z::zoom_out(now),
+            _ => z::DEFAULT,
+        };
+        let _ = z::save(&self.dir, next);
+        zoom_of(next)
+    }
+}
