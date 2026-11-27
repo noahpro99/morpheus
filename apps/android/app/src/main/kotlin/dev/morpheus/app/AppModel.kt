@@ -795,7 +795,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         viewModelScope.launch {
             try {
                 val opener = object : uniffi.morpheus_ffi.UrlLauncher {
-                    override fun open(url: String) = morpheusApp?.openLink(url) == null
+                    override fun openUrl(url: String) = morpheusApp?.openLink(url) == null
                 }
                 val account = morpheus.loginSso(homeserver.trim(), opener)
                 _adding.value = false

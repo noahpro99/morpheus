@@ -162,8 +162,8 @@ pub struct SignInFlows {
 /// Shows a web page (the phone's browser).
 #[uniffi::export(with_foreign)]
 pub trait UrlLauncher: Send + Sync {
-    /// Open `url`; false when nothing could.
-    fn open(&self, url: String) -> bool;
+    /// Open `url` (named so: a C struct member called `open` does not compile against the Apple SDK); false when nothing could.
+    fn open_url(&self, url: String) -> bool;
 }
 
 #[uniffi::export]
@@ -178,7 +178,7 @@ impl Morpheus {
     /// the login token; this returns once that came.
     pub async fn login_sso(&self, homeserver: String, opener: std::sync::Arc<dyn UrlLauncher>) -> Result<Account, FfiError> {
         let open: morpheus_core::UrlOpener = std::sync::Arc::new(move |url: &str| {
-            if opener.open(url.to_owned()) { Ok(()) } else { Err(std::io::Error::other("no browser")) }
+            if opener.open_url(url.to_owned()) { Ok(()) } else { Err(std::io::Error::other("no browser")) }
         });
         let session = self.core.login_sso(homeserver, Some(open)).await?;
         Ok(self.keep(session))
