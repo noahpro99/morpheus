@@ -73,17 +73,17 @@ fun speakerCard(snapshot: CallSnapshot): CallCard? {
     return people.firstOrNull { it.speaking && it.userId != me } ?: people.firstOrNull { it.userId != me } ?: people.firstOrNull()
 }
 
-/** The corners of the floating call window, and where it sits: pure, so it can be tested without a screen. */
-data class FloatCorner(val right: Boolean, val bottom: Boolean)
+/** Where the floating call window rests (#532): on the left or right side, at the height it was dropped (a fraction of the area, so it carries across screens). Pure, so it can be tested without a screen. */
+data class FloatSpot(val right: Boolean, val yFraction: Float)
 
-/** The corner nearest to a window's centre point `(cx, cy)` in an area of `width` by `height`. */
-fun nearestCorner(cx: Float, cy: Float, width: Float, height: Float) = FloatCorner(cx > width / 2f, cy > height / 2f)
+/** The spot of a window dropped with its top left at `(x, y)`: the side its centre is on, the height as it is. */
+fun spotOf(x: Float, y: Float, width: Float, height: Float, size: Float) = FloatSpot(x + size / 2f > width / 2f, if (height > 0f) y / height else 0f)
 
-/** Where the square's top left goes in a corner: inside `[0, width]` by `[top, bottom]`, `size` wide and `margin` from the edges. */
-fun cornerPosition(corner: FloatCorner, width: Float, top: Float, bottom: Float, size: Float, margin: Float): Pair<Float, Float> {
-    val x = if (corner.right) width - size - margin else margin
-    val y = if (corner.bottom) bottom - size - margin else top + margin
-    return x to maxOf(y, top)
+/** Where the square's top left goes: against its side (`margin` in), at its height kept inside `[top, bottom]` (clear of the bars). */
+fun spotPosition(spot: FloatSpot, width: Float, height: Float, top: Float, bottom: Float, size: Float, margin: Float): Pair<Float, Float> {
+    val x = if (spot.right) width - size - margin else margin
+    val lowest = maxOf(top, bottom - size - margin)
+    return x to (spot.yFraction * height).coerceIn(top, lowest)
 }
 
 /**
@@ -101,20 +101,20 @@ fun KeepClear(key: String, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(0.dp).onGloballyPositioned { FloatingAvoid.tops[key] = it.positionInWindow().y })
 }
 
-private val SquareSize = 96.dp
+private val SquareSize = 120.dp
 private val EdgeMargin = 12.dp
 private val TopBarClearance = 64.dp
 
 /**
  * The call in the app (#528), when its screen is not open: a small draggable square over everything but the call screen, showing the video being
- * watched or whoever speaks, and whether I am muted. A tap opens the call; a drag lets go into the nearest corner, which is kept across screens.
+ * watched or whoever speaks, and whether I am muted. A tap opens the call; a drag lets go against the nearer side, at the height it was dropped, kept across screens.
  * It stays above the search bar and the composer (see [KeepClear]).
  */
 @Composable
 fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val hidden by calls.hiddenVideo.collectAsState()
-    val corner by calls.floatCorner.collectAsState()
+    val spot by calls.floatSpot.collectAsState()
     val scope = rememberCoroutineScope()
     var area by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     var origin by remember { mutableStateOf(Offset.Zero) }
@@ -126,7 +126,7 @@ fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot, modifier: Mo
     val width = area.width.toFloat()
     val top = maxOf(0f, statusTop - origin.y) + with(density) { TopBarClearance.toPx() }
     val bottom = if (avoid != null) avoid - origin.y else area.height - navBottom
-    val target = cornerPosition(corner, width, top, bottom, size, margin).let { Offset(it.first, it.second) }
+    val target = spotPosition(spot, width, area.height.toFloat(), top, bottom, size, margin).let { Offset(it.first, it.second) }
     val position = remember { Animatable(target, Offset.VectorConverter) }
     var dragging by remember { mutableStateOf(false) }
     LaunchedEffect(target, dragging, area) {
@@ -152,7 +152,7 @@ fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot, modifier: Mo
                         onDrag = { change, delta -> change.consume(); scope.launch { position.snapTo(position.value + delta) } },
                         onDragEnd = {
                             dragging = false
-                            calls.setFloatCorner(nearestCorner(position.value.x + size / 2f, position.value.y + size / 2f, width, area.height.toFloat()))
+                            calls.setFloatSpot(spotOf(position.value.x, position.value.y, width, area.height.toFloat(), size))
                         },
                         onDragCancel = { dragging = false },
                     )

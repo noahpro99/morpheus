@@ -204,8 +204,6 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
             CallSettings(calls) { panel = null }
         } else if (panel == INVITE_PANEL) {
             InvitePanel(calls, snapshot) { panel = null }
-        } else if (panel == OUTPUT_PANEL) {
-            OutputPanel(calls) { panel = null }
         } else if (panel != null && person != null) {
             CardMenuPanel(calls, snapshot, person, screenPanel) { panel = null }
         } else if (snapshot.cards.firstOrNull { it.key == focused } != null) {
@@ -220,6 +218,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card, card.userId in hidden, { focused = card.key }) { panel = it } }
             }
         }
+        if (panel == OUTPUT_PANEL) OutputSheet(calls) { panel = null }
         Controls(calls, snapshot, speaker, openOutput = { panel = if (panel == OUTPUT_PANEL) null else OUTPUT_PANEL }) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
     }
 }
@@ -406,9 +405,10 @@ private fun ColumnScope.CallSettings(calls: CallModel, close: () -> Unit) {
     }
 }
 
-/** Where the call's sound goes (#496): every output there is as a radio row, the current one chosen; a headset coming or going updates the list. */
+/** Where the call's sound goes (#496, #533): a bottom sheet as high as its radio rows, the current output chosen; a headset coming or going updates the list and the sheet follows. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun ColumnScope.OutputPanel(calls: CallModel, close: () -> Unit) {
+private fun OutputSheet(calls: CallModel, close: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -420,13 +420,15 @@ private fun ColumnScope.OutputPanel(calls: CallModel, close: () -> Unit) {
         audio.registerAudioDeviceCallback(watch, null)
         onDispose { audio.unregisterAudioDeviceCallback(watch) }
     }
-    Column(Modifier.weight(1f).fillMaxWidth().padding(16.dp).testTag("output-panel")) {
+    androidx.compose.material3.ModalBottomSheet(close, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp).testTag("output-panel")) {
         Text(t("Sound goes to"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         tick
         for (route in calls.routes()) {
             ChoiceRow(route.label, route.on, "route-${route.key}") { calls.chooseRoute(route.key); tick++ }
         }
         TextButton(close, Modifier.testTag("output-close")) { Text(t("Close")) }
+    }
     }
 }
 
