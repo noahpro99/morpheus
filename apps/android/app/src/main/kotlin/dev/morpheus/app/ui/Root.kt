@@ -124,6 +124,7 @@ fun Root(model: AppModel) {
                                 ) { RoomScreen(model, shownRoom) }
                             }
                             RoomPageHost(model)
+                            if (going != null && !callOpen) FloatingCall(model.calls, going)
                             if (switcherOpen) QuickFind(model)
                         }
                     }

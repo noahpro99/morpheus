@@ -47,6 +47,12 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     val pipRequests: kotlinx.coroutines.flow.SharedFlow<Unit> = _pipRequests
     fun enterPip() { _pipRequests.tryEmit(Unit) }
 
+    private val _corner = MutableStateFlow(dev.morpheus.app.ui.FloatCorner(right = true, bottom = true))
+
+    /** The corner of the floating call window (#528), kept while the app runs and across its screens. */
+    val floatCorner: StateFlow<dev.morpheus.app.ui.FloatCorner> = _corner.asStateFlow()
+    fun setFloatCorner(corner: dev.morpheus.app.ui.FloatCorner) { _corner.value = corner }
+
     fun setPip(on: Boolean) { _pip.value = on; AppState.pip = on }
 
     private val _speaker = MutableStateFlow(true)

@@ -224,8 +224,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     TextButton({ model.discard(item.id) }, Modifier.testTag("send-discard")) { Text(t("Discard")) }
                 }
             }
-            // The call going is a strip above the composer (#473).
-            CallStrip(app)
+            // The floating call window (#528) keeps above this, the composer.
+            KeepClear("composer")
             val problem by model.error.collectAsState()
             // Over the composer, so it stays a line above it (a toast would cover the send button).
             problem?.let {

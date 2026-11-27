@@ -92,7 +92,7 @@ private fun timerText(snapshot: CallSnapshot): String? {
     return callTimer(now.toULong(), snapshot.startedMs)
 }
 
-private val speakingGreen = Color(0xFF3BA55D)
+internal val speakingGreen = Color(0xFF3BA55D)
 
 /** The call, full screen: a card for each person (and each shared screen), and the controls. */
 @Composable
@@ -275,7 +275,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
 
 /** A camera or a shared screen: the pictures of its feed as they arrive. */
 @Composable
-private fun VideoPicture(calls: CallModel, card: CallCard, zoom: Modifier = Modifier) {
+internal fun VideoPicture(calls: CallModel, card: CallCard, zoom: Modifier = Modifier) {
     val feed = card.feed ?: return
     var picture by remember(feed) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(feed) {
@@ -338,36 +338,6 @@ private fun Control(@androidx.annotation.DrawableRes icon: Int, description: Str
             checkedContainerColor = MaterialTheme.colorScheme.primary, checkedContentColor = MaterialTheme.colorScheme.onPrimary,
         ),
     ) { GlyphIcon(icon) }
-}
-
-/** The call strip (#473): above the list's search bar and above a chat's composer, while a call goes and its screen is not open. */
-@Composable
-fun CallStrip(model: dev.morpheus.app.AppModel) {
-    val call by model.calls.snapshot.collectAsState()
-    val open by model.calls.open.collectAsState()
-    val going = call
-    if (going != null && !open) CallBar(model.calls, going)
-}
-
-/** The call going, as a bar over the rest of the app: back to it, mute, hang up. */
-@Composable
-fun CallBar(calls: CallModel, snapshot: CallSnapshot) {
-    androidx.compose.material3.Surface(onClick = { calls.show(true) }, Modifier.fillMaxWidth().padding(horizontal = Space.md).testTag("call-bar"), color = Palette.Accent, shape = RoundedCornerShape(Radius.md)) {
-    Row(
-        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(snapshot.roomName, color = Palette.OnAccent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                if (snapshot.phase == CallPhase.CONNECTED) t("In a call") else t("Connecting…"),
-                color = Palette.OnAccent, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("call-bar-state"),
-            )
-        }
-        IconAction(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "bar-mute", { calls.toggleMute() }, tint = onColour(Palette.Accent))
-        IconAction(dev.morpheus.app.R.drawable.ic_lucide_phone_off, t("Hang up"), "bar-hangup", { calls.hangUp() }, tint = onColour(Palette.Accent))
-    }
-    }
 }
 
 private const val SETTINGS_PANEL = "settings"
