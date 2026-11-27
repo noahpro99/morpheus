@@ -1222,3 +1222,49 @@ mod signal_tests {
         assert_eq!(signal_of(Some(400.0), None).quality, "poor");
     }
 }
+
+/// Turn the phone's camera on to look at it (Settings, before a call); false when there is none or a call has it.
+#[uniffi::export]
+pub fn camera_preview_start() -> bool {
+    morpheus_call::start_camera_preview()
+}
+
+/// Let the camera go after a preview.
+#[uniffi::export]
+pub fn camera_preview_stop() {
+    morpheus_call::stop_camera_preview();
+}
+
+/// The latest picture of the preview; `None` before the first.
+#[uniffi::export]
+pub fn camera_preview_frame() -> Option<VideoFrame> {
+    let frame = morpheus_call::latest_frame(morpheus_call::LOCAL_CAMERA)?;
+    Some(VideoFrame { seq: frame.seq, jpeg: frame.jpeg.as_ref().clone(), width: frame.width, height: frame.height })
+}
+
+/// The phone's screen capture (MediaProjection, in Kotlin): a share asks it to start and stop, and it hands its pictures back through [`call_screen_frame`].
+#[uniffi::export(with_foreign)]
+pub trait ScreenDriver: Send + Sync {
+    /// Start capturing (the system's permission was already given); the size of the pictures as `[width, height]`, or empty when it could not.
+    fn start(&self) -> Vec<u32>;
+    fn stop(&self);
+}
+
+/// Register the screen capture a share sends from (once; later ones are ignored).
+#[uniffi::export]
+pub fn call_set_screen_driver(driver: Arc<dyn ScreenDriver>) {
+    let (on, off) = (driver.clone(), driver);
+    morpheus_call::set_platform_screen(morpheus_call::PlatformScreen {
+        start: Box::new(move || match on.start().as_slice() {
+            [w, h] => Some((*w, *h)),
+            _ => None,
+        }),
+        stop: Box::new(move || off.stop()),
+    });
+}
+
+/// One picture of the screen, RGBA_8888 as ImageReader gives it (`stride` bytes a row).
+#[uniffi::export]
+pub fn call_screen_frame(rgba: Vec<u8>, stride: u32, width: u32, height: u32) {
+    morpheus_call::screen_frame(&rgba, stride as usize, width, height);
+}

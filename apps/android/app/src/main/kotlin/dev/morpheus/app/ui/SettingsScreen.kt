@@ -176,6 +176,10 @@ fun SettingsScreen(app: AppModel) {
             }
             }
 
+            if (page == "VoiceVideo") {
+            VoicePage(app, t)
+            }
+
             if (page == "Bridges") {
             Heading(t("Bridges"))
             Button({ app.openBridges() }, Modifier.padding(horizontal = Space.lg).testTag("settings-bridges")) { Text(t("Connect a network")) }
@@ -198,7 +202,7 @@ private fun Heading(text: String) {
 }
 
 /** What the phone has under each of the desktop's groups. */
-private val supported = listOf("Account", "Notifications", "Appearance", "Bridges")
+private val supported = listOf("Account", "Notifications", "Appearance", "Bridges", "VoiceVideo")
 
 /** The groups, each opening its page, with the search bar at the bottom (the desktop's index, through the core). */
 @Composable

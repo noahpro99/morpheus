@@ -28,7 +28,8 @@ static CAMERA: OnceLock<PlatformCamera> = OnceLock::new();
 static SINK: Mutex<Option<Sink>> = Mutex::new(None);
 
 struct Sink {
-    source: NativeVideoSource,
+    /// None while only previewing (before a call): the picture is shown here and sent nowhere.
+    source: Option<NativeVideoSource>,
     shown: Option<Instant>,
 }
 
@@ -46,9 +47,11 @@ pub(crate) fn run(source: NativeVideoSource, stop: Arc<AtomicBool>) -> bool {
     let Some(camera) = CAMERA.get() else {
         return false;
     };
+    // A call takes the camera over from a preview.
+    PREVIEW.store(false, Ordering::Relaxed);
     if let Ok(mut sink) = SINK.lock() {
         *sink = Some(Sink {
-            source,
+            source: Some(source),
             shown: None,
         });
     }
@@ -122,11 +125,99 @@ pub fn camera_frame(
         _ => VideoRotation::VideoRotation0,
     };
     let frame = VideoFrame::new(rotation, buffer);
-    sink.source.capture_frame(&frame);
+    if let Some(source) = &sink.source {
+        source.capture_frame(&frame);
+    }
     let every = Duration::from_millis(1000 / video::FPS);
     if sink.shown.is_none_or(|at| at.elapsed() >= every) {
         sink.shown = Some(Instant::now());
         // The preview turned upright; the call gets the rotation with the frame.
         video::keep_turned(LOCAL_CAMERA, &frame.buffer, degrees);
+    }
+}
+
+/// Whether a preview (the camera shown, sent nowhere) is on.
+static PREVIEW: AtomicBool = AtomicBool::new(false);
+
+/// Turn the camera on for a preview (Settings, before a call): its pictures
+/// are kept under [`LOCAL_CAMERA`] and go nowhere else. False when there is
+/// no camera or a call has it.
+pub fn start_camera_preview() -> bool {
+    let Some(camera) = CAMERA.get() else {
+        return false;
+    };
+    if let Ok(mut sink) = SINK.lock() {
+        if sink.is_some() {
+            return false;
+        }
+        *sink = Some(Sink {
+            source: None,
+            shown: None,
+        });
+    }
+    if !(camera.start)() {
+        clear();
+        return false;
+    }
+    PREVIEW.store(true, Ordering::Relaxed);
+    true
+}
+
+/// Turn the preview off (and let the camera go), unless a call took over.
+pub fn stop_camera_preview() {
+    if !PREVIEW.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    if let Some(camera) = CAMERA.get() {
+        (camera.stop)();
+    }
+    if let Ok(mut sink) = SINK.lock()
+        && sink.as_ref().is_some_and(|s| s.source.is_none())
+    {
+        *sink = None;
+    }
+    video::forget(LOCAL_CAMERA);
+}
+
+pub fn camera_preview_on() -> bool {
+    PREVIEW.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    static STARTS: AtomicUsize = AtomicUsize::new(0);
+    static STOPS: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn a_preview_shows_the_camera_before_a_call_and_lets_it_go() {
+        set_platform_camera(PlatformCamera {
+            start: Box::new(|| {
+                STARTS.fetch_add(1, Ordering::Relaxed);
+                true
+            }),
+            stop: Box::new(|| {
+                STOPS.fetch_add(1, Ordering::Relaxed);
+            }),
+        });
+        assert!(!camera_preview_on());
+        assert!(start_camera_preview());
+        assert!(camera_preview_on());
+        assert_eq!(STARTS.load(Ordering::Relaxed), 1);
+        // A second preview is refused while one is on (the camera is taken).
+        assert!(!start_camera_preview());
+        // One picture, 4x4 grey: it is kept to be shown, and sent nowhere.
+        let (y, u, v) = (vec![128u8; 16], vec![128u8; 4], vec![128u8; 4]);
+        camera_frame(&y, &u, &v, 4, 2, 1, 4, 4, 0);
+        assert!(video::latest_frame(LOCAL_CAMERA).is_some(), "the preview shows a picture");
+        stop_camera_preview();
+        assert!(!camera_preview_on());
+        assert_eq!(STOPS.load(Ordering::Relaxed), 1);
+        assert!(video::latest_frame(LOCAL_CAMERA).is_none(), "nothing is kept after");
+        // Stopping again does nothing.
+        stop_camera_preview();
+        assert_eq!(STOPS.load(Ordering::Relaxed), 1);
     }
 }

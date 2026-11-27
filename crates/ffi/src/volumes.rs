@@ -119,3 +119,30 @@ impl Morpheus {
         morpheus_call::screen_audio_of_user(&user_id).map(|h| StreamHeard { level: h.level, volume: h.volume })
     }
 }
+
+/// A person this account gave a volume of their own (for the Voice & Video page).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct KeptPerson {
+    pub user_id: String,
+    pub volume: f32,
+    pub muted: bool,
+    pub stream: f32,
+    pub stream_muted: bool,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// Everyone this account chose a volume for, by user ID.
+    pub fn kept_people(&self) -> Vec<KeptPerson> {
+        morpheus_view_model::calls::kept_person_list(&self.dir, &self.account_id())
+            .into_iter()
+            .map(|(user_id, v)| KeptPerson { user_id, volume: v.voice, muted: v.voice_muted, stream: v.stream, stream_muted: v.stream_muted })
+            .collect()
+    }
+}
+
+/// The microphone test's bar after another stretch of sound (16-bit mono): 0 to 1, rising at once, falling slowly.
+#[uniffi::export]
+pub fn mic_test_level(previous: f32, samples: Vec<i16>) -> f32 {
+    morpheus_view_model::mic_meter::mic_level(previous, &samples)
+}

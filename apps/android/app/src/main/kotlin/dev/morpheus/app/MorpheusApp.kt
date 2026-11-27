@@ -16,6 +16,11 @@ class MorpheusApp : Application() {
         CameraFeed(this).also { uniffi.morpheus_ffi.callSetCameraDriver(it) }
     }
 
+    /** The phone's screen capture, for sharing it in a call. */
+    val screen: ScreenShare by lazy {
+        ScreenShare(this).also { uniffi.morpheus_ffi.callSetScreenDriver(it) }
+    }
+
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     /** Tell the homeserver where to push, when there is both a push endpoint and a signed-in account. */
@@ -51,6 +56,7 @@ class MorpheusApp : Application() {
             try {
                 morpheus
                 camera
+                screen
             } catch (e: Throwable) {
                 android.util.Log.w("MorpheusStart", "the core did not start: $e")
             }

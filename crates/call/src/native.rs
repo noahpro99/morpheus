@@ -66,6 +66,7 @@ mod camera;
 mod camera_format;
 #[path = "platform_camera.rs"]
 mod platform_camera;
+mod platform_screen;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[path = "screen.rs"]
 mod screen;
@@ -74,7 +75,8 @@ mod screen;
 mod screen_sources_win;
 #[cfg(target_os = "windows")]
 pub(crate) use screen_sources_win::WindowsSources;
-pub use platform_camera::{PlatformCamera, camera_frame, set_platform_camera};
+pub use platform_camera::{PlatformCamera, camera_frame, camera_preview_on, set_platform_camera, start_camera_preview, stop_camera_preview};
+pub use platform_screen::{PlatformScreen, screen_frame, set_platform_screen};
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 #[path = "denoise.rs"]
 mod denoise;
@@ -197,7 +199,7 @@ pub fn can_share_screen() -> bool {
         target_os = "linux",
         target_os = "macos",
         target_os = "windows"
-    )) || AudioMode::from_env() == AudioMode::Tone
+    )) || platform_screen::available() || AudioMode::from_env() == AudioMode::Tone
 }
 
 /// Calls send a test tone and play nothing from now on (test builds).
@@ -1124,6 +1126,8 @@ enum Feed {
     TestPattern(video::TestPattern, u32, u32, u32),
     /// The app's own camera ([`set_platform_camera`]).
     Platform,
+    /// The app's own screen capture ([`set_platform_screen`]).
+    PlatformScreen,
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     Camera(camera::Camera),
     /// Already capturing; frames go out once the source is put in the slot.
@@ -1405,6 +1409,15 @@ impl Outgoing {
                 );
                 (Feed::Platform, source)
             }
+            (_, VideoKind::Screen) if platform_screen::available() => {
+                let (width, height) = tokio::task::spawn_blocking(platform_screen::start)
+                    .await?
+                    .ok_or_else(|| Error::Video("the screen could not be captured".into()))?;
+                (
+                    Feed::PlatformScreen,
+                    NativeVideoSource::new(VideoResolution { width, height }, quality.is_screencast()),
+                )
+            }
             (AudioMode::Tone, VideoKind::Camera) => {
                 let (width, height) =
                     video::test_size("MORPHEUS_CALL_CAMERA_SIZE", video::CAMERA_PATTERN);
@@ -1585,6 +1598,7 @@ impl Outgoing {
                     stop.clone(),
                 ));
             }
+            Feed::PlatformScreen => platform_screen::run(source.clone(), stop.clone()),
             Feed::Platform => {
                 let (source, running) = (source.clone(), stop.clone());
                 let started =

@@ -310,6 +310,7 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
         }
         Control(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "call-mute", snapshot.muted) { calls.toggleMute() }
         Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_headphones, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
+        if (snapshot.canShareScreen) Control(if (snapshot.people.any { it.me && it.screen }) dev.morpheus.app.R.drawable.ic_lucide_screen_share_off else dev.morpheus.app.R.drawable.ic_lucide_screen_share, t("Share screen"), "call-share", snapshot.people.any { it.me && it.screen }) { calls.toggleScreenShare() }
         if (snapshot.canSendVideo) Control(dev.morpheus.app.R.drawable.ic_lucide_video, t("Camera"), "call-camera", snapshot.camera) { calls.toggleCamera() }
         if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_lucide_refresh_cw, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
         Control(if (speaker) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_phone, t("Speaker"), "call-speaker", speaker) { openOutput() }
@@ -375,11 +376,11 @@ private const val INVITE_PANEL = "invite"
 private const val SCREEN_PREFIX = "screen:"
 
 /** A volume from 0 to 2 as a percentage, in steps of a tenth. */
-private fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
+internal fun steps(v: Float) = (Math.round(v.coerceIn(0f, 2f) * 10) / 10f)
 
 /** A volume: less, the percentage, more, and a slider; each tagged `<tag>-less`, `-label`, `-more`, `-slider`. */
 @Composable
-private fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float) -> Unit) {
+internal fun VolumeRow(label: String, tag: String, start: Float, onChange: (Float) -> Unit) {
     var value by remember { mutableFloatStateOf(steps(start)) }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(label, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)

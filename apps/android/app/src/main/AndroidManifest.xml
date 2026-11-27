@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
@@ -31,6 +32,7 @@
 
         <receiver android:name=".Ringer$RingActionReceiver" android:exported="false" />
         <service android:name=".CallService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".ScreenShareService" android:exported="false" android:foregroundServiceType="mediaProjection" />
 
         <activity
             android:name=".MainActivity"

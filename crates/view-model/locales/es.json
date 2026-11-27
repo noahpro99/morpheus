@@ -907,5 +907,21 @@
   "Join a server or start a conversation from the search bar.": "Únete a un servidor o empieza una conversación desde la barra de búsqueda.",
   "Swipe left or right to go between your DMs and your servers": "Desliza a izquierda o derecha para ir de tus mensajes directos a tus servidores",
   "Pins": "Fijados",
-  "Info": "Info"
+  "Info": "Info",
+  "People": "Personas",
+  "Check camera": "Probar la cámara",
+  "Stop checking": "Dejar de probar",
+  "Test microphone": "Probar el micrófono",
+  "Stop testing": "Detener la prueba",
+  "Muted for me": "Silenciado para mí",
+  "The camera is the call's while you are in one.": "La cámara es de la llamada mientras estás en una.",
+  "The camera could not be opened.": "No se pudo abrir la cámara.",
+  "The microphone is the call's while you are in one.": "El micrófono es de la llamada mientras estás en una.",
+  "Shows how loud you are. Nothing is played back.": "Muestra qué tan alto hablas. No se reproduce nada.",
+  "Open a person's volume in a call and it is kept here.": "Cambia el volumen de una persona en una llamada y se guarda aquí.",
+  "Share screen": "Compartir pantalla",
+  "Screen sharing": "Compartir pantalla",
+  "Sharing your screen": "Compartiendo tu pantalla",
+  "Stop sharing": "Dejar de compartir",
+  "Cleans your microphone from the next call. The desktop's stronger suppression is not on phones yet.": "Limpia tu micrófono desde la próxima llamada. La supresión más fuerte del escritorio aún no está en los móviles."
 }

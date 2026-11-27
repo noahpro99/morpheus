@@ -1094,6 +1094,13 @@ fn read_person_file(data_dir: &std::path::Path) -> serde_json::Value {
         .unwrap_or_default()
 }
 
+/// Everyone `account` gave a volume, by Matrix user ID (for the Voice & Video page).
+pub fn kept_person_list(data_dir: &std::path::Path, account: &str) -> Vec<(String, PersonVolume)> {
+    let mut all: Vec<_> = read_person_volumes(data_dir, account).into_iter().collect();
+    all.sort_by(|a, b| a.0.cmp(&b.0));
+    all
+}
+
 /// The volumes `account` gave each person, by their Matrix user ID (people at
 /// the defaults are not in the file).
 pub fn read_person_volumes(
@@ -1223,8 +1230,11 @@ mod person_volume_tests {
         assert_eq!(read.len(), 1, "defaults are not kept: {read:?}");
         assert_eq!(read["@bob:x"], chosen);
         assert!(read_person_volumes(&dir, "@b:x").is_empty(), "per account");
+        write_person_volume(&dir, "@a:x", "@al:x", PersonVolume { voice: 0.4, ..Default::default() }).expect("write");
+        let listed = kept_person_list(&dir, "@a:x");
+        assert_eq!(listed.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(), ["@al:x", "@bob:x"], "sorted by user");
         write_person_volume(&dir, "@a:x", "@bob:x", PersonVolume::default()).expect("reset");
-        assert!(read_person_volumes(&dir, "@a:x").is_empty());
+        assert_eq!(read_person_volumes(&dir, "@a:x").len(), 1, "only the other is left");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

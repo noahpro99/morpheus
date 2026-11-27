@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
             val app = model
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 launch { app.calls.needCamera.collect { if (it) camera.launch(android.Manifest.permission.CAMERA) } }
+                launch { app.calls.needProjection.collect { if (it) projection.launch(projectionIntent()) } }
                 launch { app.needMicrophone.collect { if (it != null) microphone.launch(android.Manifest.permission.RECORD_AUDIO) } }
             }
             val light = dev.morpheus.app.ui.Palette.IsLight
@@ -90,6 +91,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private val camera = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { model.calls.cameraAnswered(it) }
+    private val projection = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { model.calls.projectionAnswered(it.resultCode, it.data) }
+
+    /** The system's dialog for capturing the screen: the whole screen only where Android lets the app say so (14 and up). */
+    private fun projectionIntent(): android.content.Intent {
+        val manager = getSystemService(android.media.projection.MediaProjectionManager::class.java)
+        return if (android.os.Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
+    }
 
     override fun onStop() {
         super.onStop()

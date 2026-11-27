@@ -5,7 +5,7 @@
 //! for its camera and screen, and does what the lines on its input say:
 //!
 //! - `callroom <room id>` joins the call of that room (a direct message rings the other person);
-//! - `join <room name>`, `mute`, `deafen`, `camera on|off`, `screen on|off`,
+//! - `join <room name>`, `mute`, `deafen`, `camera on|off`, `screen on|off`, `watch <user id> on|off`,
 //!   `leave` (then it exits);
 //! - each change of the call is a line on its output:
 //!   `call <phase> watchers=<n> <user>[mds] ...` where the letters say what
@@ -137,6 +137,12 @@ async fn main() {
                     "deafen" => call.iter().for_each(|c| c.toggle_deafen()),
                     "camera" => call.iter().for_each(|c| c.set_camera(rest == "on")),
                     "screen" => call.iter().for_each(|c| c.set_screen_share(rest == "on")),
+                    // `watch <user id> on|off`: watch (or stop watching) that person's shared screen, so its pictures are received.
+                    "watch" => {
+                        if let Some((user, on)) = rest.split_once(' ') {
+                            call.iter().for_each(|c| c.watch(user.to_owned(), on == "on"));
+                        }
+                    }
                     "leave" => {
                         if let Some(c) = call.take() {
                             c.leave().await;

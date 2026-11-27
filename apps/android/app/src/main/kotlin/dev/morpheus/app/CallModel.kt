@@ -175,6 +175,49 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         if (granted) handle?.setCamera(true)
     }
 
+    // ---- sharing the screen (#432)
+
+    /** Asked of the activity: the system's permission dialog for capturing the screen. */
+    val needProjection = MutableStateFlow(false)
+    private var projectionResult: Pair<Int, android.content.Intent>? = null
+
+    private val screenShare get() = (context.applicationContext as MorpheusApp).screen
+
+    /** The share button: ends the share, or asks the system for the permission first. */
+    fun toggleScreenShare() {
+        if (_snapshot.value?.people?.any { it.me && it.screen } == true) stopScreenShare() else needProjection.value = true
+    }
+
+    /** The system answered: with its permission the foreground service starts, and the capture follows once it is up. */
+    fun projectionAnswered(resultCode: Int, data: android.content.Intent?) {
+        needProjection.value = false
+        if (resultCode != android.app.Activity.RESULT_OK || data == null) return
+        projectionResult = resultCode to data
+        ScreenShareService.start(context)
+    }
+
+    /** The service is in the foreground (the system requires it before the projection is taken): capture and send. */
+    fun projectionServiceUp() {
+        val (code, data) = projectionResult ?: return
+        projectionResult = null
+        try {
+            screenShare.take(code, data)
+            handle?.setScreenShare(true)
+        } catch (e: Exception) {
+            android.util.Log.w("MorpheusCalls", "screen share did not start: $e")
+            ScreenShareService.stop(context)
+        }
+    }
+
+    fun stopScreenShare() {
+        handle?.setScreenShare(false)
+    }
+
+    /** The system ended the capture (its chip, another app taking the screen): the call stops sending it. */
+    fun screenEnded() {
+        handle?.setScreenShare(false)
+    }
+
     private fun cameraAllowed() = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     /** The app left the screen (not into picture-in-picture): the camera stops, and comes back with the app. */

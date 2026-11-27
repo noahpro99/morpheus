@@ -280,6 +280,17 @@ class TestBridge(private val app: Application) {
             val heard = (app as MorpheusApp).morpheus.streamHeard(request.getString("user"))
             JSONObject().put("heard", heard != null).put("level", heard?.level?.toDouble() ?: 0.0).put("volume", heard?.volume?.toDouble() ?: 0.0)
         }
+        // The microphone test on the Voice & Video page: `tone` true makes it hear a tone (the emulator's microphone is silent); `running` and `level` say how it is.
+        "mic_test" -> {
+            if (request.has("tone")) dev.morpheus.app.MicTest.tone = request.getBoolean("tone")
+            val test = dev.morpheus.app.ui.MicTestState.current
+            JSONObject().put("running", test?.running == true).put("level", (test?.level ?: 0f).toDouble())
+        }
+        // The camera preview on that page: how many pictures so far (the latest one's sequence number) and its size.
+        "camera_preview" -> {
+            val frame = uniffi.morpheus_ffi.cameraPreviewFrame()
+            JSONObject().put("seq", frame?.seq?.toLong() ?: 0L).put("width", frame?.width?.toInt() ?: 0).put("height", frame?.height?.toInt() ?: 0)
+        }
         // The input type the focused field asks the keyboard for (EditorInfo.inputType): what an IME would see.
         "input_type" -> onMain {
             val view = root()?.findFocus() ?: error("nothing is focused")

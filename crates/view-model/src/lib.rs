@@ -57,6 +57,7 @@ pub mod marks;
 pub mod members;
 pub mod profile;
 pub mod menu;
+pub mod mic_meter;
 pub mod mini_call;
 pub mod mod_view;
 pub mod nav;
