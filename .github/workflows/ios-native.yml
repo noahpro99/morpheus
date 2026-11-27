@@ -86,12 +86,6 @@ jobs:
 
       # Build once, then run: the first launch on a cold simulator timed out (and left a hung app that failed the next
       # tests), so the simulator is fully booted first and a failed test is retried once.
-      - name: Build the tests
-        run: |
-          cd apps/ios
-          xcodebuild build-for-testing -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
-            -clonedSourcePackagesDirPath ~/spm -derivedDataPath "$RUNNER_TEMP/dd" \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tail -15
       - name: Simulator booted
         run: xcrun simctl bootstatus "$SIM" -b
 
@@ -103,8 +97,8 @@ jobs:
           # A hung app is sampled every 45 s (its main thread, in the log): the tests hang after sign-in on the runner.
           ( while sleep 45; do pid=$(pgrep -x Morpheus | head -1); [ -n "$pid" ] && { echo "SAMPLE cpu=$(ps -o %cpu= -p $pid)"; sample $pid 3 -mayDie 2>&1 | head -60 | sed "s/^/SAMPLE /"; }; done ) &
           trap 'kill $! 2>/dev/null' EXIT
-          xcodebuild test-without-building -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
-            -derivedDataPath "$RUNNER_TEMP/dd" -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
+          xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
+            -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
             -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 150 \
                         ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep --line-buffered -E "Test Case|error:|SAMPLE|\*\* TEST|Executed|AUDIT"
 
@@ -118,6 +112,7 @@ jobs:
       - name: Homeserver log
         if: failure()
         run: |
+          grep -B3 -A30 -iE "failed to install|Underlying Error" "$RUNNER_TEMP/xcodebuild.log" | head -80 || true
           grep -A60 "accessibility tree" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
           tail -30 "$RUNNER_TEMP/hs/synapse.log" || true
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | head; cat ~/Library/Logs/DiagnosticReports/Morpheus*.ips 2>/dev/null | head -60 || true
