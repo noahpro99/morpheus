@@ -33,3 +33,12 @@ final class ListsTests: MorpheusTestCase {
         XCTAssertTrue(app.buttons["server-Test Server"].waitForExistence(timeout: 10), "back on the servers list")
     }
 }
+
+extension ListsTests {
+    func testSignOutReturnsToSignIn() throws {
+        signIn()
+        app.buttons["account-menu"].tap()
+        app.buttons["Sign out"].tap()
+        XCTAssertTrue(app.textFields["sign-in-username"].waitForExistence(timeout: 30), "back at sign-in")
+    }
+}

@@ -52,6 +52,19 @@ struct ListsView: View {
             }
             .navigationTitle(page.rawValue)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button(role: .destructive) { Task { await model.signOut() } } label: {
+                            Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle").accessibilityHidden(true)
+                    }
+                    .accessibilityLabel("Account")
+                    .accessibilityIdentifier("account-menu")
+                }
+            }
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case let .room(id, name): RoomView(roomId: id, title: name)
