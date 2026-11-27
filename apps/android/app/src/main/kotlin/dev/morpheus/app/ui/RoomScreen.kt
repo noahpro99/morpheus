@@ -139,6 +139,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     var searching by remember(room.id) { mutableStateOf(false) }
     val typingLine by model.typing.collectAsState()
     var viewing by remember { mutableStateOf<MediaHandle?>(null) }
+    val selection = remember(room.id, threadRoot) { MessageSelection() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -155,6 +156,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
         when {
             searching -> searching = false
             info -> info = false
+            selection.active -> selection.clear()
             viewing != null -> viewing = null
             editing != null -> model.edit(null)
             else -> onClose()
@@ -177,7 +179,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             // A chat has no top bar (#502): its name is the composer's label and its buttons are the row above the composer. A thread keeps a title.
             if (threadRoot != null) TopBar(t("Thread"), titleTag = "thread-title")
         }) { inner -> Column(Modifier.fillMaxSize().padding(inner)) {
-            androidx.compose.runtime.CompositionLocalProvider(LocalProfileRoom provides room.id) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalProfileRoom provides room.id, LocalSelection provides selection) {
             Timeline(
                 model, rows, Modifier.weight(1f),
                 onActions = { message, held ->
@@ -193,10 +195,11 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                                 is uniffi.morpheus_ffi.MenuOutcome.ViewReactions -> app.openPage(dev.morpheus.app.PageRequest("reactions", room.id, message = message))
                                 is uniffi.morpheus_ffi.MenuOutcome.Report -> message.eventId?.let { app.openPage(dev.morpheus.app.PageRequest("report", room.id, it)) }
                                 is uniffi.morpheus_ffi.MenuOutcome.OpenRoom -> {}
+                                is uniffi.morpheus_ffi.MenuOutcome.Page -> if (outcome.kind == "select-messages") selection.start(message.key)
                                 else -> {}
                             }
                         },
-                    ) { app.morpheus.messageMenuRows(room.id, message) }
+                    ) { app.morpheus.messageMenuRows(room.id, message) + uniffi.morpheus_ffi.MenuRow("select-messages", "Select messages", t("Select messages"), "check", false, false, false, null, emptyList()) }
                 },
                 onThread = { thread = it },
                 onImage = { viewing = it },
@@ -237,6 +240,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             problem?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
+            if (selection.active) SelectionBar(selection, rows.filterIsInstance<TimelineRow.Message>().map { it.message })
             Composer(
                 model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, title = if (threadRoot == null) title else null, dm = isDm, encrypted = encrypted, room = listed, server = serverOfRoom,
                 onComposing = { composing = it; pulled = false }, onEmpty = { boxEmpty = it }, onAttach = { picker.launch("*/*") },
@@ -252,7 +256,10 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 )
             }
         } } }
-        viewing?.let { ImageViewer(it) { viewing = null } }
+        viewing?.let { shown ->
+            val pictures = remember(rows) { rows.filterIsInstance<TimelineRow.Message>().mapNotNull { (it.message.body as? MessageBody.Image)?.media } }
+            PictureViewer(pictures.ifEmpty { listOf(shown) }, pictures.indexOfFirst { it.key() == shown.key() }.coerceAtLeast(0)) { viewing = null }
+        }
         thread?.let { root ->
             Box(Modifier.fillMaxSize().testTag("thread-panel")) { RoomScreen(app, room, root) { thread = null } }
         }
@@ -455,6 +462,9 @@ private fun MessageRow(
 ) {
     // The gesture lives as long as the message's key: it must see the message as it is now (a reaction that came since), not as it was.
     val latest by androidx.compose.runtime.rememberUpdatedState(message)
+    val selection = LocalSelection.current
+    val selecting = selection?.active == true
+    val picked = selecting && message.key in selection!!.keys
     // A tap anywhere on a message offers its actions. (Not `clickable`: that
     // merges the message into one semantics node, and the tests, like a
     // screen reader, want the parts.)
@@ -462,14 +472,15 @@ private fun MessageRow(
         Modifier
             .fillMaxWidth()
             .alpha(if (message.sending) 0.6f else 1f)
-            .background(if (highlighted) Palette.Accent.copy(alpha = 0.25f) else if (message.mentionsMe) MentionGold.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (highlighted || picked) Palette.Accent.copy(alpha = 0.25f) else if (message.mentionsMe) MentionGold.copy(alpha = 0.10f) else Color.Transparent)
             .then(if (message.mentionsMe) Modifier.drawBehind { drawRect(MentionGold, size = androidx.compose.ui.geometry.Size(2.dp.toPx(), size.height)) }.testTag("mention-bar") else Modifier)
-            .pointerInput(message.key) {
+            .pointerInput(message.key, selecting) {
                 // A tap does nothing; a double tap starts a reply and a long press opens the sheet (a tap with no handler
                 // waits for nothing: neither a long press nor a scroll is delayed).
                 detectTapGestures(
-                    onDoubleTap = { if (latest.eventId != null) model.replyTo(latest) },
-                    onLongPress = { onActions(latest, true) },
+                    onDoubleTap = { if (latest.eventId != null && !selecting) model.replyTo(latest) },
+                    onLongPress = { if (selecting) selection?.toggle(latest.key) else onActions(latest, true) },
+                    onTap = if (selecting) fun(_: androidx.compose.ui.geometry.Offset) { selection?.toggle(latest.key) } else null,
                 )
             }
             .semantics { onClick("Message actions") { onActions(latest, true); true } }
@@ -520,14 +531,14 @@ private fun MessageRow(
                 is MessageBody.Text -> {
                     // A very long message shows its first lines and a bar that opens the whole text on a page (#408).
                     val shown = message.collapsedLines
-                    LinkedText(body, message.edited, message.sending, maxLines = shown?.toInt() ?: Int.MAX_VALUE)
+                    LinkedText(body, message.edited, message.sending, maxLines = shown?.toInt() ?: Int.MAX_VALUE, lines = message.lines)
                     if (shown != null) {
                         TextButton({ onFull(message) }, Modifier.testTag("show-more")) { Text(t("Show more")) }
                     }
                 }
-                is MessageBody.Other -> Text(body.summary, Modifier.testTag("msg-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
+                is MessageBody.Other -> StateOrText(body.summary, message.state)
                 is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
-                is MessageBody.File -> Row(
+                is MessageBody.File -> if (body.kind == FileKind.VIDEO) VideoCard(body) { onActions(latest, true) } else Row(
                     Modifier
                         .padding(vertical = 2.dp)
                         .background(Palette.Raised, RoundedCornerShape(8.dp))
@@ -565,8 +576,7 @@ private fun MessageRow(
             if (message.reactions.isNotEmpty()) {
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (reaction in message.reactions) {
-                        Text(
-                            "${reaction.key} ${reaction.count}",
+                        Row(
                             Modifier
                                 .border(1.dp, if (reaction.mine) Palette.Accent else Palette.Raised, RoundedCornerShape(12.dp))
                                 .background(if (reaction.mine) Palette.Accent.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(12.dp))
@@ -575,12 +585,19 @@ private fun MessageRow(
                                 }
                                 .padding(horizontal = 12.dp, vertical = 4.dp)
                                 .testTag("reaction-${reaction.key}"),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            val emoji = reaction.emoji
+                            if (emoji != null) EmoteImage(emoji, Modifier.size(20.dp), "reaction-emote")
+                            Text(if (emoji != null) "${reaction.count}" else "${reaction.key} ${reaction.count}", style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }
         }
+        if (selecting) SelectMark(picked)
+        message.shield?.let { MessageShield(it) }
     }
 }
 
@@ -594,17 +611,14 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit,
     val ratio = if ((body.width ?: 0u) > 0u && (body.height ?: 0u) > 0u) body.width!!.toFloat() / body.height!!.toFloat() else 1.5f
     val loaded = bitmap
     if (loaded != null) {
-        Image(
-            loaded, body.caption,
-            Modifier
-                .padding(top = 4.dp)
-                .widthIn(max = 280.dp)
-                .aspectRatio(ratio.coerceIn(0.4f, 3f))
-                .pointerInput(body.media.key()) { detectTapGestures(onLongPress = { onLongPress() }) { onImage(body.media) } }
-                .semantics { onClick("Open picture") { onImage(body.media); true } }
-                .testTag("msg-image"),
-            contentScale = ContentScale.Fit,
-        )
+        val frame = Modifier
+            .padding(top = 4.dp)
+            .widthIn(max = 280.dp)
+            .aspectRatio(ratio.coerceIn(0.4f, 3f))
+            .pointerInput(body.media.key()) { detectTapGestures(onLongPress = { onLongPress() }) { onImage(body.media) } }
+            .semantics { onClick("Open picture") { onImage(body.media); true } }
+            .testTag("msg-image")
+        if (body.animated) AnimatedPicture(body.media, body.caption, frame) else Image(loaded, body.caption, frame, contentScale = ContentScale.Fit)
     } else {
         Box(
             Modifier.padding(top = 4.dp).widthIn(max = 280.dp).aspectRatio(ratio.coerceIn(0.4f, 3f)).background(Palette.Raised, shape).testTag("msg-image-loading"),
@@ -766,21 +780,6 @@ private fun ChatAction(@androidx.annotation.DrawableRes icon: Int, label: String
         GlyphIcon(icon, size = 20.dp)
         Spacer(Modifier.width(Space.xs))
         Text(label, maxLines = 1, overflow = TextOverflow.Clip, style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@Composable
-private fun ImageViewer(media: MediaHandle, onClose: () -> Unit) {
-    val bitmap by produceState<ImageBitmap?>(null, media.key()) { value = Images.load(media, 2048, 2048) }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .pointerInput(Unit) { detectTapGestures { onClose() } }
-            .testTag("image-viewer"),
-        contentAlignment = Alignment.Center,
-    ) {
-        bitmap?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
     }
 }
 

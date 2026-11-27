@@ -331,6 +331,7 @@ class TestBridge(private val app: Application) {
                 .put("room", AppState.room)
                 .put("haptics", AppState.haptics)
                 .put("image_fetches", AppState.imageFetches)
+                .put("emotes_drawn", AppState.emotesDrawn)
                 .put("ime_shown", AppState.imeShown)
                 .put("ime_hidden", AppState.imeHidden)
                 .put("ime_show_lag_ms", AppState.imeShownAt - AppState.imeLiftAt)
@@ -425,6 +426,27 @@ class TestBridge(private val app: Application) {
             .put("focused", config.getOrNull(SemanticsProperties.Focused) == true)
             .put("enabled", !config.contains(SemanticsProperties.Disabled))
             .put("password", config.contains(SemanticsProperties.Password))
+            .put("spans", spansOf(node))
+    }
+
+    /** The styles of a text node's annotated string, as `bold:0-4`, `italic`, `code`, `strike`, `underline` and `link` (UTF-16 offsets), so the tests can tell a formatted message from its marks. */
+    private fun spansOf(node: SemanticsNode): JSONArray {
+        val out = JSONArray()
+        val text = node.config.getOrNull(SemanticsProperties.Text)?.firstOrNull() ?: return out
+        for (span in text.spanStyles) {
+            val range = "${span.start}-${span.end}"
+            val style = span.item
+            if (style.fontWeight == androidx.compose.ui.text.font.FontWeight.Bold) out.put("bold:$range")
+            if (style.fontStyle == androidx.compose.ui.text.font.FontStyle.Italic) out.put("italic:$range")
+            if (style.fontFamily == androidx.compose.ui.text.font.FontFamily.Monospace) out.put("code:$range")
+            style.textDecoration?.let {
+                if (it.contains(androidx.compose.ui.text.style.TextDecoration.LineThrough)) out.put("strike:$range")
+                if (it.contains(androidx.compose.ui.text.style.TextDecoration.Underline)) out.put("underline:$range")
+            }
+        }
+        for (link in text.getStringAnnotations("URL", 0, text.length)) out.put("link:${link.start}-${link.end}")
+        for (inline in text.getStringAnnotations("androidx.compose.foundation.text.inlineContent", 0, text.length)) out.put("emote:${inline.start}-${inline.end}")
+        return out
     }
 
     private fun find(request: JSONObject): SemanticsNode {

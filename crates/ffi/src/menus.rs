@@ -120,7 +120,7 @@ fn failed(reason: impl Into<String>) -> FfiError {
 /// The core message a [`MessageItem`] came from, as far as the menu looks at it.
 fn message_of(item: &MessageItem) -> morpheus_core::Message {
     let kind = match &item.body {
-        MessageBody::Image { caption, media, width, height } => MessageKind::Image { body: caption.clone(), media: media.media_ref(), width: *width, height: *height, blurhash: None },
+        MessageBody::Image { caption, media, width, height, .. } => MessageKind::Image { body: caption.clone(), media: media.media_ref(), width: *width, height: *height, blurhash: None },
         MessageBody::Text { text, .. } => MessageKind::Text { body: text.clone(), html: None },
         _ => MessageKind::Text { body: String::new(), html: None },
     };
@@ -293,9 +293,11 @@ impl Morpheus {
                 });
             }
             MenuAction::Delete => MenuOutcome::Delete,
-            MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) | MenuAction::SelectText(text) => {
+            MenuAction::CopyText(text) | MenuAction::CopyLink(text) | MenuAction::CopyId(text) => {
                 MenuOutcome::Copy { text }
             }
+            // Part of a message can be chosen on its own page (#417).
+            MenuAction::SelectText(text) => MenuOutcome::Page { kind: "select-text".into(), room_id: String::new(), extra: text },
             MenuAction::CopyImage => {
                 let media = media.ok_or_else(|| failed("this message has no picture"))?;
                 let file = session.media_file(media).await?.ok_or_else(|| failed("could not fetch the picture"))?;
@@ -516,6 +518,9 @@ mod tests {
             mentions_me: false,
             collapsed_lines: None,
             is_event: false,
+            lines: Vec::new(),
+            state: None,
+            shield: None,
         };
         let room = morpheus_core::OwnedRoomId::try_from("!r:x").expect("room");
         let core = message_of(&item);

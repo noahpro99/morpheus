@@ -27,6 +27,114 @@ pub struct ReactionItem {
     pub mine: bool,
     /// Who reacted (user IDs), for "View reactions".
     pub senders: Vec<String>,
+    /// A custom emoji (its key is the picture's `mxc://` URI): the picture.
+    pub emoji: Option<Arc<MediaHandle>>,
+}
+
+/// A piece of a line of rich text with one style (#405).
+#[derive(uniffi::Record)]
+pub struct RichRun {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+    pub code: bool,
+    pub faint: bool,
+    /// A person or room pill.
+    pub mention: bool,
+    pub link: Option<String>,
+    /// A custom emoji: the text is its `:name:`, this the picture.
+    pub emote: Option<Arc<MediaHandle>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum RichKind {
+    Para,
+    Code,
+    Rule,
+}
+
+/// A line of a message's formatted text.
+#[derive(uniffi::Record)]
+pub struct RichLine {
+    pub kind: RichKind,
+    /// How many block quotes it is in.
+    pub quote: u32,
+    /// How many lists it is in.
+    pub indent: u32,
+    /// A bullet or "3." on the first line of a list item.
+    pub marker: Option<String>,
+    pub runs: Vec<RichRun>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum StateTone {
+    Good,
+    Bad,
+    Quiet,
+}
+
+/// How a state line ("bob joined") is drawn (#410): a Lucide icon name, its tone and the kind's name.
+#[derive(uniffi::Record)]
+pub struct StateLook {
+    pub glyph: String,
+    pub tone: StateTone,
+    pub kind: String,
+}
+
+/// The shield on a message from a device that is not verified (#409).
+#[derive(uniffi::Record)]
+pub struct ShieldItem {
+    pub red: bool,
+    pub reason: String,
+}
+
+fn rich_lines(blocks: &[morpheus_view_model::rich::Block], session: &Session) -> Vec<RichLine> {
+    use morpheus_view_model::rich_lines::{self, LineKind};
+    rich_lines::lines(blocks)
+        .into_iter()
+        .map(|line| RichLine {
+            kind: match line.kind {
+                LineKind::Para => RichKind::Para,
+                LineKind::Code => RichKind::Code,
+                LineKind::Rule => RichKind::Rule,
+            },
+            quote: line.quote,
+            indent: line.indent,
+            marker: line.marker,
+            runs: line
+                .runs
+                .into_iter()
+                .map(|run| RichRun {
+                    text: run.text,
+                    bold: run.style.bold,
+                    italic: run.style.italic,
+                    underline: run.style.underline,
+                    strike: run.style.strike,
+                    code: run.style.code,
+                    faint: run.style.faint,
+                    mention: run.style.mention,
+                    link: run.style.link.map(|l| l.to_string()),
+                    emote: run.style.emote.map(|uri| MediaHandle::new(morpheus_core::MediaRef::from_mxc_uri(&uri), session)),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn state_look(kind: Option<morpheus_core::StateKind>) -> StateLook {
+    use morpheus_view_model::state_lines::{self, Tone};
+    let look = state_lines::icon(kind);
+    StateLook {
+        glyph: look.glyph.to_owned(),
+        tone: match look.tone {
+            Tone::Good => StateTone::Good,
+            Tone::Bad => StateTone::Bad,
+            Tone::Quiet => StateTone::Quiet,
+        },
+        kind: state_lines::StateIcon::class(kind).to_owned(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -51,6 +159,8 @@ pub enum MessageBody {
         media: Arc<MediaHandle>,
         width: Option<u32>,
         height: Option<u32>,
+        /// A GIF: it moves when drawn (#412).
+        animated: bool,
     },
     /// A file, video or audio clip: a row to tap, which fetches it whole.
     File {
@@ -58,6 +168,11 @@ pub enum MessageBody {
         kind: FileKind,
         size: Option<u64>,
         media: Arc<MediaHandle>,
+        /// A video's poster picture, size and length, when the message says (#412).
+        thumbnail: Option<Arc<MediaHandle>>,
+        width: Option<u32>,
+        height: Option<u32>,
+        duration_ms: Option<u64>,
     },
     /// A deleted or unreadable message, a state change, in one line.
     Other { summary: String },
@@ -109,6 +224,12 @@ pub struct MessageItem {
     pub collapsed_lines: Option<u32>,
     /// A room event (someone joined, the topic changed), not something a person wrote.
     pub is_event: bool,
+    /// A text message as formatted lines (bold, quotes, lists, custom emoji); empty for anything else.
+    pub lines: Vec<RichLine>,
+    /// An event's icon.
+    pub state: Option<StateLook>,
+    /// A message from a device nobody verified.
+    pub shield: Option<ShieldItem>,
 }
 
 /// The chip on a thread's root: how many replies, and from whom last.
@@ -151,24 +272,37 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             media: MediaHandle::new(media.clone(), session),
             width: *width,
             height: *height,
+            animated: morpheus_view_model::attachments::is_gif(body),
         },
         MessageKind::File { body, media, size, .. } => MessageBody::File {
             name: body.clone(),
             kind: FileKind::File,
             size: *size,
             media: MediaHandle::new(media.clone(), session),
+            thumbnail: None,
+            width: None,
+            height: None,
+            duration_ms: None,
         },
         MessageKind::Audio { body, media, size, .. } => MessageBody::File {
             name: body.clone(),
             kind: FileKind::Audio,
             size: *size,
             media: MediaHandle::new(media.clone(), session),
+            thumbnail: None,
+            width: None,
+            height: None,
+            duration_ms: None,
         },
-        MessageKind::Video { body, media, .. } => MessageBody::File {
+        MessageKind::Video { body, media, thumbnail, width, height, duration } => MessageBody::File {
             name: body.clone(),
             kind: FileKind::Video,
             size: None,
             media: MediaHandle::new(media.clone(), session),
+            thumbnail: thumbnail.clone().map(|t| MediaHandle::new(t, session)),
+            width: *width,
+            height: *height,
+            duration_ms: duration.map(|d| d.as_millis() as u64),
         },
         kind => match kind.plain_body() {
             Some(text) => MessageBody::Text {
@@ -221,6 +355,7 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
                 count: r.count as u32,
                 mine: r.mine,
                 senders: r.senders.iter().map(ToString::to_string).collect(),
+                emoji: r.key.starts_with("mxc://").then(|| MediaHandle::new(morpheus_core::MediaRef::from_mxc_uri(&r.key), session)),
             })
             .collect(),
         read_by,
@@ -240,6 +375,9 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             None
         },
         is_event: matches!(message.kind, MessageKind::State(_)),
+        lines: if matches!(message.kind, MessageKind::Text { .. } | MessageKind::Notice { .. } | MessageKind::Emote { .. }) { rich_lines(&row.blocks, session) } else { Vec::new() },
+        state: matches!(message.kind, MessageKind::State(_)).then(|| state_look(message.state_kind)),
+        shield: message.shield.as_ref().map(|s| ShieldItem { red: s.red, reason: s.reason.clone() }),
     }
 }
 

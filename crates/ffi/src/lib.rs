@@ -46,6 +46,7 @@ mod switcher;
 mod sidebar;
 mod sidebar_cache;
 mod timeline_cache;
+mod transcript;
 mod timeline;
 mod volumes;
 
@@ -70,7 +71,7 @@ pub use security::{
 };
 pub use sidebar::{MuteChoice, mute_choices, RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
 pub use timeline::{
-    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, TextSegment, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
+    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, RichKind, RichLine, RichRun, ShieldItem, StateLook, StateTone, TextSegment, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
 };
 
 uniffi::setup_scaffolding!();

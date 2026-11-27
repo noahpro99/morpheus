@@ -43,13 +43,15 @@ import dev.morpheus.app.RoomModel
 import dev.morpheus.app.openLink
 import uniffi.morpheus_ffi.MessageBody
 
-private const val LINK = "URL"
+private const val LINK = LINK_TAG
 
 /** A message's text with its links drawn as links: a tap on one opens it, a tap elsewhere offers the message's actions. */
 @Composable
-fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false, maxLines: Int = Int.MAX_VALUE) {
+fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false, maxLines: Int = Int.MAX_VALUE, lines: List<uniffi.morpheus_ffi.RichLine> = emptyList()) {
     val context = LocalContext.current
-    val text = remember(body, edited) {
+    val scheme = Palette.scheme
+    val rich = remember(lines, scheme) { if (lines.isEmpty()) null else richOf(lines, Palette.Muted, Palette.Raised, Palette.Accent, Palette.Muted) }
+    val text = rich?.text ?: remember(body, edited) {
         buildAnnotatedString {
             for (segment in body.segments) {
                 if (segment.url != null) {
@@ -63,8 +65,9 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false
             if (edited) append("  (edited)")
         }
     }
-    if (body.segments.none { it.url != null }) {
-        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), style = MaterialTheme.typography.bodyLarge, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    val linked = if (rich != null) text.getStringAnnotations(LINK, 0, text.length).isNotEmpty() else body.segments.any { it.url != null }
+    if (!linked) {
+        Text(text, Modifier.semantics { if (sending) stateDescription = "sending" }.testTag("msg-body"), inlineContent = rich?.inline ?: emptyMap(), style = MaterialTheme.typography.bodyLarge, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
         return
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -87,6 +90,7 @@ fun LinkedText(body: MessageBody.Text, edited: Boolean, sending: Boolean = false
             }
             .semantics { if (sending) stateDescription = "sending" }
             .testTag("msg-body"),
+        inlineContent = rich?.inline ?: emptyMap(),
         onTextLayout = { layout = it },
         style = MaterialTheme.typography.bodyLarge,
         maxLines = maxLines,

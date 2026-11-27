@@ -927,5 +927,15 @@
   "Stop sharing": "Dejar de compartir",
   "Cleans your microphone from the next call. The desktop's stronger suppression is not on phones yet.": "Limpia tu micrófono desde la próxima llamada. La supresión más fuerte del escritorio aún no está en los móviles.",
   "Call: %{name}": "Llamada: %{name}",
-  "This call keeps the setting it started with.": "Esta llamada mantiene el ajuste con el que empezó."
+  "This call keeps the setting it started with.": "Esta llamada mantiene el ajuste con el que empezó.",
+  "Not encrypted.": "Sin cifrar.",
+  "The sender's identity has changed since you verified them.": "La identidad del remitente ha cambiado desde que lo verificaste.",
+  "The sender doesn't match the device that encrypted this message.": "El remitente no coincide con el dispositivo que cifró este mensaje.",
+  "Encrypted by a device not verified by its owner.": "Cifrado por un dispositivo que su dueño no ha verificado.",
+  "Encrypted by an unknown or deleted device.": "Cifrado por un dispositivo desconocido o eliminado.",
+  "Encrypted by a user you haven't verified.": "Cifrado por un usuario que no has verificado.",
+  "The authenticity of this encrypted message can't be guaranteed on this device.": "No se puede garantizar la autenticidad de este mensaje cifrado en este dispositivo.",
+  "%{n} selected": "%{n} seleccionados",
+  "Select messages": "Seleccionar mensajes",
+  "Select text": "Seleccionar texto"
 }

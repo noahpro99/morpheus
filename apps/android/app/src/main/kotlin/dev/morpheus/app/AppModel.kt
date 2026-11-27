@@ -221,6 +221,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         val request = _sheet.value ?: return
         closeSheet()
         if (path == "reorder") { openReorder(); return }
+        if (path == "select-messages") { request.onOutcome(uniffi.morpheus_ffi.MenuOutcome.Page("select-messages", "", "")); return }
         viewModelScope.launch {
             try {
                 when (val outcome = morpheus.runMenuItem(path)) {
@@ -936,6 +937,10 @@ object AppState {
     /** Pictures fetched over the network (not found on the disk), and avatars drawn (the debug bridge reports both; #334). */
     @Volatile
     var imageFetches: Int = 0
+
+    /** Custom emoji pictures drawn so far (the e2e checks a message's emoji came out as pictures). */
+    @Volatile
+    var emotesDrawn: Int = 0
 
     @Volatile
     var avatarsDrawn: Int = 0

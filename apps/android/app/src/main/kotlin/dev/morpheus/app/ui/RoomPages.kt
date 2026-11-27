@@ -71,6 +71,7 @@ fun RoomPageHost(app: AppModel) {
             "reactions" -> ReactionsPage(app, page)
             "pinned" -> PinnedPage(app, page)
             "full-message" -> FullMessagePage(app, page)
+            "select-text" -> SelectTextPage(app, page)
             "report" -> ReportPage(app, page)
             "rename-folder" -> RenameFolderPage(app, page)
             "unlock" -> UnlockPage(app, page)
@@ -325,7 +326,7 @@ private fun PinnedPage(app: AppModel, page: PageRequest) {
 private fun FullMessagePage(app: AppModel, page: PageRequest) {
     val message = page.message
     PageFrame(app, message?.senderName ?: "Message", "page-full-message") {
-        (message?.body as? uniffi.morpheus_ffi.MessageBody.Text)?.let { LinkedText(it, message?.edited == true, sending = false) }
+        (message?.body as? uniffi.morpheus_ffi.MessageBody.Text)?.let { LinkedText(it, message?.edited == true, sending = false, lines = message?.lines ?: emptyList()) }
     }
 }
 
