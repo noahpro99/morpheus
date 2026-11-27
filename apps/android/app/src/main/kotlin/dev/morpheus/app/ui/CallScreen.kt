@@ -37,6 +37,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -99,29 +100,65 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
     val drop = remember { androidx.compose.animation.core.Animatable(0f) }
     var height by remember { mutableFloatStateOf(1f) }
     var speed by remember { mutableFloatStateOf(0f) }
+    // How far the finger has pulled, kept here at once (the animatable follows through a coroutine, so it lags at the moment the finger lifts).
+    val pulled = remember { floatArrayOf(0f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // The cards' grid takes vertical drags first: what it cannot scroll (a pull down at its top) comes back here as leftover and pulls the screen.
+    val release: (Float) -> Unit = { fling ->
+        val goes = pulled[0] > height * 0.2f || fling > 1200f
+        scope.launch {
+            if (goes && snapshot.phase != CallPhase.FAILED) {
+                drop.animateTo(height, Motion.slide())
+                calls.show(false)
+                drop.snapTo(0f)
+            } else drop.animateTo(0f, Motion.slide())
+        }
+    }
+    val pull = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (pulled[0] > 0f && available.y < 0f) {
+                    val back = available.y.coerceAtLeast(-pulled[0])
+                    pulled[0] += back
+                    val to = pulled[0]
+                    scope.launch { drop.snapTo(to) }
+                    return androidx.compose.ui.geometry.Offset(0f, back)
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (available.y > 0f) {
+                    pulled[0] += available.y
+                    val to = pulled[0]
+                    scope.launch { drop.snapTo(to) }
+                    return androidx.compose.ui.geometry.Offset(0f, available.y)
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (pulled[0] > 0f) release(available.y + consumed.y)
+                return available
+            }
+        }
+    }
     Column(
         Modifier.fillMaxSize()
             .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
             .offset { androidx.compose.ui.unit.IntOffset(0, drop.value.toInt()) }
+            .nestedScroll(pull)
             .pointerInput(snapshot.phase) {
                 detectVerticalDragGestures(
-                    onDragStart = { speed = 0f },
-                    onDragEnd = {
-                        val goes = drop.value > height * 0.2f || speed > 1200f
-                        scope.launch {
-                            if (goes && snapshot.phase != CallPhase.FAILED) {
-                                drop.animateTo(height, Motion.slide())
-                                calls.show(false)
-                                drop.snapTo(0f)
-                            } else drop.animateTo(0f, Motion.slide())
-                        }
-                    },
+                    onDragStart = { speed = 0f; pulled[0] = 0f },
+                    onDragEnd = { release(speed) },
                     onDragCancel = { scope.launch { drop.animateTo(0f, Motion.slide()) } },
                 ) { change, amount ->
                     val dt = (change.uptimeMillis - change.previousUptimeMillis).coerceAtLeast(1L)
                     speed = amount / dt * 1000f
-                    scope.launch { drop.snapTo((drop.value + amount).coerceAtLeast(0f)) }
+                    pulled[0] = (pulled[0] + amount).coerceAtLeast(0f)
+                    val to = pulled[0]
+                    scope.launch { drop.snapTo(to) }
                 }
             }
             .background(Palette.Surface).testTag("call-screen"),
