@@ -84,14 +84,27 @@ jobs:
       - name: Homeserver ready
         run: for _ in $(seq 300); do grep -q seeded "$RUNNER_TEMP/hs.out" && exit 0; sleep 2; done; cat "$RUNNER_TEMP/hs.out"; exit 1
 
+      # Build once, then run: the first launch on a cold simulator timed out (and left a hung app that failed the next
+      # tests), so the simulator is fully booted first and a failed test is retried once.
+      - name: Build the tests
+        run: |
+          cd apps/ios
+          xcodebuild build-for-testing -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
+            -clonedSourcePackagesDirPath ~/spm -derivedDataPath "$RUNNER_TEMP/dd" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tail -15
+      - name: Simulator booted
+        run: xcrun simctl bootstatus "$SIM" -b
+
       - name: XCUITests
         shell: bash
         run: |
           cd apps/ios
-          xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
-            -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
-            -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 300 \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "Test Case|error:|\*\* TEST|Executed|AUDIT"
+          set -o pipefail
+          xcodebuild test-without-building -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
+            -derivedDataPath "$RUNNER_TEMP/dd" -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
+            -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 240 \
+            -retry-tests-on-failure -test-iterations 2 \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep --line-buffered -E "Test Case|error:|\*\* TEST|Executed|AUDIT"
 
       - name: Results
         if: always()
