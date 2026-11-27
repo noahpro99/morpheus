@@ -52,8 +52,8 @@ fun ReorderPage(app: AppModel, spaceId: String) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(reload) {
-        // A drop reaches the list with the next sync: look again a moment later too.
-        repeat(if (reload == 0) 1 else 6) {
+        // A drop (or a channel just made) reaches the list with the next sync: look again a few times.
+        repeat(8) {
             sections = app.morpheus.reorderInfo(spaceId).orEmpty()
             kotlinx.coroutines.delay(600)
         }
@@ -112,7 +112,7 @@ fun ReorderPage(app: AppModel, spaceId: String) {
                             ) { change, amount -> change.consume(); shift += amount.y }
                         },
                         contentAlignment = Alignment.Center,
-                    ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_move) } else Box(Modifier.size(Size.target))
+                    ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_open_with) } else Box(Modifier.size(Size.target))
                     Text(
                         title, Modifier.weight(1f).padding(end = Space.lg), maxLines = 1,
                         style = if (line is Line.Header) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,

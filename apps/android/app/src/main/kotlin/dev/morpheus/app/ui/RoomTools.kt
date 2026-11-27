@@ -109,8 +109,8 @@ fun EmojiPackSection(app: AppModel, roomId: String, onOk: (String) -> Unit, onEr
                 leading = { CustomEmojiImage(emote.media, 32) },
                 trailing = if (shown.editable) ({
                     Row {
-                        IconAction(dev.morpheus.app.R.drawable.ic_lucide_pencil, t("Rename %{name}", "name" to emote.shortcode), "emoji-rename-${emote.shortcode}", { renaming = emote.shortcode; newName = emote.shortcode })
-                        IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Remove %{name}", "name" to emote.shortcode), "emoji-remove-${emote.shortcode}", {
+                        IconAction(dev.morpheus.app.R.drawable.ic_ms_edit, t("Rename %{name}", "name" to emote.shortcode), "emoji-rename-${emote.shortcode}", { renaming = emote.shortcode; newName = emote.shortcode })
+                        IconAction(dev.morpheus.app.R.drawable.ic_ms_close, t("Remove %{name}", "name" to emote.shortcode), "emoji-remove-${emote.shortcode}", {
                             scope.launch { try { app.morpheus.removeRoomEmoji(roomId, emote.shortcode); reload++ } catch (e: Exception) { onError(e.sentence()) } }
                         })
                     }

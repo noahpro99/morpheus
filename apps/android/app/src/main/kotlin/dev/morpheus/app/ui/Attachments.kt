@@ -57,10 +57,10 @@ fun AttachmentTiles(files: List<Staged>, onRemove: (Staged) -> Unit) {
                 }
                 Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                     if (thumb != null) Image(thumb, null, Modifier.size(40.dp), contentScale = ContentScale.Crop)
-                    else GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_paperclip, size = 24.dp, tint = ink)
+                    else GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_attach_file, size = 24.dp, tint = ink)
                 }
                 Text(file.name, Modifier.weight(1f, fill = false), color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Remove %{name}", "name" to file.name), "attach-remove-${file.name}", { onRemove(file) }, tint = ink)
+                IconAction(dev.morpheus.app.R.drawable.ic_ms_close, t("Remove %{name}", "name" to file.name), "attach-remove-${file.name}", { onRemove(file) }, tint = ink)
             }
         }
     }
