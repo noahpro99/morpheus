@@ -52,7 +52,10 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
             }
             // A call with video leaves into a small window when the app is left (#433).
-            androidx.compose.runtime.LaunchedEffect(Unit) { app.calls.snapshot.collect { s -> videoCall = s != null && s.phase == uniffi.morpheus_ffi.CallPhase.CONNECTED && s.cards.any { (it.kind == uniffi.morpheus_ffi.CardKind.CAMERA || it.kind == uniffi.morpheus_ffi.CardKind.SCREEN) && s.people.none { p -> p.me && p.userId == it.userId } }; pipParams() } }
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                // (#529: only when a video is what is watched: on the call screen or in the floating window; see watchedVideo.)
+                kotlinx.coroutines.flow.combine(app.calls.snapshot, app.calls.hiddenVideo) { s, hidden -> s != null && dev.morpheus.app.ui.watchedVideo(s, hidden) != null }.collect { armed -> videoCall = armed; dev.morpheus.app.AppState.pipArmed = armed; pipParams() }
+            }
             androidx.compose.runtime.LaunchedEffect(Unit) { app.calls.pipRequests.collect { enterPip() } }
             AppState.mark("activity: setContent")
             MorpheusTheme { Root(app) }

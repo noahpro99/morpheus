@@ -548,13 +548,12 @@ private fun ColumnScope.FocusedCard(calls: CallModel, card: CallCard, close: () 
 /** The call in the small picture-in-picture window (#433): its main picture alone (a shared screen, else a camera, else the first person), no controls. */
 @Composable
 fun PipCall(calls: CallModel, snapshot: CallSnapshot) {
-    val card = snapshot.cards.firstOrNull { it.kind == CardKind.SCREEN }
-        ?: snapshot.cards.firstOrNull { it.kind == CardKind.CAMERA && it.userId != snapshot.people.firstOrNull { p -> p.me }?.userId }
-        ?: snapshot.cards.firstOrNull { it.kind == CardKind.PERSON && it.userId != snapshot.people.firstOrNull { p -> p.me }?.userId }
-        ?: snapshot.cards.firstOrNull()
+    val hidden by calls.hiddenVideo.collectAsState()
+    val video = watchedVideo(snapshot, hidden)
+    val card = video ?: speakerCard(snapshot)
     Box(Modifier.fillMaxSize().background(Color.Black).testTag("pip-view"), contentAlignment = Alignment.Center) {
         if (card != null) when (card.kind) {
-            CardKind.SCREEN, CardKind.CAMERA -> VideoPicture(calls, card)
+            CardKind.SCREEN, CardKind.CAMERA -> if (video != null) VideoPicture(calls, card) else Avatar(card.avatar, card.name, 64.dp)
             else -> Avatar(card.avatar, card.name, 64.dp)
         }
     }

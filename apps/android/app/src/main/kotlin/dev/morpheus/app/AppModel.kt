@@ -861,6 +861,10 @@ object AppState {
     @Volatile
     var pip: Boolean = false
 
+    /** A video of the call is being watched, so leaving the app goes into picture-in-picture (#529; the debug bridge reads it). */
+    @Volatile
+    var pipArmed: Boolean = false
+
     /** What the debug bridge adds to the clock the room screen reads, to see a day roll over (0 otherwise). */
     @Volatile
     var clockOffsetMs: Long = 0L
