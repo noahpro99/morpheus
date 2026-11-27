@@ -147,6 +147,9 @@ object Palette {
 
     /** The call colour (the core's `green`, the same in every theme): a voice channel's speaker while people are in its call (#513). */
     val Green: Color = Color(0xFF23A559)
+
+    /** The fair colour of the connection bars (#440). */
+    val Warn: Color = Color(0xFFF0B232)
     val OnDanger: Color get() = scheme.onError
     val IsLight: Boolean get() = if (dynamic != null) scheme.background.luminance() > 0.5f else fixedLight
 

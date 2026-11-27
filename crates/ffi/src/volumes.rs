@@ -102,3 +102,20 @@ impl Morpheus {
         morpheus_call::user_track_gain(&user_id, morpheus_call::TrackSource::Microphone)
     }
 }
+
+/// What a shared screen's sound is like here now, for checking that it plays.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct StreamHeard {
+    /// How loud it plays (0 to 1, at its volume; 0 while deafened).
+    pub level: f32,
+    /// The volume it is played at (1 as sent).
+    pub volume: f32,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// The sound of `user_id`'s shared screen as it arrives and plays here; `None` while there is none.
+    pub fn stream_heard(&self, user_id: String) -> Option<StreamHeard> {
+        morpheus_call::screen_audio_of_user(&user_id).map(|h| StreamHeard { level: h.level, volume: h.volume })
+    }
+}

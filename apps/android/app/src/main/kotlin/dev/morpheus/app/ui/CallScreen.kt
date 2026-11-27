@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -90,10 +92,13 @@ private val speakingGreen = Color(0xFF3BA55D)
 
 /** The call, full screen: a card for each person (and each shared screen), and the controls. */
 @Composable
-fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
+fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}) {
     BackHandler { if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }
     val speaker by calls.speaker.collectAsState()
     var panel by remember { mutableStateOf<String?>(null) }
+    var showPing by remember { mutableStateOf(false) }
+    var signal by remember { mutableStateOf(uniffi.morpheus_ffi.callConnectionSignal()) }
+    LaunchedEffect(snapshot.phase) { while (snapshot.phase == CallPhase.CONNECTED) { signal = uniffi.morpheus_ffi.callConnectionSignal(); delay(1000) } }
     val hidden by calls.hiddenVideo.collectAsState()
     // A swipe down minimises the call to its strip (#474): the screen follows the finger, a short slow drag springs back. A drag the call's own
     // lists or sliders take (they consume it first) is theirs.
@@ -167,6 +172,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
             TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 28.dp) }
             Column(Modifier.weight(1f)) {
                 Text(snapshot.roomName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("call-title"), style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     when (snapshot.phase) {
                         CallPhase.JOINING -> t("Connecting…")
@@ -176,7 +182,11 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot) {
                     },
                     Modifier.testTag("call-state"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall,
                 )
+                if (showPing && signal.quality != "unknown") Text(signal.tooltip, Modifier.padding(start = 8.dp).testTag("call-signal-detail"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
+                }
             }
+            IconAction(dev.morpheus.app.R.drawable.ic_lucide_message_circle, t("Open chat"), "call-chat", onChat)
+            if (snapshot.phase == CallPhase.CONNECTED) SignalBars(signal) { showPing = !showPing }
             if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_user_plus, t("Invite to call"), "call-invite-button", { panel = if (panel == INVITE_PANEL) null else INVITE_PANEL })
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
         }
@@ -396,7 +406,8 @@ private fun ColumnScope.CardMenuPanel(calls: CallModel, snapshot: CallSnapshot, 
                 "mute" -> Button({ muted = !muted; calls.setPersonVolume(person.userId, volume, muted) }, Modifier.testTag("person-volume-mute")) { Text(row.label) }
                 "mute-stream" -> Button({ muted = !muted; calls.setStreamVolume(person.userId, volume, muted) }, Modifier.testTag("stream-volume-mute")) { Text(row.label) }
                 "hide-video" -> TextButton({ calls.toggleHideVideo(person.userId) }, Modifier.testTag("card-hide-video").semantics { if (row.checked) stateDescription = "On" }) {
-                    Text(row.label + if (row.checked) " ✓" else "")
+                    Text(row.label)
+                    if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
                 }
                 "stop-watching" -> TextButton({ calls.watch(person.userId, false); close() }, Modifier.testTag("card-stop-watching")) { Text(row.label) }
             }
@@ -454,8 +465,8 @@ private fun ColumnScope.InvitePanel(calls: CallModel, snapshot: CallSnapshot, cl
             color = Palette.Muted, style = MaterialTheme.typography.bodyMedium,
         )
         val list = friends
-        if (list == null) Text("…", color = Palette.Muted)
-        else if (list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("call-invite-none"), color = Palette.Muted)
+        if (list == null) Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+        else if (list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("call-invite-none"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f)) {
             listItems(list.orEmpty(), key = { it.userId }) { friend ->
                 val state = states[friend.userId]
@@ -484,5 +495,27 @@ private fun ColumnScope.InvitePanel(calls: CallModel, snapshot: CallSnapshot, cl
             }
         }
         TextButton(close, Modifier.testTag("call-invite-close")) { Text(t("Close")) }
+    }
+}
+
+/** Three bars lit by how good the call's connection is (green good, yellow fair, red poor; #440); a tap shows the round-trip delay beside "Connected". */
+@Composable
+private fun SignalBars(signal: uniffi.morpheus_ffi.ConnectionSignal, onClick: () -> Unit) {
+    val lit = when (signal.quality) {
+        "good" -> Palette.Green
+        "fair" -> Palette.Warn
+        "poor" -> Palette.Danger
+        else -> Palette.Muted
+    }
+    Box(
+        Modifier.size(Size.target).clip(CircleShape).clickable(onClick = onClick)
+            .semantics { contentDescription = t("Connection"); stateDescription = signal.quality }.testTag("call-signal"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(Modifier.height(16.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+            for (i in 0 until 3) {
+                Box(Modifier.width(4.dp).height((8 + 4 * i).dp).clip(RoundedCornerShape(1.dp)).background(if (i < signal.bars.toInt()) lit else Palette.Divider))
+            }
+        }
     }
 }

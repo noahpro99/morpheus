@@ -31,9 +31,9 @@ import uniffi.morpheus_ffi.callTimer
  * their name. Tags: `in-call-muted-`, `in-call-camera-`, `in-call-live-`, `in-call-speaking-` + `<room>-<name>`.
  */
 @Composable
-fun CallMemberMarks(roomId: String, room: String, name: String, userId: String, member: CallListing) {
+fun CallMemberMarks(roomId: String, room: String, name: String, userId: String, member: CallListing, modifier: Modifier = Modifier) {
     val speakers by CallModel.speakers.collectAsState()
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
         if (speakers.first == roomId && userId in speakers.second) {
             androidx.compose.foundation.layout.Box(Modifier.padding(end = 2.dp).size(8.dp).clip(CircleShape).background(Palette.Green).testTag("in-call-speaking-$room-$name"))
         }
@@ -44,7 +44,7 @@ fun CallMemberMarks(roomId: String, room: String, name: String, userId: String, 
 
 /** How long the room's call has been going, ticking each second (the desktop row's timer). */
 @Composable
-fun CallRowTimer(room: String, startedMs: ULong?) {
+fun CallRowTimer(room: String, startedMs: ULong?, modifier: Modifier = Modifier) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -52,5 +52,5 @@ fun CallRowTimer(room: String, startedMs: ULong?) {
             now = System.currentTimeMillis()
         }
     }
-    callTimer(now.toULong(), startedMs)?.let { Text(it, Modifier.testTag("call-row-timer-$room"), color = Palette.Muted, style = MaterialTheme.typography.labelMedium) }
+    callTimer(now.toULong(), startedMs)?.let { Text(it, modifier.testTag("call-row-timer-$room"), color = Palette.Muted, style = MaterialTheme.typography.labelMedium) }
 }

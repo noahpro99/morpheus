@@ -261,15 +261,21 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     data class Route(val key: String, val label: String, val on: Boolean)
 
 
+    private var picked: String? = null
+
     /** The places to pick from now (a headset appears when it is plugged in or connected). */
     fun routes(): List<Route> {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        // The device the system is using says what is chosen (a headset picked from here or by the system unticks both).
-        val now = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.communicationDevice?.type else null
-        val chosen = if (now == null) { if (_speaker.value) "speaker" else "earpiece" }
-        else if (now == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) "speaker"
-        else if (now == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) "earpiece"
-        else ""
+        // What was picked from here is what is chosen at once (the system switches later); with nothing picked the system's device says.
+        val now = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.communicationDevice else null
+        val ids = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.availableCommunicationDevices.map { "device-${it.id}" }.toSet() else emptySet()
+        if (picked?.startsWith("device-") == true && picked !in ids) picked = null
+        val chosen = picked ?: when {
+            now == null -> if (_speaker.value) "speaker" else "earpiece"
+            now.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+            now.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+            else -> "device-${now.id}"
+        }
         val out = mutableListOf(
             Route("speaker", t("Loudspeaker"), chosen == "speaker"),
             Route("earpiece", t("Earpiece"), chosen == "earpiece"),
@@ -282,7 +288,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
                     AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> d.productName.toString().ifBlank { t("USB headset") }
                     else -> continue
                 }
-                out += Route("device-${d.id}", label, audio.communicationDevice?.id == d.id)
+                out += Route("device-${d.id}", label, chosen == "device-${d.id}")
             }
         }
         return out
@@ -290,6 +296,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
 
     /** Send the call's sound to [key] (one of [routes]); a headset carries the microphone too. */
     fun chooseRoute(key: String) {
+        picked = key
         when (key) {
             "speaker" -> { _speaker.value = true; route(true) }
             "earpiece" -> { _speaker.value = false; route(false) }
@@ -301,6 +308,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     }
 
     fun toggleSpeaker() {
+        picked = null
         _speaker.value = !_speaker.value
         route(_speaker.value)
     }

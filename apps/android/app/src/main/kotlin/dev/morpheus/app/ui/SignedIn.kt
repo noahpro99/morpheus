@@ -374,6 +374,7 @@ private fun ChannelList(
                         RoomRow(
                             room, room.id == selectedRoom,
                             onOpen = { if (room.isVoice) model.startCall(room.id, room.name) else onOpenRoom(room) },
+                            onChat = { onOpenRoom(room) },
                             onMenu = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } },
                             callName = { id ->
                                 val names by model.callNames.collectAsState()
@@ -399,7 +400,7 @@ private fun ChannelList(
  * slot, so a name never runs under it), at least 48 dp tall (a DM 60). `callName` names someone in the room's call.
  */
 @Composable
-fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier) {
+fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier, onChat: () -> Unit = {}) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
     Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent)) {
         Column {
@@ -419,8 +420,9 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                         if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
                     }
                 },
-                trailing = if (room.highlights > 0UL || room.unread > 0UL) ({
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                trailing = if (room.isVoice || room.highlights > 0UL || room.unread > 0UL) ({
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                        if (room.isVoice) IconAction(dev.morpheus.app.R.drawable.ic_lucide_message_circle, t("Open chat"), "voice-chat-${room.name}", onChat)
                         if (room.highlights > 0UL) MentionPill(room.highlights, "mention-${room.name}")
                         if (room.unread > 0UL) UnreadBadge(room.unread, "badge-${room.name}", muted = room.muted)
                     }

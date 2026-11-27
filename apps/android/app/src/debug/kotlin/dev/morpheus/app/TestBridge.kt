@@ -275,6 +275,11 @@ class TestBridge(private val app: Application) {
                 .put("input", volumes.input.toDouble())
                 .put("output", volumes.output.toDouble())
         }
+        // The sound of someone's shared screen as it plays here: `heard` false while there is none.
+        "stream_heard" -> {
+            val heard = (app as MorpheusApp).morpheus.streamHeard(request.getString("user"))
+            JSONObject().put("heard", heard != null).put("level", heard?.level?.toDouble() ?: 0.0).put("volume", heard?.volume?.toDouble() ?: 0.0)
+        }
         // The input type the focused field asks the keyboard for (EditorInfo.inputType): what an IME would see.
         "input_type" -> onMain {
             val view = root()?.findFocus() ?: error("nothing is focused")

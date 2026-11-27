@@ -118,6 +118,15 @@ pub fn is_discord_app(name: &str) -> bool {
         && (base.contains("discord") || DISCORD_CLIENTS.iter().any(|c| base.contains(c)))
 }
 
+/// What the screen `user` shares sounds like here (the sharer found by the identity of their device), while it has sound.
+pub fn screen_audio_of_user(user: &str) -> Option<ScreenAudio> {
+    let all = HEARD.lock().ok()?;
+    all.as_ref()?
+        .iter()
+        .find(|(identity, _)| crate::voice_owner(identity).as_deref() == Some(user))
+        .map(|(_, heard)| heard.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

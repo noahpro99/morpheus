@@ -1173,3 +1173,52 @@ impl Morpheus {
         Ok(())
     }
 }
+
+/// How good the call's connection is, for the signal bars in the call header (#440).
+#[derive(uniffi::Record)]
+pub struct ConnectionSignal {
+    /// "unknown" (nothing measured yet), "good", "fair" or "poor".
+    pub quality: String,
+    /// Lit bars of three.
+    pub bars: u32,
+    /// The round-trip delay, like "42 ms" (with the loss when there is some), or "Measuring…".
+    pub tooltip: String,
+}
+
+fn signal_of(rtt_ms: Option<f64>, loss_percent: Option<f64>) -> ConnectionSignal {
+    use morpheus_view_model::connection_quality::{Quality, quality, tooltip};
+    let q = quality(rtt_ms, loss_percent);
+    ConnectionSignal {
+        quality: match q {
+            Quality::Unknown => "unknown",
+            Quality::Good => "good",
+            Quality::Fair => "fair",
+            Quality::Poor => "poor",
+        }
+        .to_owned(),
+        bars: u32::try_from(q.bars()).unwrap_or(0),
+        tooltip: tooltip(rtt_ms, loss_percent),
+    }
+}
+
+/// The call's connection now (the call stack measures it about once a second): ask again about once a second.
+#[uniffi::export]
+pub fn call_connection_signal() -> ConnectionSignal {
+    let diag = morpheus_call::call_diag();
+    signal_of(diag.as_ref().and_then(|d| d.rtt_ms), diag.as_ref().and_then(|d| d.loss_percent))
+}
+
+#[cfg(test)]
+mod signal_tests {
+    use super::signal_of;
+
+    #[test]
+    fn the_signal_follows_the_measurement() {
+        let none = signal_of(None, None);
+        assert_eq!((none.quality.as_str(), none.bars), ("unknown", 0));
+        let good = signal_of(Some(42.0), Some(0.0));
+        assert_eq!((good.quality.as_str(), good.bars, good.tooltip.as_str()), ("good", 3, "42 ms"));
+        assert_eq!(signal_of(Some(150.0), None).quality, "fair");
+        assert_eq!(signal_of(Some(400.0), None).quality, "poor");
+    }
+}
