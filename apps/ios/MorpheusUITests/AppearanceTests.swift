@@ -11,6 +11,7 @@ final class AppearanceTests: XCTestCase {
     ]
 
     func testSignInAndListsInEveryAppearance() throws {
+        continueAfterFailure = false
         for configuration in configurations {
             let app = XCUIApplication()
             app.launchArguments += ["-reset"] + configuration.args
@@ -20,7 +21,7 @@ final class AppearanceTests: XCTestCase {
             let user = app.textFields["sign-in-username"]
             XCTAssertTrue(user.waitForExistence(timeout: 20), configuration.name)
             keep(app, "sign-in-\(configuration.name)")
-            try app.performAccessibilityAudit()
+            try app.auditing()
 
             user.tap()
             user.typeText("alice")
@@ -29,7 +30,7 @@ final class AppearanceTests: XCTestCase {
             app.buttons["sign-in-submit"].tap()
             XCTAssertTrue(app.buttons["room-bob"].waitForExistence(timeout: 60), configuration.name)
             keep(app, "lists-\(configuration.name)")
-            try app.performAccessibilityAudit()
+            try app.auditing()
             app.terminate()
         }
     }

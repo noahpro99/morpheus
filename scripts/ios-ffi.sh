@@ -9,10 +9,15 @@ targets=("$@")
 out=apps/ios
 
 rustup target add "${targets[@]}"
+# IOS_FAST=1 (the test job): our own crates unoptimised, so a run compiles in minutes, not 40; dependencies stay optimised and cached.
+fast=()
+if [ -n "${IOS_FAST:-}" ]; then
+    for c in morpheus-core morpheus-ffi morpheus-view-model morpheus-call; do fast+=(--config "profile.release.package.$c.opt-level=0" --config "profile.release.package.$c.codegen-units=256"); done
+fi
 args=()
 for t in "${targets[@]}"; do
     # A static library from the crate's rlib (the manifest's cdylib is for Android).
-    cargo rustc -p morpheus-ffi --lib --release --target "$t" --crate-type staticlib -- --print native-static-libs
+    cargo rustc ${fast[@]+"${fast[@]}"} -p morpheus-ffi --lib --release --target "$t" --crate-type staticlib -- --print native-static-libs
     lib="target/$t/release/libmorpheus_ffi.a"
     args+=(-library "$lib" -headers "$out/build/headers")
     first=${first:-$lib}

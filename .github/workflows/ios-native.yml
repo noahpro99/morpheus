@@ -71,9 +71,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios-sim
+          cache-workspace-crates: true
           cache-on-failure: true
       - name: XCFramework (simulator) and Swift bindings
-        run: scripts/ios-ffi.sh aarch64-apple-ios-sim
+        run: IOS_FAST=1 scripts/ios-ffi.sh aarch64-apple-ios-sim
 
       - name: Xcode project
         run: |
@@ -90,7 +91,7 @@ jobs:
           xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
             -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 300 \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "Test Case|error:|\*\* TEST|Executed"
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "Test Case|error:|\*\* TEST|Executed|AUDIT"
 
       - name: Results
         if: always()
@@ -123,6 +124,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios-device
+          cache-workspace-crates: true
           cache-on-failure: true
       - name: XCFramework (device) and Swift bindings
         run: scripts/ios-ffi.sh aarch64-apple-ios

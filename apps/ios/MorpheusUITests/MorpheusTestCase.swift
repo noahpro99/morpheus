@@ -28,7 +28,7 @@ class MorpheusTestCase: XCTestCase {
 
     /// Apple's audit: contrast, hit regions, Dynamic Type, labels, clipped text.
     func audit(file: StaticString = #filePath, line: UInt = #line) throws {
-        try app.performAccessibilityAudit()
+        try app.auditing()
     }
 }
 
@@ -39,5 +39,15 @@ extension MorpheusTestCase {
             print("--- accessibility tree at failure ---\n\(app.debugDescription)")
         }
         super.tearDown()
+    }
+}
+
+extension XCUIApplication {
+    /// Apple's audit, with every issue (type, what, which element) printed for the CI log; any issue fails.
+    func auditing() throws {
+        try performAccessibilityAudit { issue in
+            print("AUDIT \(issue.auditType.rawValue) \(issue.compactDescription) | \(issue.element?.debugDescription.prefix(160) ?? "no element")")
+            return false
+        }
     }
 }

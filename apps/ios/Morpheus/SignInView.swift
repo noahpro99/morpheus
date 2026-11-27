@@ -11,8 +11,9 @@ struct SignInView: View {
 
     var body: some View {
         // Thumb-first: the form sits low, above the keyboard.
+        ScrollView {
         VStack(spacing: 16) {
-            Spacer()
+            Spacer(minLength: 24)
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.largeTitle)
                 .foregroundStyle(model.theme.accent)
@@ -47,11 +48,15 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
+            .foregroundStyle(model.theme.onAccent)
             .disabled(model.signingIn || username.isEmpty || password.isEmpty)
             .accessibilityIdentifier("sign-in-submit")
         }
         .padding(24)
         .frame(maxWidth: 480)
+        }
+        .defaultScrollAnchor(.bottom)
+        .scrollBounceBehavior(.basedOnSize)
         .onAppear { if homeserver.isEmpty { homeserver = model.defaultHomeserver } }
     }
 
