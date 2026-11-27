@@ -191,7 +191,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 }
             }
             IconAction(dev.morpheus.app.R.drawable.ic_lucide_message_circle, t("Open chat"), "call-chat", onChat)
-            if (snapshot.phase == CallPhase.CONNECTED && android.os.Build.VERSION.SDK_INT >= 26) IconAction(dev.morpheus.app.R.drawable.ic_lucide_minimize_2, t("Picture in picture"), "call-pip", { calls.enterPip() })
+            if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_minimize_2, t("Picture in picture"), "call-pip", { calls.enterPip() })
             if (snapshot.phase == CallPhase.CONNECTED) SignalBars(signal) { showPing = !showPing }
             if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_user_plus, t("Invite to call"), "call-invite-button", { panel = if (panel == INVITE_PANEL) null else INVITE_PANEL })
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
@@ -275,7 +275,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
 
 /** A camera or a shared screen: the pictures of its feed as they arrive. */
 @Composable
-internal fun VideoPicture(calls: CallModel, card: CallCard, zoom: Modifier = Modifier) {
+internal fun VideoPicture(calls: CallModel, card: CallCard, modifier: Modifier = Modifier) {
     val feed = card.feed ?: return
     var picture by remember(feed) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(feed) {
@@ -291,7 +291,7 @@ internal fun VideoPicture(calls: CallModel, card: CallCard, zoom: Modifier = Mod
     }
     val shown = picture
     if (shown != null) {
-        Image(shown, card.name, Modifier.fillMaxSize().then(zoom).testTag(if (card.kind == CardKind.SCREEN) "video-screen-${card.name}" else "video-${card.name}"), contentScale = ContentScale.Fit)
+        Image(shown, card.name, Modifier.fillMaxSize().then(modifier).testTag(if (card.kind == CardKind.SCREEN) "video-screen-${card.name}" else "video-${card.name}"), contentScale = ContentScale.Fit)
     } else {
         Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     }
@@ -547,11 +547,11 @@ private fun ColumnScope.FocusedCard(calls: CallModel, card: CallCard, close: () 
 
 /** The call in the small picture-in-picture window (#433): its main picture alone (a shared screen, else a camera, else the first person), no controls. */
 @Composable
-fun PipCall(calls: CallModel, snapshot: CallSnapshot) {
+fun PipCall(calls: CallModel, snapshot: CallSnapshot, modifier: Modifier = Modifier) {
     val hidden by calls.hiddenVideo.collectAsState()
     val video = watchedVideo(snapshot, hidden)
     val card = video ?: speakerCard(snapshot)
-    Box(Modifier.fillMaxSize().background(Color.Black).testTag("pip-view"), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize().background(Color.Black).testTag("pip-view"), contentAlignment = Alignment.Center) {
         if (card != null) when (card.kind) {
             CardKind.SCREEN, CardKind.CAMERA -> if (video != null) VideoPicture(calls, card) else Avatar(card.avatar, card.name, 64.dp)
             else -> Avatar(card.avatar, card.name, 64.dp)

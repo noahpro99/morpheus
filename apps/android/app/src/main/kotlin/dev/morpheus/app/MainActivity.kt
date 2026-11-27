@@ -71,16 +71,20 @@ class MainActivity : ComponentActivity() {
 
     private var videoCall = false
 
+    /** The small window's parameters: 16 by 9, taking the whole window as its source (a smooth change into it, #529), and on Android 12 entering by itself when a video is watched. */
+    private fun pipBuilder(): android.app.PictureInPictureParams.Builder {
+        val whole = android.graphics.Rect().also { this.window.decorView.getGlobalVisibleRect(it) }
+        return android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).setSourceRectHint(whole)
+    }
+
     private fun pipParams() {
-        if (android.os.Build.VERSION.SDK_INT < 26) return
-        val b = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9))
+        val b = pipBuilder()
         if (android.os.Build.VERSION.SDK_INT >= 31) b.setAutoEnterEnabled(videoCall)
         try { setPictureInPictureParams(b.build()) } catch (_: Exception) {}
     }
 
     private fun enterPip() {
-        if (android.os.Build.VERSION.SDK_INT < 26) return
-        try { enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()) } catch (_: Exception) {}
+        try { enterPictureInPictureMode(pipBuilder().build()) } catch (_: Exception) {}
     }
 
     override fun onUserLeaveHint() {

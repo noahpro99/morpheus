@@ -41,11 +41,15 @@
     <ID>ModifierWithoutDefault:SettingsScreen.kt$modifier</ID>
     <ID>ModifierWithoutDefault:SignedIn.kt$modifier</ID>
     <ID>MultipleEmitters:NewScreen.kt$Browse</ID>
+    <ID>MultipleEmitters:VoiceSettings.kt$CameraCheck</ID>
+    <ID>MultipleEmitters:VoiceSettings.kt$KeptPeople</ID>
+    <ID>MultipleEmitters:VoiceSettings.kt$MicCheck</ID>
     <ID>MultipleEmitters:NewScreen.kt$Friends</ID>
     <ID>MultipleEmitters:NewScreen.kt$OneField</ID>
     <ID>UnstableCollections:ComposerExtras.kt$List&lt;SuggestionItem&gt;</ID>
     <ID>UnstableCollections:ReorderScreen.kt$List&lt;RailRowItem&gt;</ID>
     <ID>UnstableCollections:RoomScreen.kt$List&lt;TimelineRow&gt;</ID>
+    <ID>UnstableCollections:RoomScreen.kt$List&lt;String&gt;</ID>
     <ID>UnstableCollections:ShareScreen.kt$List&lt;ShareTarget&gt;</ID>
     <ID>UnstableCollections:SignedIn.kt$List&lt;InviteItem&gt;</ID>
     <ID>UnstableCollections:SignedIn.kt$List&lt;ScopeItem&gt;</ID>

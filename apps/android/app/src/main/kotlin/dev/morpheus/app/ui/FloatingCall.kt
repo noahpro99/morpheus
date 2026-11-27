@@ -96,9 +96,9 @@ object FloatingAvoid {
 
 /** A zero-height marker: what is below it in this column is kept clear of the floating call window. */
 @Composable
-fun KeepClear(key: String) {
+fun KeepClear(key: String, modifier: Modifier = Modifier) {
     DisposableEffect(key) { onDispose { FloatingAvoid.tops.remove(key) } }
-    Box(Modifier.fillMaxWidth().height(0.dp).onGloballyPositioned { FloatingAvoid.tops[key] = it.positionInWindow().y })
+    Box(modifier.fillMaxWidth().height(0.dp).onGloballyPositioned { FloatingAvoid.tops[key] = it.positionInWindow().y })
 }
 
 private val SquareSize = 96.dp
@@ -111,7 +111,7 @@ private val TopBarClearance = 64.dp
  * It stays above the search bar and the composer (see [KeepClear]).
  */
 @Composable
-fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot) {
+fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val hidden by calls.hiddenVideo.collectAsState()
     val corner by calls.floatCorner.collectAsState()
@@ -133,7 +133,7 @@ fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot) {
         if (dragging || area.width == 0) return@LaunchedEffect
         if (position.value == Offset.Zero) position.snapTo(target) else position.animateTo(target, spring(stiffness = 600f))
     }
-    Box(Modifier.fillMaxSize().onGloballyPositioned { area = it.size; origin = it.positionInWindow() }) {
+    Box(modifier.fillMaxSize().onGloballyPositioned { area = it.size; origin = it.positionInWindow() }) {
         if (area.width == 0) return@Box
         val video = watchedVideo(snapshot, hidden)
         val card = video ?: speakerCard(snapshot)
