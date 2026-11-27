@@ -61,7 +61,7 @@ fun ListSearchBar(model: AppModel, hint: String, modifier: Modifier = Modifier, 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The glyph is centred on the pill's end cap: inset = R - size / 2.
-        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, Modifier.padding(start = SearchBarHeight / 2 - 12.dp), tint = muted)
+        GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_search, Modifier.padding(start = SearchBarHeight / 2 - 12.dp), tint = muted)
         Text(hint, Modifier.weight(1f).padding(start = Space.md), color = muted, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Bell(model)
@@ -79,7 +79,7 @@ private fun Bell(model: AppModel) {
     val bar by model.sidebar.collectAsState()
     val news = bar?.let { b -> b.scopes.filter { it.kind != ScopeKind.DMS }.sumOf { it.highlights } + b.scopes.filter { it.kind == ScopeKind.DMS }.sumOf { it.highlights } + b.invites.size.toULong() } ?: 0UL
     BadgedBox(badge = { if (news > 0UL) Badge(Modifier.testTag("bell-badge")) { Text(if (news > 99UL) "99+" else news.toString()) } }) {
-        IconAction(dev.morpheus.app.R.drawable.ic_lucide_bell, t("Inbox"), "bell", { model.openInbox() }, tint = ComposerColours.hint(MaterialTheme.colorScheme))
+        IconAction(dev.morpheus.app.R.drawable.ic_ms_notifications, t("Inbox"), "bell", { model.openInbox() }, tint = ComposerColours.hint(MaterialTheme.colorScheme))
     }
 }
 
@@ -88,7 +88,7 @@ private fun Bell(model: AppModel) {
 fun ServerButton(scope: ScopeItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
     IconButton(onClick, modifier.size(Size.target).semantics { contentDescription = scope.title }.testTag("server-button")) {
         if (scope.kind == ScopeKind.SERVER) ServerIcon(scope.avatar, scope.title, 32.dp, key = scope.avatarKey)
-        else GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash, tint = ComposerColours.hint(MaterialTheme.colorScheme))
+        else GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_tag, tint = ComposerColours.hint(MaterialTheme.colorScheme))
     }
 }
 

@@ -276,9 +276,9 @@ fun SearchField(
                     .semantics { contentDescription = hint }
                     .then(if (focus != null) Modifier.focusRequester(focus) else Modifier),
                 placeholder = { Text(hint) },
-                leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_search, tint = muted) },
+                leadingIcon = { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_search, tint = muted) },
                 trailingIcon = if (trailing != null) trailing else if (query.isEmpty()) null else ({
-                    IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Clear"), "$tag-clear", { onQuery("") }, tint = muted)
+                    IconAction(dev.morpheus.app.R.drawable.ic_ms_close, t("Clear"), "$tag-clear", { onQuery("") }, tint = muted)
                 }),
                 colors = colours.inputFieldColors,
             )

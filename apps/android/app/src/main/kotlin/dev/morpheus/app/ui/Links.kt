@@ -117,7 +117,7 @@ fun PreviewCardView(model: RoomModel, url: String, eventId: String) {
     ) {
         Row {
             Text(shown.site ?: "", Modifier.weight(1f), color = Palette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_x, Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.semantics { contentDescription = t("Dismiss preview") }.testTag("preview-dismiss"), size = 20.dp, tint = Palette.Muted)
+            GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_close, Modifier.pointerInput(eventId) { detectTapGestures { model.dismissPreview(eventId) } }.semantics { contentDescription = t("Dismiss preview") }.testTag("preview-dismiss"), size = 20.dp, tint = Palette.Muted)
         }
         shown.title?.let { Text(it, Modifier.testTag("preview-title"), color = Palette.Accent, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge) }
         shown.description?.let { Text(it, Modifier.testTag("preview-description"), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }

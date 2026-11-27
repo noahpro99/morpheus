@@ -224,7 +224,7 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
                     ListRow(
                         t(group.label), "settings-group-${group.key.lowercase()}",
                         leading = icon?.let { { GlyphIcon(it) } },
-                        trailing = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right) },
+                        trailing = { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_chevron_right) },
                     ) { app.openSettingsPage(group.key) }
                 }
             }
@@ -238,6 +238,5 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
 @Composable
 private fun glyphDrawable(name: String): Int? {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val id = context.resources.getIdentifier("ic_lucide_" + name.replace('-', '_'), "drawable", context.packageName)
-    return id.takeIf { it != 0 }
+    return symbolDrawable(context, name)
 }

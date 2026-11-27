@@ -78,7 +78,7 @@ class ScreenShots(private val light: Boolean) {
     @Test
     fun empty_list() = shoot("empty-list") {
         ScreenScaffold("empty", topBar = { TopBar("DMs") }) { pad ->
-            EmptyState(R.drawable.ic_lucide_messages_square, "No conversations yet", "Start one with the + button.", Modifier.padding(pad))
+            EmptyState(R.drawable.ic_ms_forum, "No conversations yet", "Start one with the + button.", Modifier.padding(pad))
         }
     }
 
@@ -110,14 +110,14 @@ class ScreenShots(private val light: Boolean) {
     fun room_list() = shoot("room-list") {
         ScreenScaffold("rooms", topBar = {
             TopBar("Rooms") {
-                IconAction(R.drawable.ic_lucide_plus, "New", "new", {})
+                IconAction(R.drawable.ic_ms_add, "New", "new", {})
             }
         }) { pad ->
             Column(Modifier.padding(pad).fillMaxWidth()) {
                 SectionHeader("Engineering")
-                ListRow("general", "r1", supporting = "alice: see you at ten", leading = { GlyphIcon(R.drawable.ic_lucide_hash) }, trailing = { UnreadBadge(3UL, "b1") }, strong = true, onClick = {})
-                ListRow("random", "r2", supporting = "bob: lol", leading = { GlyphIcon(R.drawable.ic_lucide_hash) }, quiet = true, onClick = {})
-                ListRow("leave", "r3", leading = { GlyphIcon(R.drawable.ic_lucide_trash_2) }, danger = true, onClick = {})
+                ListRow("general", "r1", supporting = "alice: see you at ten", leading = { GlyphIcon(R.drawable.ic_ms_tag) }, trailing = { UnreadBadge(3UL, "b1") }, strong = true, onClick = {})
+                ListRow("random", "r2", supporting = "bob: lol", leading = { GlyphIcon(R.drawable.ic_ms_tag) }, quiet = true, onClick = {})
+                ListRow("leave", "r3", leading = { GlyphIcon(R.drawable.ic_ms_delete) }, danger = true, onClick = {})
             }
         }
     }

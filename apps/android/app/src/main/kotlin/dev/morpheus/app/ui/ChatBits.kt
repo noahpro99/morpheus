@@ -29,10 +29,10 @@ fun StateOrText(summary: String, state: StateLook?) {
         return
     }
     val drawable = when (state.glyph) {
-        "phone" -> if (state.kind == "call-ended") dev.morpheus.app.R.drawable.ic_lucide_phone_off else dev.morpheus.app.R.drawable.ic_lucide_phone
-        "log-in" -> dev.morpheus.app.R.drawable.ic_lucide_log_in
-        "log-out" -> dev.morpheus.app.R.drawable.ic_lucide_log_out
-        else -> dev.morpheus.app.R.drawable.ic_lucide_info
+        "phone" -> if (state.kind == "call-ended") dev.morpheus.app.R.drawable.ic_ms_call_end else dev.morpheus.app.R.drawable.ic_ms_call
+        "log-in" -> dev.morpheus.app.R.drawable.ic_ms_login
+        "log-out" -> dev.morpheus.app.R.drawable.ic_ms_logout
+        else -> dev.morpheus.app.R.drawable.ic_ms_info
     }
     val tone = when (state.tone) {
         StateTone.GOOD -> Palette.Green
@@ -52,7 +52,7 @@ fun MessageShield(shield: ShieldItem, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val reason = reasonWords(shield.reason)
     GlyphIcon(
-        dev.morpheus.app.R.drawable.ic_lucide_shield,
+        dev.morpheus.app.R.drawable.ic_ms_shield,
         modifier
             .padding(top = 2.dp)
             .pointerInput(reason) { detectTapGestures { android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_LONG).show() } }

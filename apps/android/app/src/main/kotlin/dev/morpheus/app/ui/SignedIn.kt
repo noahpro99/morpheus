@@ -214,7 +214,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     Column(modifier.fillMaxSize().background(Palette.Background)) {
         Row(Modifier.weight(1f).fillMaxWidth()) {
             if (scope == null) {
-                EmptyState(dev.morpheus.app.R.drawable.ic_lucide_hash, t("Nothing here yet"), t("Join a server or start a conversation from the search bar."), Modifier.weight(1f).background(Palette.Surface))
+                EmptyState(dev.morpheus.app.R.drawable.ic_ms_tag, t("Nothing here yet"), t("Join a server or start a conversation from the search bar."), Modifier.weight(1f).background(Palette.Surface))
             } else {
                 val record by model.lastChats.collectAsState()
                 ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
@@ -322,9 +322,9 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                         ScopeKind.SERVER -> ServerIcon(scope.avatar, scope.title, 48.dp, key = scope.avatarKey)
                         else -> GlyphIcon(
                             when (scope.kind) {
-                                ScopeKind.FAVORITES -> dev.morpheus.app.R.drawable.ic_lucide_star
-                                ScopeKind.NETWORK -> dev.morpheus.app.R.drawable.ic_lucide_link
-                                else -> dev.morpheus.app.R.drawable.ic_lucide_hash
+                                ScopeKind.FAVORITES -> dev.morpheus.app.R.drawable.ic_ms_star
+                                ScopeKind.NETWORK -> dev.morpheus.app.R.drawable.ic_ms_link
+                                else -> dev.morpheus.app.R.drawable.ic_ms_tag
                             },
                             tint = if (on) onColour(Palette.Accent) else Palette.Text,
                         )
@@ -356,7 +356,7 @@ private fun ChannelList(
     ) {
         if (scope.sections.all { it.rooms.isEmpty() } && invites.isEmpty()) {
             EmptyState(
-                if (scope.kind == ScopeKind.DMS) dev.morpheus.app.R.drawable.ic_lucide_messages_square else dev.morpheus.app.R.drawable.ic_lucide_hash,
+                if (scope.kind == ScopeKind.DMS) dev.morpheus.app.R.drawable.ic_ms_forum else dev.morpheus.app.R.drawable.ic_ms_tag,
                 if (scope.kind == ScopeKind.DMS) t("No conversations yet") else t("No channels yet"),
                 t("Start one from the search bar."),
             )
@@ -417,15 +417,15 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                         if (room.isDm) {
                             Avatar(room.avatar, room.name, Size.avatar, Modifier.testTag("dm-avatar-${room.name}"), key = room.avatarKey, userId = room.dmUser)
                         } else {
-                            GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_ms_volume_up else dev.morpheus.app.R.drawable.ic_ms_tag, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_pin, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp)
-                        if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_bell_off, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
+                        if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_keep_fill, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp)
+                        if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_notifications_off_fill, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
                     }
                 },
                 trailing = if (room.isVoice || room.highlights > 0UL || room.unread > 0UL) ({
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
-                        if (room.isVoice) IconAction(dev.morpheus.app.R.drawable.ic_lucide_message_circle, t("Open chat"), "voice-chat-${room.name}", onChat)
+                        if (room.isVoice) IconAction(dev.morpheus.app.R.drawable.ic_ms_chat_bubble, t("Open chat"), "voice-chat-${room.name}", onChat)
                         if (room.highlights > 0UL) MentionPill(room.highlights, "mention-${room.name}")
                         if (room.unread > 0UL) UnreadBadge(room.unread, "badge-${room.name}", muted = room.muted)
                     }
@@ -441,7 +441,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                             Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                             if (member.muted || member.deafened) GlyphIcon(
-                                if (member.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_mic_off,
+                                if (member.deafened) dev.morpheus.app.R.drawable.ic_ms_headset_off else dev.morpheus.app.R.drawable.ic_ms_mic_off,
                                 Modifier.testTag("in-call-muted-${room.name}-$name"), size = 16.dp, tint = Palette.Muted,
                             )
                             CallMemberMarks(room.id, room.name, name, member.userId, member)
@@ -484,10 +484,10 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
             if (status.isNotBlank()) Text(status, Modifier.padding(top = Space.sm).testTag("profile-status-message"), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
         }
         SectionHeader(t("Account"))
-        ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_smile, t("Set status"), "status-button") { model.openPage(dev.morpheus.app.PageRequest("status", "")) }
-        ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Settings"), "settings-button") { model.openSettings() }
-        ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_lock, t("Security"), "security-button") { model.openSecurity() }
-        Box(Modifier.padding(top = Space.lg)) { ProfileRow(dev.morpheus.app.R.drawable.ic_lucide_log_out, t("Sign out"), "sign-out", danger = true) { model.signOut() } }
+        ProfileRow(dev.morpheus.app.R.drawable.ic_ms_mood, t("Set status"), "status-button") { model.openPage(dev.morpheus.app.PageRequest("status", "")) }
+        ProfileRow(dev.morpheus.app.R.drawable.ic_ms_settings, t("Settings"), "settings-button") { model.openSettings() }
+        ProfileRow(dev.morpheus.app.R.drawable.ic_ms_lock, t("Security"), "security-button") { model.openSecurity() }
+        Box(Modifier.padding(top = Space.lg)) { ProfileRow(dev.morpheus.app.R.drawable.ic_ms_logout, t("Sign out"), "sign-out", danger = true) { model.signOut() } }
     }
 }
 
@@ -505,8 +505,8 @@ private fun SecurityBanner(model: AppModel) {
     ListRow(
         t("Verify this device to read your encrypted messages"), "verify-banner",
         selected = true,
-        leading = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, tint = MaterialTheme.colorScheme.primary) },
-        trailing = { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right) },
+        leading = { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_shield, tint = MaterialTheme.colorScheme.primary) },
+        trailing = { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_chevron_right) },
     ) { model.openSecurity() }
 }
 

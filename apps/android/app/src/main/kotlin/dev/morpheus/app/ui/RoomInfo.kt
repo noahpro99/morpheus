@@ -76,7 +76,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                         room.topic?.let { Text(it, Modifier.padding(horizontal = Space.lg).testTag("info-topic"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge) }
                         // A real lock icon (not an emoji) before the line; the icon and text take the on-surface variant colour.
                         Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            GlyphIcon(if (room.isEncrypted) dev.morpheus.app.R.drawable.ic_lucide_lock else dev.morpheus.app.R.drawable.ic_lucide_lock_open, Modifier.testTag("info-lock"), size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            GlyphIcon(if (room.isEncrypted) dev.morpheus.app.R.drawable.ic_ms_lock else dev.morpheus.app.R.drawable.ic_ms_lock_open, Modifier.testTag("info-lock"), size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
                                 if (room.isEncrypted) t("End-to-end encrypted") else t("Not encrypted"),
                                 Modifier.testTag("info-encryption"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
@@ -208,7 +208,7 @@ internal fun ProfileSheet(app: AppModel, request: dev.morpheus.app.ProfileReques
                     }
                 }
             } else {
-                if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_lucide_ellipsis, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
+                if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_ms_more_horiz, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
                 card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, style = MaterialTheme.typography.bodyMedium) }
                 card.status?.let { Text(it, color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
                 Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)

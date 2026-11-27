@@ -62,7 +62,7 @@ private fun legacyTag(label: String): String? = when (label) {
 private fun rowIcon(name: String?): Int {
     val context = LocalContext.current
     if (name == null) return 0
-    return remember(name) { context.resources.getIdentifier("ic_lucide_" + name.replace('-', '_'), "drawable", context.packageName) }
+    return remember(name) { symbolDrawable(context, name) ?: 0 }
 }
 
 /**
@@ -221,8 +221,8 @@ private fun SheetRow(row: MenuRow, interactive: Boolean = true, onClick: () -> U
         trailing = if (row.checked || row.children.isNotEmpty()) {
             {
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("sheet-check-${row.id}"))
-                    if (row.children.isNotEmpty()) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_right)
+                    if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_check, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("sheet-check-${row.id}"))
+                    if (row.children.isNotEmpty()) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_chevron_right)
                 }
             }
         } else null,

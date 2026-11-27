@@ -37,7 +37,7 @@ fun CallMemberMarks(roomId: String, room: String, name: String, userId: String, 
         if (speakers.first == roomId && userId in speakers.second) {
             androidx.compose.foundation.layout.Box(Modifier.padding(end = 2.dp).size(8.dp).clip(CircleShape).background(Palette.Green).testTag("in-call-speaking-$room-$name"))
         }
-        if (member.camera) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_video, Modifier.testTag("in-call-camera-$room-$name"), size = 16.dp, tint = Palette.Muted)
+        if (member.camera) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_videocam, Modifier.testTag("in-call-camera-$room-$name"), size = 16.dp, tint = Palette.Muted)
         if (member.screen) Text(t("LIVE"), Modifier.testTag("in-call-live-$room-$name"), color = Palette.Danger, style = MaterialTheme.typography.labelSmall)
     }
 }

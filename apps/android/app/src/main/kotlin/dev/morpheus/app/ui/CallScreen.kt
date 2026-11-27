@@ -174,7 +174,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
             .background(Palette.Surface).testTag("call-screen"),
     ) {
         Row(Modifier.fillMaxWidth().background(Palette.Background).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 28.dp) }
+            TextButton({ if (snapshot.phase == CallPhase.FAILED) calls.dismiss() else calls.show(false) }, Modifier.testTag("call-minimize")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_keyboard_arrow_down, size = 28.dp) }
             Column(Modifier.weight(1f)) {
                 Text(snapshot.roomName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("call-title"), style = MaterialTheme.typography.bodyLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -190,10 +190,10 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 if (showPing && signal.quality != "unknown") Text(signal.tooltip, Modifier.padding(start = 8.dp).testTag("call-signal-detail"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_message_circle, t("Open chat"), "call-chat", onChat)
-            if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_minimize_2, t("Picture in picture"), "call-pip", { calls.enterPip() })
+            IconAction(dev.morpheus.app.R.drawable.ic_ms_chat_bubble, t("Open chat"), "call-chat", onChat)
+            if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_ms_close_fullscreen, t("Picture in picture"), "call-pip", { calls.enterPip() })
             if (snapshot.phase == CallPhase.CONNECTED) SignalBars(signal) { showPing = !showPing }
-            if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_lucide_user_plus, t("Invite to call"), "call-invite-button", { panel = if (panel == INVITE_PANEL) null else INVITE_PANEL })
+            if (snapshot.phase == CallPhase.CONNECTED) IconAction(dev.morpheus.app.R.drawable.ic_ms_person_add, t("Invite to call"), "call-invite-button", { panel = if (panel == INVITE_PANEL) null else INVITE_PANEL })
             if (snapshot.phase == CallPhase.CONNECTED) timerText(snapshot)?.let { Text(it, Modifier.padding(end = 12.dp).testTag("call-timer"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
         }
         snapshot.error?.let { Text(it, Modifier.padding(16.dp).testTag("call-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyLarge) }
@@ -248,12 +248,12 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
             }
         }
         if (card.kind == CardKind.SCREEN) {
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, t("Stop watching"), "stop-watching-${card.name}", { calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
+            IconAction(dev.morpheus.app.R.drawable.ic_ms_close, t("Stop watching"), "stop-watching-${card.name}", { calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
             // The screen's own menu: its sound's volume and mute for me (#436).
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_volume_2, t("Stream volume"), "stream-menu-${card.name}", { openVolume(SCREEN_PREFIX + card.userId) }, Modifier.align(Alignment.TopStart), tint = Color.White)
+            IconAction(dev.morpheus.app.R.drawable.ic_ms_volume_up, t("Stream volume"), "stream-menu-${card.name}", { openVolume(SCREEN_PREFIX + card.userId) }, Modifier.align(Alignment.TopStart), tint = Color.White)
         }
         if ((card.kind == CardKind.PERSON || card.kind == CardKind.CAMERA) && person != null && !person.me) {
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_volume_2, t("Volume"), "person-volume-${card.name}", { openVolume(card.userId) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
+            IconAction(dev.morpheus.app.R.drawable.ic_ms_volume_up, t("Volume"), "person-volume-${card.name}", { openVolume(card.userId) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
         }
         Row(
             Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
@@ -266,8 +266,8 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
                 color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (card.kind != CardKind.SCREEN && card.kind != CardKind.UNWATCHED_SCREEN) {
-                if (person?.deafened == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_headphone_off, Modifier.testTag("deafened-${card.name}"), size = 16.dp, tint = Color.White)
-                else if (person?.muted == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_mic_off, Modifier.testTag("muted-${card.name}"), size = 16.dp, tint = Color.White)
+                if (person?.deafened == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_headset_off, Modifier.testTag("deafened-${card.name}"), size = 16.dp, tint = Color.White)
+                else if (person?.muted == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_mic_off, Modifier.testTag("muted-${card.name}"), size = 16.dp, tint = Color.White)
             }
         }
     }
@@ -308,19 +308,19 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
             Button({ calls.dismiss() }, Modifier.testTag("call-dismiss")) { Text(t("Close")) }
             return@Row
         }
-        Control(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_lucide_mic_off else dev.morpheus.app.R.drawable.ic_lucide_mic, t("Mute"), "call-mute", snapshot.muted) { calls.toggleMute() }
-        Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_lucide_headphone_off else dev.morpheus.app.R.drawable.ic_lucide_headphones, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
-        if (snapshot.canShareScreen) Control(if (snapshot.people.any { it.me && it.screen }) dev.morpheus.app.R.drawable.ic_lucide_screen_share_off else dev.morpheus.app.R.drawable.ic_lucide_screen_share, t("Share screen"), "call-share", snapshot.people.any { it.me && it.screen }) { calls.toggleScreenShare() }
-        if (snapshot.canSendVideo) Control(dev.morpheus.app.R.drawable.ic_lucide_video, t("Camera"), "call-camera", snapshot.camera) { calls.toggleCamera() }
-        if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_lucide_refresh_cw, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
-        Control(if (speaker) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_phone, t("Speaker"), "call-speaker", speaker) { openOutput() }
-        Control(dev.morpheus.app.R.drawable.ic_lucide_settings, t("Call settings"), "call-settings", false) { openSettings() }
+        Control(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_ms_mic_off_fill else dev.morpheus.app.R.drawable.ic_ms_mic, t("Mute"), "call-mute", snapshot.muted) { calls.toggleMute() }
+        Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_ms_headset_off_fill else dev.morpheus.app.R.drawable.ic_ms_headphones, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
+        if (snapshot.canShareScreen) Control(if (snapshot.people.any { it.me && it.screen }) dev.morpheus.app.R.drawable.ic_ms_stop_screen_share_fill else dev.morpheus.app.R.drawable.ic_ms_screen_share, t("Share screen"), "call-share", snapshot.people.any { it.me && it.screen }) { calls.toggleScreenShare() }
+        if (snapshot.canSendVideo) Control(if (snapshot.camera) dev.morpheus.app.R.drawable.ic_ms_videocam_fill else dev.morpheus.app.R.drawable.ic_ms_videocam, t("Camera"), "call-camera", snapshot.camera) { calls.toggleCamera() }
+        if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_ms_refresh, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
+        Control(if (speaker) dev.morpheus.app.R.drawable.ic_ms_volume_up_fill else dev.morpheus.app.R.drawable.ic_ms_call, t("Speaker"), "call-speaker", speaker) { openOutput() }
+        Control(dev.morpheus.app.R.drawable.ic_ms_settings, t("Call settings"), "call-settings", false) { openSettings() }
         androidx.compose.material3.FilledIconButton(
             { calls.hangUp() },
             Modifier.size(48.dp).semantics { contentDescription = t("Hang up") }.testTag("call-hangup"),
             shape = RoundedCornerShape(Radius.md),
             colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
-        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_phone_off) }
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_call_end) }
     }
 }
 
@@ -355,9 +355,9 @@ internal fun VolumeRow(label: String, tag: String, start: Float, onChange: (Floa
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(label, color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_minus, t("Less"), "$tag-less", { value = steps(value - 0.1f); onChange(value) })
+            IconAction(dev.morpheus.app.R.drawable.ic_ms_remove, t("Less"), "$tag-less", { value = steps(value - 0.1f); onChange(value) })
             Text("${Math.round(value * 100)}%", Modifier.testTag("$tag-label"), style = MaterialTheme.typography.bodyLarge)
-            IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("More"), "$tag-more", { value = steps(value + 0.1f); onChange(value) })
+            IconAction(dev.morpheus.app.R.drawable.ic_ms_add, t("More"), "$tag-more", { value = steps(value + 0.1f); onChange(value) })
             Slider(value, { value = steps(it); onChange(value) }, Modifier.weight(1f).testTag("$tag-slider"), valueRange = 0f..2f)
         }
     }
@@ -387,7 +387,7 @@ private fun ColumnScope.CardMenuPanel(calls: CallModel, snapshot: CallSnapshot, 
                 "mute-stream" -> Button({ muted = !muted; calls.setStreamVolume(person.userId, volume, muted) }, Modifier.testTag("stream-volume-mute")) { Text(row.label) }
                 "hide-video" -> TextButton({ calls.toggleHideVideo(person.userId) }, Modifier.testTag("card-hide-video").semantics { if (row.checked) stateDescription = "On" }) {
                     Text(row.label)
-                    if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                    if (row.checked) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_check, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
                 }
                 "stop-watching" -> TextButton({ calls.watch(person.userId, false); close() }, Modifier.testTag("card-stop-watching")) { Text(row.label) }
             }
@@ -536,7 +536,7 @@ private fun ColumnScope.FocusedCard(calls: CallModel, card: CallCard, close: () 
             CardKind.SCREEN, CardKind.CAMERA -> VideoPicture(calls, card, Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y })
             else -> Avatar(card.avatar, card.name, 160.dp)
         }
-        IconAction(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, t("Back to the call"), "focus-close", close, Modifier.align(Alignment.TopStart), tint = Color.White)
+        IconAction(dev.morpheus.app.R.drawable.ic_ms_keyboard_arrow_down, t("Back to the call"), "focus-close", close, Modifier.align(Alignment.TopStart), tint = Color.White)
         Text(
             if (card.kind == CardKind.SCREEN) t("%{name}'s screen", "name" to card.name) else card.name,
             Modifier.align(Alignment.BottomStart).padding(12.dp).testTag("focus-name"), color = Color.White, style = MaterialTheme.typography.bodyMedium,

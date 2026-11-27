@@ -166,7 +166,7 @@ fun BoxScope.FloatingCall(calls: CallModel, snapshot: CallSnapshot, modifier: Mo
                 else -> Avatar(card.avatar, card.name, 56.dp)
             }
             if (me?.muted == true) Box(Modifier.align(Alignment.BottomEnd).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(4.dp).testTag("float-muted")) {
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_mic_off, size = 16.dp, tint = Color.White)
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_mic_off, size = 16.dp, tint = Color.White)
             }
         }
     }

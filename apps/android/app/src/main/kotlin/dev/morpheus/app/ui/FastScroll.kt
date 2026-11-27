@@ -105,7 +105,7 @@ fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevrons_up_down, size = 20.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_unfold_more, size = 20.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
     }

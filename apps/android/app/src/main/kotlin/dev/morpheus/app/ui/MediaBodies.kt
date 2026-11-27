@@ -96,7 +96,7 @@ fun VideoCard(body: MessageBody.File, onLongPress: () -> Unit) {
     ) {
         poster?.let { Image(it, body.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         Box(Modifier.size(48.dp).background(Palette.Accent, CircleShape), contentAlignment = Alignment.Center) {
-            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_play, size = 24.dp, tint = Palette.OnAccent)
+            GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_play_arrow, size = 24.dp, tint = Palette.OnAccent)
         }
         length?.let {
             Text(it, Modifier.align(Alignment.BottomEnd).padding(Space.sm).background(Palette.Raised, CircleShape).padding(horizontal = Space.sm, vertical = 2.dp).testTag("video-length"), color = Palette.Text, style = MaterialTheme.typography.labelSmall)

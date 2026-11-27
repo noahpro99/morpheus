@@ -87,16 +87,16 @@ private fun Leading(hit: uniffi.morpheus_ffi.SwitcherHit) {
     when (hit.kind) {
         SwitcherKind.SERVER -> ServerIcon(hit.avatar, hit.label, 40.dp, key = hit.avatarKey)
         SwitcherKind.DM -> Avatar(hit.avatar, hit.label, 40.dp, key = hit.avatarKey)
-        SwitcherKind.CHANNEL -> GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash)
+        SwitcherKind.CHANNEL -> GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_tag)
         SwitcherKind.ACTION, SwitcherKind.SETTING -> GlyphIcon(
             when (hit.icon) {
-                "plus" -> dev.morpheus.app.R.drawable.ic_lucide_plus
-                "compass" -> dev.morpheus.app.R.drawable.ic_lucide_compass
-                "message-circle" -> dev.morpheus.app.R.drawable.ic_lucide_message_circle
-                "log-in" -> dev.morpheus.app.R.drawable.ic_lucide_log_in
-                "inbox" -> dev.morpheus.app.R.drawable.ic_lucide_inbox
-                "settings" -> dev.morpheus.app.R.drawable.ic_lucide_settings
-                else -> if (hit.kind == SwitcherKind.SETTING) dev.morpheus.app.R.drawable.ic_lucide_settings else dev.morpheus.app.R.drawable.ic_lucide_search
+                "plus" -> dev.morpheus.app.R.drawable.ic_ms_add
+                "compass" -> dev.morpheus.app.R.drawable.ic_ms_explore
+                "message-circle" -> dev.morpheus.app.R.drawable.ic_ms_chat_bubble
+                "log-in" -> dev.morpheus.app.R.drawable.ic_ms_login
+                "inbox" -> dev.morpheus.app.R.drawable.ic_ms_inbox
+                "settings" -> dev.morpheus.app.R.drawable.ic_ms_settings
+                else -> if (hit.kind == SwitcherKind.SETTING) dev.morpheus.app.R.drawable.ic_ms_settings else dev.morpheus.app.R.drawable.ic_ms_search
             },
         )
     }
@@ -115,13 +115,13 @@ fun InboxScreen(model: AppModel, modifier: Modifier = Modifier) {
         .sortedByDescending { it.highlights }
     ScreenScaffold("inbox-screen", modifier = modifier, topBar = {
         TopBar(t("Inbox")) {
-            if (rooms.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_lucide_check_check, t("Mark read"), "mark-read", { model.markRoomsRead(rooms.map { it.id }) })
+            if (rooms.isNotEmpty()) IconAction(dev.morpheus.app.R.drawable.ic_ms_done_all, t("Mark read"), "mark-read", { model.markRoomsRead(rooms.map { it.id }) })
         }
     }) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
             val invites = bar?.invites.orEmpty()
             if (rooms.isEmpty() && invites.isEmpty()) {
-                EmptyState(dev.morpheus.app.R.drawable.ic_lucide_inbox, t("All caught up"), t("Mentions and unread rooms show here."))
+                EmptyState(dev.morpheus.app.R.drawable.ic_ms_inbox, t("All caught up"), t("Mentions and unread rooms show here."))
             } else {
                 LazyColumn(Modifier.fillMaxSize().testTag("inbox-list")) {
                     items(invites, key = { "invite-${it.id}" }) { invite ->
@@ -131,7 +131,7 @@ fun InboxScreen(model: AppModel, modifier: Modifier = Modifier) {
                         ListRow(
                             room.name, "inbox-room-${room.name}",
                             supporting = if (room.highlights > 0UL) t("%{count} mentions", "count" to room.highlights.toString()) else t("%{count} unread", "count" to room.unread.toString()),
-                            leading = { if (room.isDm) Avatar(room.avatar, room.name, 40.dp, key = room.avatarKey) else GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_hash) },
+                            leading = { if (room.isDm) Avatar(room.avatar, room.name, 40.dp, key = room.avatarKey) else GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_tag) },
                         ) { model.closeInbox(); model.open(room) }
                     }
                 }

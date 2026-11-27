@@ -58,7 +58,7 @@ const EMOJI_ALLOWED: &[(&str, &str, &str)] = &[
 const BACK_ALLOWED: &[(&str, &str, &str)] = &[];
 
 /// What marks a back button in the source.
-const BACK_MARKS: &[&str] = &["ic_lucide_chevron_left", "ic_lucide_arrow_left", "ArrowBack", "navigationIcon", "t(\"Back\")", "backTag", "onBack =", "onBack:", "-back\"", "testTag(\"back\")"];
+const BACK_MARKS: &[&str] = &["ic_ms_chevron_left", "ic_ms_arrow_back", "ArrowBack", "navigationIcon", "t(\"Back\")", "backTag", "onBack =", "onBack:", "-back\"", "testTag(\"back\")"];
 
 /// Where a hand-made control is right: (file, the pattern, why).
 const HAND_MADE_ALLOWED: &[(&str, &str, &str)] = &[];
@@ -357,7 +357,7 @@ fn violations() -> (Vec<String>, Used) {
                 used.emoji.push((file.clone(), (*text).to_owned()));
                 continue;
             }
-            out.push(format!("{file}:{}: emoji or symbol character: icons are drawables (R.drawable.ic_lucide_*): {}", n + 1, line.trim()));
+            out.push(format!("{file}:{}: emoji or symbol character: icons are drawables (R.drawable.ic_ms_*): {}", n + 1, line.trim()));
         }
 
         // 6. Server icons.
@@ -366,6 +366,13 @@ fn violations() -> (Vec<String>, Used) {
                 if line.contains("Avatar(") && line.contains("square = ") {
                     out.push(format!("{file}:{}: a server's icon is drawn with ServerIcon (a squircle), not Avatar(square = ..): {}", n + 1, line.trim()));
                 }
+            }
+        }
+
+        // 4b. Icons are Material Symbols Rounded (ic_ms_*, #538): no Lucide drawable is referenced any more.
+        for (n, line) in text.lines().enumerate() {
+            if line.contains(concat!("ic_", "lucide_")) {
+                out.push(format!("{file}:{}: Lucide icon: use the Material Symbols ic_ms_<symbol> drawable (scripts/android-icons.map): {}", n + 1, line.trim()));
             }
         }
 

@@ -216,10 +216,10 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
             }
             replyingTo?.let { reply ->
-                ComposerBanner(dev.morpheus.app.R.drawable.ic_lucide_reply, t("Replying to %{name}: %{text}", "name" to reply.senderName.toString(), "text" to summary(reply.body)), "reply-bar", "reply-banner", t("Cancel reply"), "reply-cancel") { model.replyTo(null) }
+                ComposerBanner(dev.morpheus.app.R.drawable.ic_ms_reply, t("Replying to %{name}: %{text}", "name" to reply.senderName.toString(), "text" to summary(reply.body)), "reply-bar", "reply-banner", t("Cancel reply"), "reply-cancel") { model.replyTo(null) }
             }
             editing?.let {
-                ComposerBanner(dev.morpheus.app.R.drawable.ic_lucide_pencil, t("Editing your message"), "edit-bar", "edit-banner", t("Cancel editing"), "edit-cancel") { model.edit(null) }
+                ComposerBanner(dev.morpheus.app.R.drawable.ic_ms_edit, t("Editing your message"), "edit-bar", "edit-banner", t("Cancel editing"), "edit-cancel") { model.edit(null) }
             }
             // Messages that did not go stay here, to send again or drop (the text is not lost with the composer).
             val unsent by model.failed.collectAsState()
@@ -436,7 +436,7 @@ private fun Timeline(
             androidx.compose.material3.SmallFloatingActionButton(
                 { scope.launch { state.animateScrollToItem(0) } },
                 Modifier.semantics { contentDescription = t("Jump to present") }.testTag("jump-present"),
-            ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 24.dp) }
+            ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_keyboard_arrow_down, size = 24.dp) }
         }
     }
     }
@@ -516,7 +516,7 @@ private fun MessageRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
                 ) {
-                    GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_reply, size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_reply, size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         "${reply.senderName ?: ""}: ${reply.summary ?: "…"}",
                         Modifier.testTag("msg-reply"),
@@ -548,7 +548,7 @@ private fun MessageRow(
                     horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 ) {
                     GlyphIcon(
-                        when (body.kind) { FileKind.VIDEO -> dev.morpheus.app.R.drawable.ic_lucide_play; FileKind.AUDIO -> dev.morpheus.app.R.drawable.ic_lucide_audio_lines; else -> dev.morpheus.app.R.drawable.ic_lucide_paperclip },
+                        when (body.kind) { FileKind.VIDEO -> dev.morpheus.app.R.drawable.ic_ms_play_arrow; FileKind.AUDIO -> dev.morpheus.app.R.drawable.ic_ms_equalizer; else -> dev.morpheus.app.R.drawable.ic_ms_attach_file },
                         size = 20.dp,
                     )
                     Text(body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }), Modifier.testTag("msg-file"), style = MaterialTheme.typography.bodyLarge)
@@ -688,7 +688,7 @@ private fun Composer(
         // A touch on the box while the emoji panel stands in the keyboard's place brings the keyboard back and closes the panel (#484).
         LaunchedEffect(touching) { if (touching && panel) { panel = false; keyboard?.show() } }
         Row(Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).clip(RoundedCornerShape(28.dp)).background(fill).testTag("composer-field"), verticalAlignment = Alignment.Bottom) {
-        IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("Attach a file"), "attach", onAttach, Modifier.padding(start = inset, bottom = inset), tint = hint)
+        IconAction(dev.morpheus.app.R.drawable.ic_ms_add, t("Attach a file"), "attach", onAttach, Modifier.padding(start = inset, bottom = inset), tint = hint)
         androidx.compose.material3.TextField(
             field, { field = it },
             Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).focusRequester(focus).onFocusChanged { focused = it.isFocused }.testTag("composer"),
@@ -711,7 +711,7 @@ private fun Composer(
             // The panel takes the keyboard's place (the keyboard goes, the panel is as tall as it was); the box again brings the keyboard back.
             { if (panel) { panel = false; keyboard?.show() } else { panel = true; keyboard?.hide() } },
             Modifier.padding(end = inset, bottom = inset).size(Size.target).semantics { contentDescription = t("Emoji") }.testTag("emoji-button"),
-        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = hint) }
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_mood, tint = hint) }
         }
         // Send is there only when there is something to send, and comes and goes on the motion tokens (#484).
         androidx.compose.animation.AnimatedVisibility(
@@ -724,7 +724,7 @@ private fun Composer(
                 // Level with a one-line field (56 dp tall): 4 dp up from its bottom.
                 Modifier.padding(bottom = Space.xs).size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
                 colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(containerColor = scheme.primary, contentColor = scheme.onPrimary),
-            ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
+            ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_send, size = 24.dp) }
         }
     }
     if (panel) EmojiPanel(model, panelHeight) { setText(withEmoji(text, it)) }
@@ -743,7 +743,7 @@ private fun ChatLabel(title: String?, dm: Boolean, encrypted: Boolean, tint: Col
                 else if (server != null) ServerIcon(server.avatar, server.title, 16.dp, key = server.avatarKey)
             }
             GlyphIcon(
-                if (encrypted) dev.morpheus.app.R.drawable.ic_lucide_lock else dev.morpheus.app.R.drawable.ic_lucide_lock_open,
+                if (encrypted) dev.morpheus.app.R.drawable.ic_ms_lock else dev.morpheus.app.R.drawable.ic_ms_lock_open,
                 Modifier.semantics(mergeDescendants = true) { }.testTag(if (encrypted) "room-title-lock" else "room-title-lock-open"), size = 16.dp, tint = tint,
             )
         }
@@ -762,10 +762,10 @@ private fun ChatActions(visible: Boolean, onCall: () -> Unit, onSearch: () -> Un
             androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedAccelerate)),
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm).padding(bottom = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_phone, t("Call"), "call-button", onCall, Modifier.weight(1f))
-            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_search, t("Search"), "search-button", onSearch, Modifier.weight(1f))
-            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_pin, t("Pins"), "pinned-button", onPins, Modifier.weight(1f))
-            ChatAction(dev.morpheus.app.R.drawable.ic_lucide_info, t("Info"), "room-info-button", onInfo, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_ms_call, t("Call"), "call-button", onCall, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_ms_search, t("Search"), "search-button", onSearch, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_ms_keep, t("Pins"), "pinned-button", onPins, Modifier.weight(1f))
+            ChatAction(dev.morpheus.app.R.drawable.ic_ms_info, t("Info"), "room-info-button", onInfo, Modifier.weight(1f))
         }
     }
 }
@@ -855,7 +855,7 @@ private fun ComposerBanner(@androidx.annotation.DrawableRes icon: Int, text: Str
     ) {
         GlyphIcon(icon, size = 20.dp, tint = ink)
         Text(text, Modifier.weight(1f).testTag(textTag), maxLines = 1, overflow = TextOverflow.Ellipsis, color = ink, style = MaterialTheme.typography.bodyMedium)
-        IconAction(dev.morpheus.app.R.drawable.ic_lucide_x, closeDescription, closeTag, onClose, tint = ink)
+        IconAction(dev.morpheus.app.R.drawable.ic_ms_close, closeDescription, closeTag, onClose, tint = ink)
     }
 }
 

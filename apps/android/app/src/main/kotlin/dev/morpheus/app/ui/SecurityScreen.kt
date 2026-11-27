@@ -73,7 +73,7 @@ fun SecurityScreen(app: AppModel, model: SecurityModel) {
                     colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = ComposerColours.text(MaterialTheme.colorScheme)),
                 ) {
                     Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                        GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_shield, tint = ComposerColours.hint(MaterialTheme.colorScheme))
+                        GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_shield, tint = ComposerColours.hint(MaterialTheme.colorScheme))
                         Text(
                             if (current.deviceVerified) "This device is verified." else "This device is not verified: encrypted messages from before you signed in cannot be read yet.",
                             Modifier.testTag("security-state"),

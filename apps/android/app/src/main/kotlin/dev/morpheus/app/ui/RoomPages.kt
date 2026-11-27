@@ -262,7 +262,7 @@ private fun OverviewPage(app: AppModel, page: PageRequest) {
                 ListRow(
                     c.name, "overview-channel-${c.name}",
                     supporting = c.topic?.takeIf { it.isNotBlank() },
-                    leading = { GlyphIcon(if (c.voice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash) },
+                    leading = { GlyphIcon(if (c.voice) dev.morpheus.app.R.drawable.ic_ms_volume_up else dev.morpheus.app.R.drawable.ic_ms_tag) },
                     trailing = if (!c.joined) ({
                         TextButton({
                             scope.launch { try { app.morpheus.joinChannel(c.id, c.via); reload++ } catch (e: Exception) { error = e.message } }
@@ -312,7 +312,7 @@ private fun PinnedPage(app: AppModel, page: PageRequest) {
                     pin.sender?.let { Text(it, Modifier.testTag("pinned-sender"), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, style = MaterialTheme.typography.bodyLarge) }
                     Text(pin.body, Modifier.testTag("pinned-body"), style = MaterialTheme.typography.bodyLarge)
                 }
-                IconAction(dev.morpheus.app.R.drawable.ic_lucide_pin_off, t("Unpin"), "unpin-${pin.eventId}", {
+                IconAction(dev.morpheus.app.R.drawable.ic_ms_keep_off, t("Unpin"), "unpin-${pin.eventId}", {
                     scope.launch { try { app.morpheus.unpinMessage(page.roomId, pin.eventId); pins = app.morpheus.pinnedMessages(page.roomId) } catch (e: Exception) { error = e.sentence() } }
                 })
             }

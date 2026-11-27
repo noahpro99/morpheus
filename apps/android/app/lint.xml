@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <lint>
-    <!-- The Lucide icon set is kept whole so a screen can pick any glyph; unused ones are not waste. -->
+    <!-- The Material Symbols set is kept whole (ic_ms_*, outlined and _fill) so a screen can pick any glyph; unused ones are not waste. -->
     <issue id="UnusedResources">
-        <ignore path="**/res/drawable/ic_lucide_*.xml" />
+        <ignore path="**/res/drawable/ic_ms_*.xml" />
+    </issue>
+    <!-- Material Symbols paths are published as they are (long paths); they are drawn rarely and cached. -->
+    <issue id="VectorPath">
+        <ignore path="**/res/drawable/ic_ms_*.xml" />
     </issue>
     <!-- "A newer version exists" would break the build the day a release comes out; versions are bumped on purpose. -->
     <issue id="GradleDependency" severity="ignore" />

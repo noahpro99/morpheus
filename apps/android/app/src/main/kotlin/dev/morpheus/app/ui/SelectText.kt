@@ -94,7 +94,7 @@ fun SelectMark(selected: Boolean) {
             .testTag("select-mark"),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_check, size = 16.dp, tint = Palette.OnAccent)
+        if (selected) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_check, size = 16.dp, tint = Palette.OnAccent)
     }
 }
 

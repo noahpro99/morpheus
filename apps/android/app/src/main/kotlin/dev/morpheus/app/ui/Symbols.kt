@@ -1,0 +1,103 @@
+package dev.morpheus.app.ui
+
+import android.content.Context
+
+/**
+ * Icons are Material Symbols Rounded (Apache 2.0, google/material-design-icons; weight 400, grade 0, optical size 24) as vector
+ * drawables `ic_ms_<symbol>` (outlined) and `ic_ms_<symbol>_fill` (filled: selected and active states). Lists and menus name a
+ * glyph by the desktop's Lucide name (`pin-off`); [SYMBOLS] is the Lucide to Symbol table (also scripts/android-icons.map).
+ */
+private val SYMBOLS: Map<String, String> = mapOf(
+    "at-sign" to "alternate_email",
+    "audio-lines" to "equalizer",
+    "audio-waveform-off" to "volume_off",
+    "audio-waveform" to "graphic_eq",
+    "ban" to "block",
+    "bell-off" to "notifications_off",
+    "bell" to "notifications",
+    "bug" to "bug_report",
+    "check-check" to "done_all",
+    "check" to "check",
+    "chevron-down" to "keyboard_arrow_down",
+    "chevron-left" to "chevron_left",
+    "chevron-right" to "chevron_right",
+    "chevrons-up-down" to "unfold_more",
+    "chevron-up" to "keyboard_arrow_up",
+    "circle-help" to "help",
+    "circle-minus" to "do_not_disturb_on",
+    "compass" to "explore",
+    "copy" to "content_copy",
+    "download" to "download",
+    "ellipsis" to "more_horiz",
+    "eye-off" to "visibility_off",
+    "eye" to "visibility",
+    "flag" to "flag",
+    "folder-plus" to "create_new_folder",
+    "folder" to "folder",
+    "forward" to "forward",
+    "gavel" to "gavel",
+    "hash" to "tag",
+    "headphone-off" to "headset_off",
+    "headphones" to "headphones",
+    "heart" to "favorite",
+    "image" to "image",
+    "inbox" to "inbox",
+    "info" to "info",
+    "key" to "key",
+    "link" to "link",
+    "lock-open" to "lock_open",
+    "lock" to "lock",
+    "log-in" to "login",
+    "log-out" to "logout",
+    "mail" to "mail",
+    "maximize-2" to "open_in_full",
+    "message-circle" to "chat_bubble",
+    "messages-square" to "forum",
+    "mic-off" to "mic_off",
+    "mic" to "mic",
+    "minimize-2" to "close_fullscreen",
+    "minus" to "remove",
+    "move" to "open_with",
+    "palette" to "palette",
+    "paperclip" to "attach_file",
+    "pause" to "pause",
+    "pencil" to "edit",
+    "phone-off" to "call_end",
+    "phone" to "call",
+    "pin-off" to "keep_off",
+    "pin" to "keep",
+    "play" to "play_arrow",
+    "plus" to "add",
+    "refresh-cw" to "refresh",
+    "reply" to "reply",
+    "screen-share-off" to "stop_screen_share",
+    "screen-share" to "screen_share",
+    "search" to "search",
+    "settings" to "settings",
+    "share-2" to "share",
+    "shield-check" to "verified_user",
+    "shield" to "shield",
+    "smile-plus" to "add_reaction",
+    "square" to "crop_square",
+    "star" to "star",
+    "trash-2" to "delete",
+    "user-cog" to "manage_accounts",
+    "user-plus" to "person_add",
+    "users" to "group",
+    "user" to "person",
+    "user-x" to "person_remove",
+    "video-off" to "videocam_off",
+    "video" to "videocam",
+    "volume-2" to "volume_up",
+    "volume-x" to "volume_off",
+    "x" to "close",
+    "smile" to "mood",
+)
+
+/** The drawable for a desktop icon name (`user`, `bell`), or null when there is none. `filled` picks the selected or active look. */
+@android.annotation.SuppressLint("DiscouragedApi")
+fun symbolDrawable(context: Context, name: String, filled: Boolean = false): Int? {
+    val symbol = SYMBOLS[name] ?: return null
+    val id = context.resources.getIdentifier("ic_ms_" + symbol + if (filled) "_fill" else "", "drawable", context.packageName)
+    return id.takeIf { it != 0 }
+}
