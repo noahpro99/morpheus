@@ -254,6 +254,14 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
                 Button({ calls.watch(card.userId, true) }, Modifier.testTag("watch-${card.name}")) { Text(t("Watch")) }
             }
         }
+        // My own share says how many watch it (#547): nothing is sent while it is nobody.
+        if (card.kind == CardKind.SCREEN && person?.me == true) {
+            Text(
+                if (snapshot.watchers == 0u) t("Nobody is watching") else t("%{n} watching", "n" to snapshot.watchers.toString()),
+                Modifier.align(Alignment.TopStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp).testTag("watchers-note"),
+                color = Color.White, style = MaterialTheme.typography.bodySmall,
+            )
+        }
         if (card.kind == CardKind.SCREEN) {
             IconAction(dev.morpheus.app.R.drawable.ic_ms_close, t("Stop watching"), "stop-watching-${card.name}", { calls.watch(card.userId, false) }, Modifier.align(Alignment.TopEnd), tint = Color.White)
             // The screen's own menu: its sound's volume and mute for me (#436).

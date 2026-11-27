@@ -249,19 +249,27 @@ pub struct ShareSetup {
     pub fps: u32,
 }
 
-/// The size a `width` x `height` phone screen is sent at under `quality`: fitted in the resolution's box turned the way the screen is.
+/// The size a `width` x `height` phone screen is sent at under `quality`: its short side at most 720 or 1080 (what "720p" and "1080p" call the picture), never enlarged,
+/// even sizes, the screen's own proportions; `Source` is the screen as it is.
 fn fit_for_phone(quality: morpheus_call::ScreenQuality, width: u32, height: u32) -> (u32, u32) {
-    if height > width {
-        let (w, h) = quality.fit(height, width);
-        (h, w)
-    } else {
-        quality.fit(width, height)
+    let (width, height) = (width.max(2), height.max(2));
+    let limit = match quality.resolution {
+        morpheus_call::ScreenResolution::P720 => 720,
+        morpheus_call::ScreenResolution::P1080 => 1080,
+        morpheus_call::ScreenResolution::Source => return (width & !1, height & !1),
+    };
+    let short = width.min(height);
+    if short <= limit {
+        return (width & !1, height & !1);
     }
+    let scale = f64::from(limit) / f64::from(short);
+    let even = |side: u32| (((f64::from(side) * scale).round() as u32).max(2)) & !1;
+    (even(width), even(height))
 }
 
 impl Morpheus {
     fn screen_quality(&self) -> morpheus_call::ScreenQuality {
-        std::fs::read_to_string(self.dir.join(SCREEN_QUALITY_FILE)).map(|json| morpheus_call::ScreenQuality::from_json(&json)).unwrap_or_default()
+        std::fs::read_to_string(self.dir.join(SCREEN_QUALITY_FILE)).map(|json| morpheus_call::ScreenQuality::from_json(&json)).unwrap_or(morpheus_call::ScreenQuality { resolution: morpheus_call::ScreenResolution::P720, ..morpheus_call::ScreenQuality::default() })
     }
 }
 
@@ -310,10 +318,10 @@ mod share_tests {
 
     #[test]
     fn a_tall_phone_is_fitted_in_the_box_turned_its_way() {
-        assert_eq!(fit_for_phone(q(ScreenResolution::P720), 1080, 2400), (576, 1280));
-        assert_eq!(fit_for_phone(q(ScreenResolution::P1080), 1080, 2400), (864, 1920));
+        assert_eq!(fit_for_phone(q(ScreenResolution::P720), 1080, 2400), (720, 1600));
+        assert_eq!(fit_for_phone(q(ScreenResolution::P1080), 1440, 3200), (1080, 2400));
         assert_eq!(fit_for_phone(q(ScreenResolution::Source), 1080, 2400), (1080, 2400));
-        assert_eq!(fit_for_phone(q(ScreenResolution::P720), 2400, 1080), (1280, 576), "landscape fits the box as it is");
+        assert_eq!(fit_for_phone(q(ScreenResolution::P720), 2400, 1080), (1600, 720), "landscape: the short side is the same");
         assert_eq!(fit_for_phone(q(ScreenResolution::P1080), 700, 1200), (700, 1200), "never enlarged");
     }
 }
