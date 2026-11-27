@@ -151,7 +151,7 @@ class TestBridge(private val app: Application) {
             } else swipe(
                 request.getDouble("x1").toFloat(), request.getDouble("y1").toFloat(),
                 request.getDouble("x2").toFloat(), request.getDouble("y2").toFloat(),
-                request.optLong("ms", 300), request.optBoolean("fling", false), request.optLong("hold", 0),
+                request.optLong("ms", 300), request.optBoolean("fling", false), request.optLong("hold", 0), request.optLong("rest", 150),
             )
             true
         }
@@ -200,6 +200,7 @@ class TestBridge(private val app: Application) {
             out
         }
         "windows" -> onMain { JSONArray(windows().map { JSONObject().put("view", it.view.javaClass.name).put("over", it.over).put("modal", it.modal).put("w", it.view.width).put("h", it.view.height).put("x", it.dx).put("y", it.dy) }) }
+        "haptics_reset" -> { AppState.hapticLog.clear(); true }
         "slide_reset" -> { AppState.slideLog.clear(); true }
         "clock_offset" -> { AppState.clockOffsetMs = request.getLong("ms"); true }
         "older_delay" -> { AppState.olderDelayMs = request.getLong("ms"); true }
@@ -338,6 +339,8 @@ class TestBridge(private val app: Application) {
                 .put("colour_pairs", JSONArray(AppState.colourPairs.map { JSONArray().put(it.first).put(it.second.toLong() and 0xFFFFFF).put(it.third.toLong() and 0xFFFFFF) }))
                 .put("room", AppState.room)
                 .put("haptics", AppState.haptics)
+                .put("haptic_log", JSONArray(AppState.hapticLog.toList()))
+                .put("sheet_lag_ms", if (AppState.sheetAt >= AppState.touchDownAt && AppState.sheetAt > 0) AppState.sheetAt - AppState.touchDownAt else -1)
                 .put("image_fetches", AppState.imageFetches)
                 .put("emotes_drawn", AppState.emotesDrawn)
                 .put("ime_shown", AppState.imeShown)
@@ -541,9 +544,11 @@ class TestBridge(private val app: Application) {
         touch(MotionEvent.ACTION_UP, down, points.last().first, points.last().second)
     }
 
-    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean, hold: Long) {
+    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, ms: Long, fling: Boolean, hold: Long, rest: Long = 150) {
         val down = SystemClock.uptimeMillis()
         val steps = 12
+        AppState.touchDownAt = down
+        AppState.sheetAt = 0
         touch(MotionEvent.ACTION_DOWN, down, x1, y1)
         // Held still after the touch-down first: a long press, then the drag.
         if (hold > 0) Thread.sleep(hold)
@@ -554,7 +559,7 @@ class TestBridge(private val app: Application) {
         // Held still a moment before lifting: no fling, so a drag moves the
         // content by what it covers and no more.
         // A flick (`fling`) lifts while still moving, so the content gets the finger's velocity.
-        if (!fling) Thread.sleep(150)
+        if (!fling) Thread.sleep(rest)
         touch(MotionEvent.ACTION_UP, down, x2, y2)
     }
 

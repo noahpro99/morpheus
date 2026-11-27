@@ -95,7 +95,8 @@ fun RoomPageHost(app: AppModel) {
 @Composable
 internal fun PageFrame(app: AppModel, title: String, tag: String, content: @Composable () -> Unit) {
     ScreenScaffold(tag, { TopBar(t(title)) }) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
+        val pageScroll = rememberScrollState()
+        Column(Modifier.stretch(pageScroll).fillMaxSize().padding(inner).verticalScroll(pageScroll).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
     }
 }
 

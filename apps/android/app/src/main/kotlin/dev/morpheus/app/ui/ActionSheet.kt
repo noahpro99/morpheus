@@ -82,7 +82,8 @@ fun ActionSheetHost(model: AppModel) {
     LaunchedEffect(current?.id) {
         if (current != null && current.longPress) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            AppState.haptics++
+            Haptics.longPress()
+            AppState.sheetAt = android.os.SystemClock.uptimeMillis()
         }
     }
     val shown = last ?: return
@@ -137,6 +138,9 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
         if (live && request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
         var shown by remember { mutableStateOf<List<MenuRow>>(request.rows) }
         var trail by remember { mutableStateOf<List<MenuRow>>(emptyList()) }
+        val sheetList = androidx.compose.foundation.lazy.rememberLazyListState()
+        // The rows arrive after the sheet is up: show them at the top level when they do.
+        LaunchedEffect(request.rows) { if (trail.isEmpty()) shown = request.rows }
         // Back goes up one level of a submenu, and closes the sheet from the top (Material's own goes from full to half first).
         androidx.activity.compose.BackHandler(enabled = live) {
             if (trail.isEmpty()) model.closeSheet()
@@ -160,7 +164,9 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
             if (!live) {
                 // Leaving: the rows as a picture, nothing that could take a touch.
                 Column(Modifier.fillMaxWidth().weight(1f)) { for (row in shown.take(10)) SheetRow(row, interactive = false) { } }
-            } else LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("sheet-list")) {
+            } else if (request.loading) {
+                Column(Modifier.fillMaxWidth().weight(1f).padding(top = Space.md)) { SkeletonRows(5, avatars = false) }
+            } else LazyColumn(Modifier.stretch(sheetList).fillMaxWidth().weight(1f).testTag("sheet-list"), state = sheetList) {
                 if (trail.isEmpty() && request.quickReactions.isNotEmpty()) {
                     item(key = "quick") {
                         Row(Modifier.padding(horizontal = Space.lg, vertical = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

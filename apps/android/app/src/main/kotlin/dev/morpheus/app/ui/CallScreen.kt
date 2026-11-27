@@ -449,7 +449,8 @@ private fun ColumnScope.InvitePanel(calls: CallModel, snapshot: CallSnapshot, cl
         val list = friends
         if (list == null) Text("…", color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
         else if (list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("call-invite-none"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
-        androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f)) {
+        val inviteList = androidx.compose.foundation.lazy.rememberLazyListState()
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.stretch(inviteList).weight(1f), state = inviteList) {
             listItems(list.orEmpty(), key = { it.userId }) { friend ->
                 val state = states[friend.userId]
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

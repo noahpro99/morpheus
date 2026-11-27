@@ -64,7 +64,7 @@ fun QuickFind(model: AppModel, modifier: Modifier = Modifier) {
     var half by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding().testTag("switcher")) {
         LazyColumn(
-            Modifier.weight(1f).fillMaxWidth().onSizeChanged { half = it.height / 2f }.testTag("switcher-results"), state = list, reverseLayout = true,
+            Modifier.stretch(list).weight(1f).fillMaxWidth().onSizeChanged { half = it.height / 2f }.testTag("switcher-results"), state = list, reverseLayout = true,
             contentPadding = PaddingValues(top = with(androidx.compose.ui.platform.LocalDensity.current) { half.toDp() }),
         ) {
             itemsIndexed(hits, key = { _, it -> it.kind.name + it.id + it.label }) { index, hit ->
@@ -124,7 +124,8 @@ fun InboxScreen(model: AppModel, modifier: Modifier = Modifier) {
             if (rooms.isEmpty() && invites.isEmpty() && mentions.isEmpty()) {
                 EmptyState(dev.morpheus.app.R.drawable.ic_ms_inbox, t("All caught up"), t("Mentions and unread rooms show here."))
             } else {
-                LazyColumn(Modifier.fillMaxSize().testTag("inbox-list")) {
+                val inboxList = androidx.compose.foundation.lazy.rememberLazyListState()
+                LazyColumn(Modifier.stretch(inboxList).fillMaxSize().testTag("inbox-list"), state = inboxList) {
                     items(invites, key = { "invite-${it.id}" }) { invite ->
                         InviteCard(invite, model)
                     }

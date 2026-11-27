@@ -54,10 +54,12 @@ fun SignInScreen(model: AppModel) {
         flows = try { model.morpheus.loginFlows(homeserver.trim()) } catch (_: Exception) { null }
     }
 
+    val formScroll = rememberScrollState()
     Column(
         Modifier
+            .stretch(formScroll)
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(formScroll)
             .padding(24.dp)
             .testTag("sign-in"),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),

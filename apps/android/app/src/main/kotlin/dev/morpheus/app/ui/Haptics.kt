@@ -19,20 +19,28 @@ import dev.morpheus.app.AppState
  */
 object Haptics {
     /** A tap on something that handled it. */
-    fun tap(view: View) = fire(view, HapticFeedbackConstants.VIRTUAL_KEY)
+    fun tap(view: View) = fire(view, "tap", HapticFeedbackConstants.VIRTUAL_KEY)
 
     /** A swipe that goes through. */
-    fun commit(view: View) = fire(view, if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.GESTURE_END else HapticFeedbackConstants.VIRTUAL_KEY)
+    fun commit(view: View) = fire(view, "commit", if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.GESTURE_END else HapticFeedbackConstants.VIRTUAL_KEY)
 
     /** A step of a scrub (the date under the fast-scroll handle changing). */
-    fun tick(view: View) = fire(view, if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK else HapticFeedbackConstants.CLOCK_TICK)
+    fun tick(view: View) = fire(view, "tick", if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK else HapticFeedbackConstants.CLOCK_TICK)
 
     /** Taking hold of a handle. */
-    fun grab(view: View) = fire(view, HapticFeedbackConstants.LONG_PRESS)
+    fun grab(view: View) = fire(view, "grab", HapticFeedbackConstants.LONG_PRESS)
 
-    private fun fire(view: View, kind: Int) {
+    /** The long press that opens a sheet (its own haptic, through Compose's feedback). */
+    fun longPress() = record("long_press")
+
+    private fun fire(view: View, name: String, kind: Int) {
         view.performHapticFeedback(kind)
+        record(name)
+    }
+
+    private fun record(name: String) {
         AppState.haptics++
+        AppState.hapticLog.add(name)
     }
 }
 

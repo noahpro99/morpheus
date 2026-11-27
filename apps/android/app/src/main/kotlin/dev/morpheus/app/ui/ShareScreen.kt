@@ -104,7 +104,7 @@ private fun ColumnScope.Pick(share: Share, targets: List<ShareTarget>, query: St
     // The best match stays at the bottom, in view, as the query or the list changes (a list that grew kept its place and left it below the bar).
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     LaunchedEffect(query, targets.map { it.id }) { list.scrollToItem(0) }
-    LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("share-results"), state = list, reverseLayout = true) {
+    LazyColumn(Modifier.stretch(list).weight(1f).fillMaxWidth().testTag("share-results"), state = list, reverseLayout = true) {
         items(targets, key = { it.id }) { target ->
             ListRow(
                 target.name, "share-target-${target.name}",

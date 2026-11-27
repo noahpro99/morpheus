@@ -958,5 +958,9 @@
   "Lost your recovery key and have no other signed-in device? Reset it here.": "¿Perdiste tu clave de recuperación y no tienes otro dispositivo con la sesión iniciada? Restablécela aquí.",
   "Your old key stops working: devices you sign in to later need the new key to read your encrypted history. Make a new key?": "Tu clave anterior deja de funcionar: los dispositivos en los que inicies sesión después necesitarán la nueva para leer tu historial cifrado. ¿Crear una clave nueva?",
   "Your old key stops working, and your encryption identity is reset: your other devices must be verified again, and history that only the old backup held may be unreadable. Enter your account password to continue.": "Tu clave anterior deja de funcionar y tu identidad de cifrado se restablece: tus otros dispositivos deben verificarse de nuevo, y el historial que solo tenía la copia anterior puede no poder leerse. Introduce la contraseña de tu cuenta para continuar.",
-  "Choose a time of at least 10 seconds and at most 24 hours.": "Elige un tiempo de al menos 10 segundos y como máximo 24 horas."
+  "Choose a time of at least 10 seconds and at most 24 hours.": "Elige un tiempo de al menos 10 segundos y como máximo 24 horas.",
+  "Custom theme": "Tema personalizado",
+  "Recent custom themes": "Temas personalizados recientes",
+  "Preview": "Vista previa",
+  "On": "Activado"
 }

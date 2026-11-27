@@ -1,6 +1,13 @@
 package dev.morpheus.app.shots
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.darkColorScheme
@@ -139,6 +146,41 @@ class ScreenShots(private val light: Boolean) {
                 RoomRow(room("announcements", muted = true), selected = false, onOpen = {}, onMenu = {}, callName = { it })
                 SectionHeader("Direct messages")
                 RoomRow(room("bob", dm = true, unread = 1UL), selected = false, onOpen = {}, onMenu = {}, callName = { it })
+            }
+        }
+    }
+
+    /** The composer area with the button row shown (#534): the pill and the row stand on the one surface, no band of another fill behind the row. */
+    @Test
+    fun composer_with_actions() = shoot("composer-with-actions") {
+        ScreenScaffold("room", topBar = {}) { pad ->
+            Column(Modifier.padding(pad).fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxWidth())
+                dev.morpheus.app.ui.ComposerDock {
+                    Box(Modifier.fillMaxWidth().padding(8.dp).heightIn(min = 56.dp).clip(RoundedCornerShape(28.dp)).background(dev.morpheus.app.ui.ComposerColours.fill(MaterialTheme.colorScheme)))
+                    dev.morpheus.app.ui.ChatActions(true, {}, {}, {}, {})
+                }
+            }
+        }
+    }
+
+    /** The channel list panel (#536): rounded at the bottom left too, and the bottom row's highlight reaches the panel's bottom edge, its corners the panel's. */
+    @Test
+    fun channel_panel() = shoot("channel-panel") {
+        Box(Modifier.fillMaxSize().background(Palette.Background).padding(end = 72.dp)) {
+            Column(Modifier.fillMaxSize().clip(dev.morpheus.app.ui.channelPanelShape).background(Palette.Surface), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Bottom) {
+                RoomRow(room("general", unread = 3UL), selected = false, onOpen = {}, onMenu = {}, callName = { it })
+                RoomRow(room("random"), selected = true, onOpen = {}, onMenu = {}, callName = { it }, bottomPad = 16.dp)
+            }
+        }
+    }
+
+    /** The reply icon (#535): the Material Symbols glyph in the banner above the composer, on its fill, with the contrast helpers. */
+    @Test
+    fun reply_banner() = shoot("reply-banner") {
+        ScreenScaffold("reply", topBar = {}) { pad ->
+            Column(Modifier.padding(pad).fillMaxWidth()) {
+                dev.morpheus.app.ui.ComposerBanner(R.drawable.ic_lucide_reply, "Replying to bob: see you at five", "reply-bar", "reply-banner", "Cancel reply", "reply-cancel") {}
             }
         }
     }

@@ -69,7 +69,8 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
     Box(Modifier.fillMaxSize().testTag("room-info")) {
         LaunchedEffect(problem) { problem?.let { Toasts.say(it, "info-error", long = true) } }
         ScreenScaffold("room-info-screen", { TopBar(t("Room details")) }) { inner ->
-            LazyColumn(Modifier.fillMaxSize().padding(inner)) {
+            val infoList = androidx.compose.foundation.lazy.rememberLazyListState()
+            LazyColumn(Modifier.stretch(infoList).fillMaxSize().padding(inner), state = infoList) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(Space.xs), modifier = Modifier.padding(top = Space.md)) {
                         Text(title, Modifier.padding(horizontal = Space.lg).testTag("info-name"), style = MaterialTheme.typography.titleLarge)
@@ -201,7 +202,7 @@ internal fun ProfileSheet(app: AppModel, request: dev.morpheus.app.ProfileReques
                 if (problem == null) {
                     Skeleton(Modifier.fillMaxWidth(0.5f).height(16.dp))
                     Skeleton(Modifier.fillMaxWidth(0.35f).height(12.dp))
-                    Skeleton(Modifier.fillMaxWidth(0.8f).height(14.dp))
+                    Skeleton(Modifier.fillMaxWidth(0.8f).height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Skeleton(Modifier.width(96.dp).height(40.dp), CircleShape)
                         Skeleton(Modifier.width(112.dp).height(40.dp), CircleShape)
@@ -257,6 +258,6 @@ internal fun ProfileSheet(app: AppModel, request: dev.morpheus.app.ProfileReques
 
 /** A grey placeholder where something is still loading (#489), tagged so a test sees that the sheet was drawn before the card. */
 @Composable
-fun Skeleton(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(6.dp)) {
+fun Skeleton(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(8.dp)) {
     Box(modifier.clip(shape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)).testTag("profile-skeleton"))
 }

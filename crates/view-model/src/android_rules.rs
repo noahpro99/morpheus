@@ -510,3 +510,74 @@ fn android_src() -> PathBuf {
     };
     root.join("apps/android/app/src")
 }
+
+/// What turns a list's stretch overscroll off (#516): a list that fits must not scroll but must still stretch when pulled, which
+/// `userScrollEnabled = false` (and a null overscroll configuration or effect) would kill.
+const OVERSCROLL_OFF: &[&str] = &["userScrollEnabled = false", "userScrollEnabled=false", "LocalOverscrollConfiguration provides null", "overscrollEffect = null", "overscrollEffect=null", ".overscroll(null)", "overScrollMode"];
+
+/// The lines of this Kotlin that switch the overscroll of a scrolling list off.
+fn overscroll_disabled(text: &str) -> Vec<usize> {
+    let (code, _) = lex(text);
+    let code = String::from_utf8_lossy(&code).into_owned();
+    code.lines().enumerate().filter(|(_, l)| OVERSCROLL_OFF.iter().any(|p| l.contains(p))).map(|(i, _)| i + 1).collect()
+}
+
+#[test]
+fn no_list_has_its_stretch_overscroll_turned_off() {
+    // The check itself: each way of turning it off is seen, an ordinary list is not.
+    assert_eq!(overscroll_disabled("LazyColumn(Modifier.fillMaxSize(), userScrollEnabled = false) {}"), vec![1]);
+    assert_eq!(overscroll_disabled("a()\nCompositionLocalProvider(LocalOverscrollConfiguration provides null) {}"), vec![2]);
+    assert!(overscroll_disabled("LazyColumn(Modifier.fillMaxSize(), state = s) { /* userScrollEnabled = false */ }").is_empty());
+    let bad: Vec<String> = kotlin_files().iter().flat_map(|(f, t)| overscroll_disabled(t).into_iter().map(move |l| format!("{f}:{l}"))).collect();
+    assert!(bad.is_empty(), "stretch overscroll turned off (a list that fits must still stretch, #516): {bad:?}");
+}
+
+/// The lines of a Kotlin file where a vertical list (`LazyColumn`, `verticalScroll`) does not carry the shared stretch overscroll (#516): its
+/// call (or, for `verticalScroll`, the modifier chain just before it) must have `.stretch(`.
+fn lists_without_stretch(text: &str) -> Vec<usize> {
+    let (code, shape) = lex(text);
+    let code = String::from_utf8_lossy(&code).into_owned();
+    let shape = String::from_utf8_lossy(&shape).into_owned();
+    let line_of = |at: usize| code[..at].bytes().filter(|b| *b == b'\n').count() + 1;
+    let mut out = Vec::new();
+    for (at, _) in code.match_indices("LazyColumn(") {
+        // The call's arguments: to the matching parenthesis.
+        let open = at + "LazyColumn".len();
+        let mut depth = 0usize;
+        let mut end = open;
+        for (i, b) in shape.bytes().enumerate().skip(open) {
+            match b {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !code[open..end].contains(".stretch(") {
+            out.push(line_of(at));
+        }
+    }
+    for (at, _) in code.match_indices(".verticalScroll(") {
+        let from = at.saturating_sub(300);
+        if !code[from..at].contains(".stretch(") {
+            out.push(line_of(at));
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn every_vertical_list_has_the_shared_stretch() {
+    assert_eq!(lists_without_stretch("LazyColumn(Modifier.fillMaxSize()) {}"), vec![1]);
+    assert!(lists_without_stretch("LazyColumn(Modifier.stretch(s).fillMaxSize(), state = s) {}").is_empty());
+    assert_eq!(lists_without_stretch("a()\nColumn(Modifier.fillMaxSize().verticalScroll(s)) {}"), vec![2]);
+    assert!(lists_without_stretch("Column(Modifier.stretch(s).fillMaxSize().verticalScroll(s)) {}").is_empty());
+    let bad: Vec<String> = kotlin_files().iter().filter(|(f, _)| !f.ends_with("/Stretch.kt")).flat_map(|(f, t)| lists_without_stretch(t).into_iter().map(move |l| format!("{f}:{l}"))).collect();
+    assert!(bad.is_empty(), "vertical lists without the shared stretch overscroll (Modifier.stretch, #516): {bad:?}");
+}

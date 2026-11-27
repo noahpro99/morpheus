@@ -54,7 +54,8 @@ fun SearchPanel(model: RoomModel, onPick: (String) -> Unit) {
         Text(t("Searches the messages this device has loaded."), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
         val found = hits
         if (found != null && found.isEmpty()) Text(t("No messages found."), Modifier.padding(16.dp).testTag("search-none"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
-        LazyColumn(Modifier.fillMaxSize().testTag("search-results"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        val resultsList = androidx.compose.foundation.lazy.rememberLazyListState()
+        LazyColumn(Modifier.stretch(resultsList).fillMaxSize().testTag("search-results"), state = resultsList, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(found.orEmpty(), key = { it.eventId }) { hit ->
                 androidx.compose.material3.ListItem(
                     headlineContent = { Text(hit.body, maxLines = 3, overflow = TextOverflow.Ellipsis) },

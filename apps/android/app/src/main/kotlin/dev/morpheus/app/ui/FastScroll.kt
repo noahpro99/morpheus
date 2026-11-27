@@ -42,14 +42,14 @@ import kotlinx.coroutines.launch
  * scrolls (and while it is held) and fades out after a moment; a haptic tick comes with each change of the date shown and on grab and release.
  */
 @Composable
-fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (Int) -> String?, minimum: Int = 40) {
+fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (Int) -> String?, modifier: Modifier = Modifier, minimum: Int = 40) {
     val scope = rememberCoroutineScope()
     val haptic = androidx.compose.ui.platform.LocalView.current
     var dragging by remember { mutableStateOf(false) }
     // The date bubble stays with the handle for as long as it shows after it was held (so it can be read), not for a plain scroll.
     var used by remember { mutableStateOf(false) }
     var shown by remember { mutableStateOf(false) }
-    var height by remember { mutableStateOf(0) }
+    var height by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val scrolling = state.isScrollInProgress
     // (The gesture reads these as they are now: a page of older messages arriving mid-drag must not restart it.)
     val latestTotal by androidx.compose.runtime.rememberUpdatedState(total)
@@ -60,13 +60,13 @@ fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (
     }
     if (total < minimum) return
     val handle = with(LocalDensity.current) { 56.dp.roundToPx() }
-    val index = state.firstVisibleItemIndex
+    val index by remember(state) { androidx.compose.runtime.derivedStateOf { state.firstVisibleItemIndex } }
     val label = labelAt(index)
     // A tick as the date under the handle changes while it is held.
     LaunchedEffect(label) { if (dragging && label != null) Haptics.tick(haptic) }
     androidx.compose.animation.AnimatedVisibility(
         shown || dragging,
-        Modifier.align(Alignment.TopEnd).fillMaxHeight().onSizeChanged { height = it.height },
+        modifier.align(Alignment.TopEnd).fillMaxHeight().onSizeChanged { height = it.height },
         enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.Short4)),
         exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.Medium2)),
     ) {
@@ -79,7 +79,7 @@ fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (
                 Text(
                     label,
                     Modifier.align(Alignment.TopEnd).offset { IntOffset(0, y + handle / 4) }.padding(end = 56.dp).clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.inverseSurface).padding(horizontal = 12.dp, vertical = 6.dp).testTag("fast-scroll-label"),
+                        .background(MaterialTheme.colorScheme.inverseSurface).padding(horizontal = 12.dp, vertical = 4.dp).testTag("fast-scroll-label"),
                     color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.labelLarge,
                 )
             }

@@ -241,6 +241,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("room-error"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
             if (selection.active) SelectionBar(selection, rows.filterIsInstance<TimelineRow.Message>().map { it.message })
+            ComposerDock {
             Composer(
                 model, room.id + "|" + (threadRoot ?: ""), editing, composerFocus, title = if (threadRoot == null) title else null, dm = isDm, encrypted = encrypted, room = listed, server = serverOfRoom,
                 onComposing = { composing = it; pulled = false }, onEmpty = { boxEmpty = it }, onAttach = { picker.launch("*/*") },
@@ -254,6 +255,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                     onPins = { app.openPage(dev.morpheus.app.PageRequest("pinned", room.id)) },
                     onInfo = { info = true },
                 )
+            }
             }
         } } }
         viewing?.let { shown ->
@@ -331,9 +333,22 @@ private fun Timeline(
     var askedAt by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
     LaunchedEffect(loading) { if (loading) askedAt = rows.size else { kotlinx.coroutines.delay(400); askedAt = -1 } }
     val waitingForOlder = (loading || (askedAt >= 0 && rows.size == askedAt)) && !atStart && rows.isNotEmpty()
-    // A new message at the bottom stays in view when the person is looking at the bottom.
-    val newestKey = (items.firstOrNull() as? TimelineRow.Message)?.message?.key
-    LaunchedEffect(newestKey) { if (state.firstVisibleItemIndex <= 1) state.animateScrollToItem(0) }
+    // The list stays pinned to the newest message while the person is at the bottom (#537): a message sent or received (the list anchors on what was in
+    // view, so a new row would land below it), the composer, the button row or the keyboard changing height, a row growing. A drag or fling away from the
+    // bottom unpins it; coming back to the bottom pins it again.
+    var userScrolling by remember { mutableStateOf(false) }
+    var pinned by remember { mutableStateOf(true) }
+    LaunchedEffect(state) {
+        var sawGoing = false
+        launch { state.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) { userScrolling = true; sawGoing = false } } }
+        androidx.compose.runtime.snapshotFlow { state.isScrollInProgress }.collect { going -> if (going) sawGoing = true else if (sawGoing) userScrolling = false }
+    }
+    LaunchedEffect(state) {
+        androidx.compose.runtime.snapshotFlow { listOf(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset, state.layoutInfo.viewportSize.height, state.layoutInfo.totalItemsCount, if (userScrolling) 1 else 0) }.collect {
+            val atBottom = state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset == 0
+            if (atBottom) pinned = true else if (userScrolling) pinned = false else if (pinned) state.scrollToItem(0)
+        }
+    }
     // What the last run kept (#313) is drawn first and the live rows replace it: the list anchors on the message that
     // was in view, so the first live rows would leave a person who was at the newest looking at old messages. Go back to
     // the newest once, unless they have scrolled since.
@@ -349,6 +364,7 @@ private fun Timeline(
         val target = jump ?: return@LaunchedEffect
         val at = items.indexOfFirst { it is TimelineRow.Message && it.message.eventId == target }
         if (at >= 0) {
+            pinned = false
             state.animateScrollToItem(at)
             model.highlight(target)
             model.clearJump()
@@ -364,7 +380,7 @@ private fun Timeline(
     Box(modifier) {
     // Nothing yet: placeholders where the messages will be.
     if (rows.isEmpty()) Column(Modifier.align(Alignment.BottomStart).padding(bottom = Space.lg)) { SkeletonRows(7) }
-    LazyColumn(Modifier.fillMaxSize().nestedScroll(pullDown).testTag(listTag), state = state, reverseLayout = true) {
+    LazyColumn(Modifier.stretch(state).fillMaxSize().nestedScroll(pullDown).testTag(listTag), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
                 is TimelineRow.Message -> if (row.message.senderId in ignored && row.message.key !in revealed) {
@@ -516,7 +532,7 @@ private fun MessageRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
                 ) {
-                    GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_reply, size = 16.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_reply, size = 20.dp, tint = readable(MaterialTheme.colorScheme.onSurfaceVariant, Palette.Raised))
                     Text(
                         "${reply.senderName ?: ""}: ${reply.summary ?: "…"}",
                         Modifier.testTag("msg-reply"),
@@ -751,9 +767,18 @@ private fun ChatLabel(title: String?, dm: Boolean, encrypted: Boolean, tint: Col
     }
 }
 
+/**
+ * The composer and the button row under it stand on one surface (the background colour) that reaches the edges and the bottom: the row has no fill of
+ * its own, so while it slides away or back there is no band of another colour behind it (#534).
+ */
+@Composable
+internal fun ComposerDock(content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Palette.Background)) { content() }
+}
+
 /** Call, Search, Pins and Info as a row of rounded buttons under the composer (#502). It slides away on the motion tokens (emphasized, medium 2 in and short 4 out). */
 @Composable
-private fun ChatActions(visible: Boolean, onCall: () -> Unit, onSearch: () -> Unit, onPins: () -> Unit, onInfo: () -> Unit) {
+internal fun ChatActions(visible: Boolean, onCall: () -> Unit, onSearch: () -> Unit, onPins: () -> Unit, onInfo: () -> Unit) {
     androidx.compose.animation.AnimatedVisibility(
         visible,
         enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(Motion.Medium2, easing = Motion.EmphasizedDecelerate)) { it } +
@@ -845,7 +870,7 @@ private object Drafts {
 
 /** The bar over the message box that says what it is for (a reply, an edit): the screen's width, an icon, one line, a close button. */
 @Composable
-private fun ComposerBanner(@androidx.annotation.DrawableRes icon: Int, text: String, barTag: String, textTag: String, closeDescription: String, closeTag: String, onClose: () -> Unit) {
+internal fun ComposerBanner(@androidx.annotation.DrawableRes icon: Int, text: String, barTag: String, textTag: String, closeDescription: String, closeTag: String, onClose: () -> Unit) {
     val fill = ComposerColours.fill(MaterialTheme.colorScheme)
     val ink = ComposerColours.hint(MaterialTheme.colorScheme)
     Row(

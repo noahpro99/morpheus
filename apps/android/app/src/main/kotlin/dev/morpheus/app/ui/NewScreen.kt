@@ -162,7 +162,8 @@ private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Un
     val shown = view
     shown?.errors?.forEach { Text(it, Modifier.testTag("discover-error"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall) }
     if (shown != null && shown.entries.isEmpty() && !shown.loading) Text(t("No public rooms found."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
-    LazyColumn(Modifier.testTag("directory")) {
+    val directoryList = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(Modifier.stretch(directoryList).testTag("directory"), state = directoryList) {
         items(shown?.entries.orEmpty(), key = { it.id }) { room ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.ListItem(
@@ -223,7 +224,8 @@ private fun Friends(app: AppModel, onMessage: (String) -> Unit) {
     val list = friends
     if (list != null && list.isEmpty()) Text(t("No friends yet"), Modifier.testTag("no-friends"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     if (list != null && list.isNotEmpty()) Text(t("All friends — %{count}", "count" to list.size.toString()), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
-    LazyColumn(Modifier.testTag("friends")) {
+    val friendsList = androidx.compose.foundation.lazy.rememberLazyListState()
+    LazyColumn(Modifier.stretch(friendsList).testTag("friends"), state = friendsList) {
         items(list.orEmpty(), key = { it.userId }) { friend ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(friend.avatar, friend.name, 36.dp)

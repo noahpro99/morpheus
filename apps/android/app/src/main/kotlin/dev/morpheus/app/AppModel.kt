@@ -196,10 +196,13 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         load: suspend () -> List<uniffi.morpheus_ffi.MenuRow>,
     ) {
         viewModelScope.launch {
+            val request = SheetRequest(++sheetIds, title, emptyList(), longPress, startFull, quickReactions, onOutcome, loading = true)
+            _sheet.value = request
             try {
-                val rows = load()
-                _sheet.value = SheetRequest(++sheetIds, title, rows, longPress, startFull, quickReactions, onOutcome)
+                request.rows = load()
+                request.loading = false
             } catch (e: Exception) {
+                if (_sheet.value === request) _sheet.value = null
                 _error.value = e.sentence()
             }
         }
@@ -1069,6 +1072,16 @@ object AppState {
     @Volatile
     var haptics: Int = 0
 
+    /** What each haptic was (tap, commit, tick, grab, long_press), in order (the debug bridge reports it; #485). */
+    val hapticLog: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
+
+    /** When the debug bridge's last touch went down, and when a long press opened a sheet (uptime ms; #530). */
+    @Volatile
+    var touchDownAt: Long = 0
+
+    @Volatile
+    var sheetAt: Long = 0
+
     /** The room on screen (the debug bridge reports it). */
     @Volatile
     var room: String = ""
@@ -1120,12 +1133,17 @@ class ProfileRequest(val userId: String, val name: String, val avatar: uniffi.mo
 class SheetRequest(
     val id: Int,
     val title: String,
-    val rows: List<uniffi.morpheus_ffi.MenuRow>,
+    rows: List<uniffi.morpheus_ffi.MenuRow>,
     val longPress: Boolean,
     val startFull: Boolean,
     val quickReactions: List<String>,
     val onOutcome: (uniffi.morpheus_ffi.MenuOutcome) -> Unit,
-)
+    loading: Boolean = false,
+) {
+    /** The rows come after the sheet is up (the menu may ask the server: the sheet opens at the long-press timeout, #530). */
+    var rows by androidx.compose.runtime.mutableStateOf(rows)
+    var loading by androidx.compose.runtime.mutableStateOf(loading)
+}
 
 /** A page of the phone for a sheet item: what kind, which room (or server, or folder), a name where it matters, the message it is about. */
 class PageRequest(val kind: String, val roomId: String, val extra: String = "", val message: uniffi.morpheus_ffi.MessageItem? = null)

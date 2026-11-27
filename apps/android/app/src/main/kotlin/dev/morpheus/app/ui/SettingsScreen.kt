@@ -76,7 +76,7 @@ fun SettingsScreen(app: AppModel) {
     LaunchedEffect(page, anchor, pageScroll.maxValue) { if (anchor != null && pageScroll.maxValue > 0) pageScroll.scrollTo(pageScroll.maxValue) }
     ScreenScaffold("settings-screen", { TopBar(t("Settings"), titleTag = "settings-title") }) { inner ->
         if (page == null) SettingsGroups(app, t, Modifier.padding(inner)) else Column(
-            Modifier.fillMaxSize().padding(inner).verticalScroll(pageScroll, reverseScrolling = true).padding(vertical = Space.lg),
+            Modifier.stretch(pageScroll).fillMaxSize().padding(inner).verticalScroll(pageScroll, reverseScrolling = true).padding(vertical = Space.lg),
             // A page rests at the bottom, near the thumb (#482): a short one sits low with room above, a long one starts scrolled to its end.
             verticalArrangement = Arrangement.spacedBy(Space.md, Alignment.Bottom),
         ) {
@@ -222,8 +222,9 @@ private fun SettingsGroups(app: AppModel, t: (String) -> String, modifier: Modif
     val hits = remember(query) { if (query.isBlank()) emptyList() else uniffi.morpheus_ffi.searchSettings(query).filter { it.group in supported } }
     val groups = remember { uniffi.morpheus_ffi.settingsGroups().filter { it.key in supported } }
     Column(modifier.fillMaxWidth().testTag("settings-groups")) {
+        val groupList = androidx.compose.foundation.lazy.rememberLazyListState()
         // Bottom-up (#482): the first group is the lowest, just above the search bar, and the rest stack upward; the list rests at the bottom.
-        androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth(), reverseLayout = true) {
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.stretch(groupList).weight(1f).fillMaxWidth(), state = groupList, reverseLayout = true) {
             if (query.isNotBlank()) {
                 if (hits.isEmpty()) item { Text(t("No settings match."), Modifier.padding(Space.lg).testTag("settings-no-hits"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge) }
                 items(hits, key = { it.group + "/" + it.anchor }) { hit ->

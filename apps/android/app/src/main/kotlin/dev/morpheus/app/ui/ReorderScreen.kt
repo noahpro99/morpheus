@@ -60,7 +60,8 @@ fun ReorderScreen(app: AppModel) {
         app.setRailOrder(next)
     }
     ScreenScaffold("reorder-screen", { TopBar(t("Servers")) }) { inner ->
-        LazyColumn(Modifier.fillMaxSize().padding(inner)) {
+        val rowsList = androidx.compose.foundation.lazy.rememberLazyListState()
+        LazyColumn(Modifier.stretch(rowsList).fillMaxSize().padding(inner), state = rowsList) {
             items(rows, key = { it.key }) { row ->
                 val at = rows.indexOf(row)
                 if (row.folderId == null) {

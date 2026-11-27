@@ -68,9 +68,11 @@ object Images {
 }
 
 /** Opens a person's profile sheet: (user id, name, picture, room it was seen in); the signed-in screen provides it. */
+@Suppress("CompositionLocalAllowlist")
 val LocalOpenProfile = staticCompositionLocalOf<((String, String, MediaHandle?, String?) -> Unit)?> { null }
 
 /** The room whose people the avatars below show (their role there is on the card). */
+@Suppress("CompositionLocalAllowlist")
 val LocalProfileRoom = staticCompositionLocalOf<String?> { null }
 
 /** A server's icon: always a squircle (a rounded square, the rail's and the desktop's shape), wherever it is drawn (#510). */

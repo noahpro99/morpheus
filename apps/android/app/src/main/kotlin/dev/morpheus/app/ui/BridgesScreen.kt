@@ -70,8 +70,9 @@ fun BridgesScreen(app: AppModel) {
 
     LaunchedEffect(note) { note?.let { Toasts.say(it, "bridges-note", long = true) } }
     ScreenScaffold("bridges-screen", { TopBar(t("Bridges")) }) { inner ->
+        val pageScroll = rememberScrollState()
         Column(
-            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.stretch(pageScroll).fillMaxSize().padding(inner).verticalScroll(pageScroll).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(

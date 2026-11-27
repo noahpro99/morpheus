@@ -187,7 +187,7 @@ fn appearance_of(shared: SharedTheme) -> Appearance {
     }
 }
 
-fn shared_in(dir: &PathBuf) -> SharedTheme {
+pub(crate) fn shared_in(dir: &PathBuf) -> SharedTheme {
     let kept = std::fs::read_to_string(dir.join(FILE)).unwrap_or_default();
     let value = |name: &str| {
         kept.lines().find_map(|line| line.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
@@ -199,7 +199,13 @@ fn shared_in(dir: &PathBuf) -> SharedTheme {
     }
 }
 
-fn save(dir: &PathBuf, shared: &SharedTheme) -> Result<(), FfiError> {
+pub(crate) fn save(dir: &PathBuf, shared: &SharedTheme) -> Result<(), FfiError> {
+    // A custom colour in use goes in the history of looks (the theme row and the Custom panel show it, #490).
+    if let Some(colour) = shared.colour {
+        let mut history = crate::theme_row::history_in(dir);
+        history.record(morpheus_view_model::theme_history::Look { theme: shared.theme, colour: Some(colour) });
+        crate::theme_row::keep_history(dir, &history);
+    }
     let mut text = format!("theme={}\n", shared.theme.key());
     if let Some(colour) = shared.colour {
         text.push_str(&format!("colour={colour:06x}\n"));
@@ -531,4 +537,11 @@ impl Morpheus {
             .ok_or_else(|| crate::FfiError::Failed { reason: "That is not a choice.".into() })?;
         morpheus_view_model::settings::set_notification_content(&self.dir, content).map_err(|e| crate::FfiError::Failed { reason: e.to_string() })
     }
+}
+
+/// Use this theme and custom colour (and so keep a custom one in the history of looks).
+pub(crate) fn use_look(dir: &PathBuf, theme: Theme, colour: Option<u32>) -> Result<Appearance, FfiError> {
+    let shared = SharedTheme { theme, colour, glass: Default::default() };
+    save(dir, &shared)?;
+    Ok(appearance_of(shared))
 }
