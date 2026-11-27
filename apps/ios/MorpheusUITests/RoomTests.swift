@@ -25,6 +25,7 @@ final class RoomTests: MorpheusTestCase {
 
     func testSendShowsAGreyedLocalEchoAtOnce() throws {
         openGeneral()
+        XCTAssertTrue(app.staticTexts["history 60"].waitForExistence(timeout: 60), "the room has loaded")
         XCTAssertTrue(app.textFields["composer"].waitForExistence(timeout: 30))
         app.textFields["composer"].tap()
         app.textFields["composer"].typeText("ping from ios")
@@ -38,6 +39,7 @@ final class RoomTests: MorpheusTestCase {
         XCTAssertTrue(app.textFields["composer"].waitForExistence(timeout: 30))
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.0, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)))
-        XCTAssertFalse(app.textFields["composer"].waitForExistence(timeout: 3))
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.textFields["composer"])
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "the room is left")
     }
 }

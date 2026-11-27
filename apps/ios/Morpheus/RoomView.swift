@@ -15,10 +15,18 @@ final class RoomModel {
     var loadingOlder = false
     var failed: String?
     private var timeline: RoomTimeline?
+    private var opening: Task<Void, Never>?
+    nonisolated private let latest = Latest<[TimelineRow]>()
 
     func open(_ morpheus: Morpheus, roomId: String) async {
+        let task = Task { await self.openNow(morpheus, roomId: roomId) }
+        opening = task
+        await task.value
+    }
+
+    private func openNow(_ morpheus: Morpheus, roomId: String) async {
         let bridge = TimelineBridge { [weak self] rows in
-            Task { @MainActor in self?.rows = rows }
+            self?.latest.push(rows) { self?.rows = $0 }
         }
         do {
             timeline = try await morpheus.openRoom(roomId: roomId, listener: bridge)
@@ -36,6 +44,8 @@ final class RoomModel {
     }
 
     func send(_ text: String) async {
+        // A message sent while the room is still opening waits for it, never dropped.
+        await opening?.value
         try? await timeline?.sendText(body: text)
     }
 }
@@ -53,7 +63,7 @@ struct RoomView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if !room.atStart {
-                        Button("Load earlier messages") { Task { await room.loadOlder() } }
+                        Button { Task { await room.loadOlder() } } label: { Text("Load earlier messages").font(.footnote) }
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .accessibilityIdentifier("load-older")
                             .onAppear { Task { await room.loadOlder() } }

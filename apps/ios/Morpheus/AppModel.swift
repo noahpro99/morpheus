@@ -19,6 +19,7 @@ final class AppModel {
     private var sidebarTask: TaskHandle?
     private var syncTask: TaskHandle?
     private var started = false
+    nonisolated private let latest = Latest<Sidebar>()
 
     init() {
         let env = ProcessInfo.processInfo.environment
@@ -79,7 +80,7 @@ final class AppModel {
         phase = .signedIn
         Task {
             let bridge = SidebarBridge { [weak self] sidebar in
-                Task { @MainActor in self?.sidebar = sidebar }
+                self?.latest.push(sidebar) { self?.sidebar = $0 }
             }
             sidebarTask = try? await morpheus.watchSidebar(listener: bridge)
         }
@@ -108,4 +109,28 @@ final class SidebarBridge: SidebarListener, @unchecked Sendable {
 enum Haptics {
     static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     static func sent() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+}
+
+/// Whole-snapshot feeds can fire many times a second while a sync settles; the screen takes the newest at most every 200 ms.
+final class Latest<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value?
+    private var scheduled = false
+
+    func push(_ new: Value, apply: @escaping @MainActor (Value) -> Void) {
+        lock.lock()
+        value = new
+        let first = !scheduled
+        scheduled = true
+        lock.unlock()
+        guard first else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [self] in
+            lock.lock()
+            let next = value
+            value = nil
+            scheduled = false
+            lock.unlock()
+            if let next { MainActor.assumeIsolated { apply(next) } }
+        }
+    }
 }

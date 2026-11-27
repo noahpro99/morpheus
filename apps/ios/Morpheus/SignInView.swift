@@ -49,7 +49,7 @@ struct SignInView: View {
             }
             .buttonStyle(.borderedProminent)
             .foregroundStyle(model.theme.onAccent)
-            .disabled(model.signingIn || username.isEmpty || password.isEmpty)
+            .disabled(model.signingIn)
             .accessibilityIdentifier("sign-in-submit")
         }
         .padding(24)
@@ -69,6 +69,10 @@ struct SignInView: View {
     }
 
     private func submit() {
+        guard !username.isEmpty, !password.isEmpty else {
+            model.error = "Enter your username and password."
+            return
+        }
         Haptics.tap()
         Task { await model.signIn(homeserver: homeserver, username: username, password: password) }
     }
