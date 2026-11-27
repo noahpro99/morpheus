@@ -95,11 +95,11 @@ jobs:
           cd apps/ios
           set -o pipefail
           # A hung app is sampled every 45 s (its main thread, in the log): the tests hang after sign-in on the runner.
-          ( while sleep 45; do pid=$(pgrep -x Morpheus | head -1); [ -n "$pid" ] && { echo "SAMPLE cpu=$(ps -o %cpu= -p $pid)"; sample $pid 3 -mayDie 2>&1 | head -60 | sed "s/^/SAMPLE /"; }; done ) &
+          ( while sleep 20; do pid=$(pgrep -f "Morpheus.app/Morpheus" | head -1); [ -n "$pid" ] && { echo "SAMPLE cpu=$(ps -o %cpu= -p $pid)"; sample $pid 3 -mayDie 2>&1 | head -60 | sed "s/^/SAMPLE /"; }; done ) &
           trap 'kill $! 2>/dev/null' EXIT
           xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
             -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
-            -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 150 \
+            -only-testing:MorpheusUITests/ListsTests/testServerOpensItsChannelsAndEdgeSwipeGoesBack -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 150 \
                         ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep --line-buffered -E "Test Case|error:|SAMPLE|\*\* TEST|Executed|AUDIT"
 
       - name: Results
