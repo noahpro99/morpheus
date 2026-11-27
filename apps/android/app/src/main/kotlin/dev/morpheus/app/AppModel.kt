@@ -1093,6 +1093,10 @@ object AppState {
     val hapticLog: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
 
     /** When the debug bridge's last touch went down, and when a long press opened a sheet (uptime ms; #530). */
+    /** How often a scroll towards older messages started with an empty box (#526; the debug bridge reports it). */
+    @Volatile
+    var olderScrolls: Int = 0
+
     @Volatile
     var touchDownAt: Long = 0
 

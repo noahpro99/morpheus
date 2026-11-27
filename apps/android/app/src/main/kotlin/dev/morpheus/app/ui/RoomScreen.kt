@@ -134,6 +134,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     var boxEmpty by remember(room.id, threadRoot) { mutableStateOf(true) }
     val scrollFocus = androidx.compose.ui.platform.LocalFocusManager.current
     val scrollKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val scrollView = androidx.compose.ui.platform.LocalView.current
     val editing by model.editing.collectAsState()
     var info by remember(room.id) { mutableStateOf(false) }
     var searching by remember(room.id) { mutableStateOf(false) }
@@ -208,7 +209,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 isDm = isDm,
                 onPull = { pulled = true },
                 // Starting to scroll towards older messages with an empty box puts the keyboard away, for more of the conversation (#526).
-                onScrollOlder = { if (boxEmpty) { scrollFocus.clearFocus(); scrollKeyboard?.hide() } },
+                onScrollOlder = { if (boxEmpty) { dev.morpheus.app.AppState.olderScrolls++; androidx.core.view.ViewCompat.getWindowInsetsController(scrollView)?.hide(androidx.core.view.WindowInsetsCompat.Type.ime()); scrollKeyboard?.hide(); scrollFocus.clearFocus() } },
                 listTag = if (threadRoot == null) "timeline" else "thread-timeline",
             )
             }

@@ -345,6 +345,7 @@ class TestBridge(private val app: Application) {
                 .put("room", AppState.room)
                 .put("haptics", AppState.haptics)
                 .put("haptic_log", JSONArray(AppState.hapticLog.toList()))
+                .put("older_scrolls", AppState.olderScrolls)
                 .put("sheet_lag_ms", if (AppState.sheetAt >= AppState.touchDownAt && AppState.sheetAt > 0) AppState.sheetAt - AppState.touchDownAt else -1)
                 .put("image_fetches", AppState.imageFetches)
                 .put("emotes_drawn", AppState.emotesDrawn)
