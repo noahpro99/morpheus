@@ -73,6 +73,26 @@ targets:
           - UIKit
           - -framework
           - Network
+          - -framework
+          - CoreMotion
+          - -framework
+          - ImageIO
+          - -framework
+          - CoreText
+          - -framework
+          - CoreServices
+          - -framework
+          - AVFAudio
+          - -framework
+          - Accelerate
+          - -framework
+          - CoreImage
+          - -framework
+          - OpenGLES
+          - -framework
+          - GLKit
+          - -framework
+          - MetalKit
   MorpheusUITests:
     type: bundle.ui-testing
     platform: iOS
