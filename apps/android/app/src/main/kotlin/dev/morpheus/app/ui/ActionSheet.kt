@@ -109,6 +109,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
     // at once, while it finishes hiding (#327).
     // The sheet is a window of its own; its view is found from a view placed in it (LocalView is the activity's).
     val inSheet = remember { arrayOfNulls<android.view.View>(1) }
+    val activityView = androidx.compose.ui.platform.LocalView.current
     fun untouchable() {
         val view = inSheet[0] ?: return
         val root = view.rootView
@@ -127,7 +128,8 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
     // Gone from the semantics tree the moment it is not live.
     val inert = if (live) Modifier else Modifier.clearAndSetSemantics { }
     ModalBottomSheet(
-        onDismissRequest = { model.closeSheet() },
+        // Let go by a drag down (or a tap outside): the light commit haptic of a dismissal (#485).
+        onDismissRequest = { Haptics.commit(activityView); model.closeSheet() },
         sheetState = state,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface,
