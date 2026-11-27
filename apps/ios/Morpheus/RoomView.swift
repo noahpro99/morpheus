@@ -256,6 +256,9 @@ struct MessageView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("reply-quote")
             }
+            if case let .image(caption, media, width, height) = message.body {
+                MediaImage(media: media, caption: caption, width: width, height: height)
+            } else {
             Group {
                 if message.edited {
                     Text("\(message.plainText) ") + Text("(edited)").font(.caption).foregroundStyle(model.theme.muted)
@@ -268,6 +271,7 @@ struct MessageView: View {
             .opacity(message.sending ? 0.5 : 1)
             .accessibilityValue(message.sending ? "sending" : "sent")
             .accessibilityIdentifier("message")
+            }
             if !message.reactions.isEmpty { reactions }
         }
         .contextMenu { menu }
