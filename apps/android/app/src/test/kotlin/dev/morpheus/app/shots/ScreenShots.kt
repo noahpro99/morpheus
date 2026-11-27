@@ -180,7 +180,7 @@ class ScreenShots(private val light: Boolean) {
     fun reply_banner() = shoot("reply-banner") {
         ScreenScaffold("reply", topBar = {}) { pad ->
             Column(Modifier.padding(pad).fillMaxWidth()) {
-                dev.morpheus.app.ui.ComposerBanner(R.drawable.ic_lucide_reply, "Replying to bob: see you at five", "reply-bar", "reply-banner", "Cancel reply", "reply-cancel") {}
+                dev.morpheus.app.ui.ComposerBanner(R.drawable.ic_ms_reply, "Replying to bob: see you at five", "reply-bar", "reply-banner", "Cancel reply", "reply-cancel") {}
             }
         }
     }
