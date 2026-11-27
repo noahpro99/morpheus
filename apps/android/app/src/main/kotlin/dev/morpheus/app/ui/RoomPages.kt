@@ -84,6 +84,8 @@ fun RoomPageHost(app: AppModel) {
             "nickname" -> NicknamePage(app, page)
             "profile" -> ProfilePage(app, page)
             "full-profile" -> FullProfilePage(app, page)
+            "mod-view" -> ModViewPage(app, page)
+            "link-preview" -> LinkPreviewPage(app, page)
             "report-user" -> ReportUserPage(app, page)
         }
         }
@@ -91,7 +93,7 @@ fun RoomPageHost(app: AppModel) {
 }
 
 @Composable
-private fun PageFrame(app: AppModel, title: String, tag: String, content: @Composable () -> Unit) {
+internal fun PageFrame(app: AppModel, title: String, tag: String, content: @Composable () -> Unit) {
     ScreenScaffold(tag, { TopBar(t(title)) }) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) { content() }
     }
@@ -99,7 +101,7 @@ private fun PageFrame(app: AppModel, title: String, tag: String, content: @Compo
 
 /** What a form says after it ran: a note that it worked, or why it did not. */
 @Composable
-private fun Note(ok: String?, error: String?) {
+internal fun Note(ok: String?, error: String?) {
     // Said in a toast: that it worked, or why it did not.
     LaunchedEffect(ok) { ok?.let { Toasts.say(it, "page-note") } }
     LaunchedEffect(error) { error?.let { Toasts.say(it, "page-error", long = true) } }
@@ -411,7 +413,7 @@ private fun CropPicture(frame: uniffi.morpheus_ffi.CropFrame, onUse: (ByteArray)
 
 /** What a page does with a picture the person chose: the crop first, then the square. */
 @Composable
-private fun rememberPicturePicker(onSquare: (ByteArray) -> Unit): PicturePicker {
+internal fun rememberPicturePicker(onSquare: (ByteArray) -> Unit): PicturePicker {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var frame by remember { mutableStateOf<uniffi.morpheus_ffi.CropFrame?>(null) }
@@ -430,7 +432,7 @@ private fun rememberPicturePicker(onSquare: (ByteArray) -> Unit): PicturePicker 
     return PicturePicker({ launcher.launch("image/*") }, frame, error, { frame = null }) { bytes -> frame = null; onSquare(bytes) }
 }
 
-private class PicturePicker(val pick: () -> Unit, val frame: uniffi.morpheus_ffi.CropFrame?, val error: String?, val cancel: () -> Unit, val use: (ByteArray) -> Unit) {
+internal class PicturePicker(val pick: () -> Unit, val frame: uniffi.morpheus_ffi.CropFrame?, val error: String?, val cancel: () -> Unit, val use: (ByteArray) -> Unit) {
     @Composable
     fun Show() {
         error?.let { Text(it, Modifier.testTag("page-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }

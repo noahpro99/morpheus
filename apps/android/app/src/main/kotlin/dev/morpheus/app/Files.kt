@@ -68,6 +68,7 @@ fun size(bytes: ULong?): String {
 fun Context.openLink(url: String): String? {
     val address = if (url.startsWith("www.", ignoreCase = true)) "https://$url" else url
     AppState.lastLink = address
+    if (AppState.matrixLinks?.invoke(address) == true) return null
     return try {
         startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         null

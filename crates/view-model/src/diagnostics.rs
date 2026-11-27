@@ -331,3 +331,36 @@ mod tests {
         assert_eq!(lock_version(lock, "nothing"), None);
     }
 }
+
+/// What a phone's Help page and bug report say: the app, the phone, the account's homeserver and the state of its encryption.
+pub fn phone_report(version: &str, os: &str, device: &str, homeserver: &str, device_id: &str, verified: Option<bool>) -> Report {
+    let mut report = Report::default();
+    report.section("App").line("Version", version);
+    report.section("Phone").line("Android", os).line("Device", device);
+    report
+        .section("Account")
+        .line("Homeserver", homeserver)
+        .line("Device ID", device_id)
+        .line("Device verified", match verified {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "",
+        });
+    report
+}
+
+#[cfg(test)]
+mod phone_tests {
+    use super::*;
+
+    #[test]
+    fn a_phone_report_names_the_app_the_phone_and_the_account_and_says_unknown_for_the_rest() {
+        let report = phone_report("0.2.9", "14 (API 34)", "Pixel 8", "https://hs.example", "ABCDEF", None);
+        assert_eq!(report.find("Version"), Some("0.2.9"));
+        assert_eq!(report.find("Device"), Some("Pixel 8"));
+        assert_eq!(report.find("Device verified"), Some(UNKNOWN));
+        let text = report.text();
+        assert!(text.contains("## Phone\nAndroid: 14 (API 34)"), "{text}");
+        assert!(text.contains("Homeserver: https://hs.example"), "{text}");
+    }
+}

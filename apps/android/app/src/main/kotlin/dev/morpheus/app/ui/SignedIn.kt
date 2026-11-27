@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.morpheus.app.AppModel
+import dev.morpheus.app.openLink
 import dev.morpheus.app.People
 import dev.morpheus.app.Screen
 import dev.morpheus.app.Tab
@@ -204,6 +205,8 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
         return
     }
     val scopes = bar.scopes.filter { it.kind != ScopeKind.DMS }
+    val railRows by model.railRows.collectAsState()
+    LaunchedEffect(scopes.size) { model.refreshRail() }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
     // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
     val manage: (ScopeItem) -> Unit = { shown ->
@@ -219,7 +222,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
                 val record by model.lastChats.collectAsState()
                 ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
             }
-            Rail(scopes, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
+            Rail(scopes, railRows, scope?.key, onReorder = { model.setRailOrder(it) }, onManage = manage) { model.selectScope(it.key) }
         }
         if (scope == null) ListSearchBar(model, t("Search"))
         else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
@@ -245,12 +248,14 @@ fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
 }
 
 @Composable
-private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
+private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRowItem>, selected: String?, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
     // A long press on a server picks it up: drag it to where it goes. Let go without moving and the servers screen
     // (folders, order) opens. The order is the account's, so every device has it.
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.railItem + Space.lg).toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
     var shift by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var openFolders by remember { mutableStateOf(setOf<String>()) }
+    val entries = railEntries(scopes, rows, openFolders, selected)
     Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background).testTag("rail")) {
     LazyColumn(
         Modifier.fillMaxSize(), reverseLayout = true,
@@ -259,14 +264,20 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
         verticalArrangement = Arrangement.spacedBy(Space.lg, Alignment.Bottom),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        items(scopes, key = { it.key }) { scope ->
+        items(entries, key = { it.key }) { entry ->
+            if (entry is RailEntry.Folder) {
+                RailFolderBadge(entry) { openFolders = if (entry.id in openFolders) openFolders - entry.id else openFolders + entry.id }
+                return@items
+            }
+            val scope = (entry as RailEntry.Scope).item
+            val inFolder = entry.inFolder
             val on = scope.key == selected
             val dragged = dragging == scope.key
             // A press that became a long press is not also a tap when the finger lifts.
             val held = remember { booleanArrayOf(false) }
             // The gesture outlives list updates (a sync mid-press must not restart it and lose the press),
             // so it reads the current list and server when it ends.
-            val currentScopes by androidx.compose.runtime.rememberUpdatedState(scopes)
+            val currentScopes by androidx.compose.runtime.rememberUpdatedState(entries.filter { !(it is RailEntry.Scope && it.inFolder) })
             val currentScope by androidx.compose.runtime.rememberUpdatedState(scope)
             val manage by androidx.compose.runtime.rememberUpdatedState(onManage)
             val reorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
@@ -289,12 +300,12 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                                     // The list is drawn from the bottom: a drag up moves the server later in the order.
                                     val by = -Math.round(shift / step)
                                     dragging = null; shift = 0f
-                                    if (by == 0) manage(currentScope) else {
+                                    if (by == 0 || inFolder) manage(currentScope) else {
                                         val order = currentScopes.toMutableList()
                                         val index = order.indexOfFirst { it.key == currentScope.key }
                                         if (index >= 0) {
                                             order.add((index + by).coerceIn(0, order.lastIndex), order.removeAt(index))
-                                            reorder(order.filter { it.kind == ScopeKind.SERVER }.map { it.key.removePrefix("space:") })
+                                            reorder(order.filter { it is RailEntry.Folder || (it is RailEntry.Scope && it.item.kind == ScopeKind.SERVER) }.map { it.key.removePrefix("space:") })
                                         }
                                     }
                                 },
@@ -310,7 +321,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                 val shape = RoundedCornerShape(16.dp)
                 Box(
                     Modifier
-                        .size(48.dp)
+                        .size(if (inFolder) 40.dp else 48.dp)
                         .clip(shape)
                         .background(if (on) Palette.Accent else Palette.Raised)
                         .clickable { if (!held[0]) onSelect(scope) }
@@ -319,7 +330,7 @@ private fun Rail(scopes: List<ScopeItem>, selected: String?, onReorder: (List<St
                     contentAlignment = Alignment.Center,
                 ) {
                     when (scope.kind) {
-                        ScopeKind.SERVER -> ServerIcon(scope.avatar, scope.title, 48.dp, key = scope.avatarKey)
+                        ScopeKind.SERVER -> ServerIcon(scope.avatar, scope.title, if (inFolder) 40.dp else 48.dp, key = scope.avatarKey)
                         else -> GlyphIcon(
                             when (scope.kind) {
                                 ScopeKind.FAVORITES -> if (on) dev.morpheus.app.R.drawable.ic_ms_star_fill else dev.morpheus.app.R.drawable.ic_ms_star
@@ -484,6 +495,11 @@ private fun ProfilePane(model: AppModel, state: Screen.SignedIn) {
             if (status.isNotBlank()) Text(status, Modifier.padding(top = Space.sm).testTag("profile-status-message"), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
         }
         SectionHeader(t("Account"))
+        val offer by model.update.collectAsState()
+        offer?.let { found ->
+            val context = androidx.compose.ui.platform.LocalContext.current
+            ListRow(found.headline, "update-notice", supporting = found.detail, leading = { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_refresh) }) { context.openLink(found.link) }
+        }
         ProfileRow(dev.morpheus.app.R.drawable.ic_ms_mood, t("Set status"), "status-button") { model.openPage(dev.morpheus.app.PageRequest("status", "")) }
         ProfileRow(dev.morpheus.app.R.drawable.ic_ms_settings, t("Settings"), "settings-button") { model.openSettings() }
         ProfileRow(dev.morpheus.app.R.drawable.ic_ms_lock, t("Security"), "security-button") { model.openSecurity() }

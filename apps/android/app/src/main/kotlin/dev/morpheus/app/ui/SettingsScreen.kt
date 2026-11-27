@@ -58,7 +58,6 @@ fun SettingsScreen(app: AppModel) {
     val look by app.appearance.collectAsState()
     val t: (String) -> String = remember(language) { { app.t(it) } }
     var problem by remember { mutableStateOf<String?>(null) }
-    val account = app.morpheus.account()
 
     fun attempt(block: () -> Unit) {
         try {
@@ -144,6 +143,20 @@ fun SettingsScreen(app: AppModel) {
 
             if (page == "Notifications") {
             Heading(t("Notifications"))
+            // What notifications do on this device (#449).
+            var device by remember { mutableStateOf(app.morpheus.notifyDevice()) }
+            ToggleRow(t("Show notifications on this device"), device.enabled, "notify-device") { _ ->
+                attempt { app.morpheus.setNotifyEnabled(!device.enabled); device = app.morpheus.notifyDevice() }
+            }
+            ToggleRow(t("Sound for new messages"), device.sounds, "notify-sounds") { _ ->
+                attempt { app.morpheus.setNotifySounds(!device.sounds); device = app.morpheus.notifyDevice() }
+            }
+            Text(t("What a notification shows"), Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            for (choice in remember { app.morpheus.notifyContentChoices() }) {
+                ChoiceRow(choice.label, device.content == choice.key, "notify-content-${choice.key}") {
+                    attempt { app.morpheus.setNotifyContent(choice.key); device = app.morpheus.notifyDevice() }
+                }
+            }
             var defaults by remember { mutableStateOf<NotifyDefaults?>(null) }
             LaunchedEffect(Unit) { try { defaults = app.morpheus.notifyDefaults() } catch (_: Exception) {} }
             val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -185,11 +198,9 @@ fun SettingsScreen(app: AppModel) {
             Button({ app.openBridges() }, Modifier.padding(horizontal = Space.lg).testTag("settings-bridges")) { Text(t("Connect a network")) }
             }
 
-            if (page == "Account") {
-            Heading(t("Account"))
-            Text(account?.userId.orEmpty(), Modifier.padding(horizontal = Space.lg).testTag("settings-account"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
-            Button({ app.signOut() }, Modifier.padding(horizontal = Space.lg).testTag("settings-sign-out")) { Text(t("Sign out")) }
-            }
+            if (page == "Account") AccountPage(app, t) { text, tag -> Toasts.say(text, tag, long = tag == "settings-error") }
+            if (page == "Security") SecurityPage(app, t)
+            if (page == "Help") HelpPage(app, t)
         }
     }
 }
@@ -202,7 +213,7 @@ private fun Heading(text: String) {
 }
 
 /** What the phone has under each of the desktop's groups. */
-private val supported = listOf("Account", "Notifications", "Appearance", "Bridges", "VoiceVideo")
+private val supported = listOf("Account", "Security", "Help", "Notifications", "Appearance", "Bridges", "VoiceVideo")
 
 /** The groups, each opening its page, with the search bar at the bottom (the desktop's index, through the core). */
 @Composable

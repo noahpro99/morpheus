@@ -315,9 +315,61 @@ impl Locks {
     }
 }
 
+/// One row of the auto-lock choices (the Security page's Locked chats): a key to send back, its words, and whether it is the one in use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeoutChoice {
+    pub key: String,
+    pub label: String,
+    pub selected: bool,
+}
+
+/// The auto-lock choices as the desktop lists them: Immediately, the fixed times, Never, then Custom (named with its time when one is set).
+pub fn timeout_choices(now: AutoLock) -> Vec<TimeoutChoice> {
+    use crate::i18n::{t, tf};
+    let mut rows = vec![TimeoutChoice { key: "now".into(), label: t("Immediately (when you leave the chat)"), selected: now == AutoLock::Immediately }];
+    for (secs, _) in TIMEOUT_CHOICES {
+        rows.push(TimeoutChoice { key: secs.to_string(), label: describe_secs(secs), selected: now == AutoLock::After(secs) });
+    }
+    rows.push(TimeoutChoice { key: "never".into(), label: t("Never (only on restart or Lock now)"), selected: now == AutoLock::Never });
+    let custom = match now {
+        AutoLock::After(secs) if now.is_custom() => tf("Custom (%{time})", &[("time", &describe_secs(secs))]),
+        _ => t("Custom"),
+    };
+    rows.push(TimeoutChoice { key: "custom".into(), label: custom, selected: now.is_custom() });
+    rows
+}
+
+/// What a choice's key means (`custom` is not one: it asks for a number and a unit, see `parse_custom`).
+pub fn timeout_from_key(key: &str) -> Option<AutoLock> {
+    match key {
+        "now" => Some(AutoLock::Immediately),
+        "never" => Some(AutoLock::Never),
+        other => other.parse::<u64>().ok().filter(|s| TIMEOUT_CHOICES.iter().any(|(c, _)| c == s)).map(AutoLock::After),
+    }
+}
+
+/// The unit named by its label (`seconds`, `minutes`, `hours`).
+pub fn unit_from_label(label: &str) -> Option<TimeUnit> {
+    TimeUnit::ALL.into_iter().find(|u| u.label() == label)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_timeout_choices_mark_the_one_in_use_and_keys_map_back() {
+        let picked = |now| timeout_choices(now).into_iter().filter(|c| c.selected).map(|c| c.key).collect::<Vec<_>>();
+        assert_eq!(picked(AutoLock::After(300)), ["300"]);
+        assert_eq!(picked(AutoLock::Immediately), ["now"]);
+        assert_eq!(picked(AutoLock::Never), ["never"]);
+        assert_eq!(picked(AutoLock::After(45)), ["custom"]);
+        assert_eq!(timeout_from_key("900"), Some(AutoLock::After(900)));
+        assert_eq!(timeout_from_key("now"), Some(AutoLock::Immediately));
+        assert_eq!(timeout_from_key("custom"), None);
+        assert_eq!(timeout_from_key("77"), None);
+        assert_eq!(unit_from_label("minutes"), Some(TimeUnit::Minutes));
+    }
 
     #[test]
     fn the_lock_form_says_a_lock_does_not_encrypt() {

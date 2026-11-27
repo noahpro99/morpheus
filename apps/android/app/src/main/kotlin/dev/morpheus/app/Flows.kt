@@ -58,3 +58,13 @@ fun Morpheus.incomingVerifications(): Flow<uniffi.morpheus_ffi.VerificationFlow>
     })
     awaitClose { handle.cancel() }
 }
+
+/** The recent mentions (newest first), now and as new ones arrive. */
+fun Morpheus.mentions(): Flow<List<uniffi.morpheus_ffi.MentionItem>> = callbackFlow {
+    val handle = watchMentions(object : uniffi.morpheus_ffi.MentionListener {
+        override fun onMentions(items: List<uniffi.morpheus_ffi.MentionItem>) {
+            trySend(items)
+        }
+    })
+    awaitClose { handle.cancel() }
+}

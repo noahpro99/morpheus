@@ -53,6 +53,7 @@ class TestBridge(private val app: Application) {
     private var activity: Activity? = null
 
     fun start() {
+        AppState.welcome = false // the first-open welcome would cover the screens the other tests open; "welcome" turns it on
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(a: Activity) {
                 activity = a
@@ -233,6 +234,13 @@ class TestBridge(private val app: Application) {
             hook(request.getString("name"), request.getString("mime"), request.getString("text").toByteArray())
             true
         }
+        "update_feed" -> {
+            android.system.Os.setenv("MORPHEUS_UPDATE_FEED", request.getString("url"), true)
+            (AppState.recheckUpdate ?: error("not signed in"))()
+            true
+        }
+        "welcome" -> { AppState.welcome = request.getBoolean("on"); true }
+        "manage_url" -> { AppState.manageUrl = request.getString("url"); true }
         "pick_picture" -> {
             val hook = RoomHooks.picture ?: error("no page takes a picture")
             hook(request.getString("name"), android.util.Base64.decode(request.getString("b64"), android.util.Base64.DEFAULT))

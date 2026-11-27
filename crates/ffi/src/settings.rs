@@ -479,3 +479,56 @@ pub fn swipe_drag_lock(lock: f32, amount: f32) -> f32 {
 pub fn swipe_drag_total(total: f32, amount: f32, lock: f32) -> f32 {
     morpheus_view_model::list_swipes::drag_total(total, amount, lock)
 }
+
+/// What notifications do on this device (the desktop's "This device" section of Notifications).
+#[derive(Clone, uniffi::Record)]
+pub struct NotifyDevice {
+    /// Notifications are shown at all.
+    pub enabled: bool,
+    /// A message that notifies you makes a sound.
+    pub sounds: bool,
+    /// What a notification gives away: `full`, `sender` or `hidden`.
+    pub content: String,
+}
+
+/// One choice of what a notification gives away.
+#[derive(Clone, uniffi::Record)]
+pub struct NotifyContentChoice {
+    pub key: String,
+    pub label: String,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    pub fn notify_device(&self) -> NotifyDevice {
+        use morpheus_view_model::settings as s;
+        NotifyDevice {
+            enabled: s::notifications_enabled(&self.dir),
+            sounds: s::message_sounds_enabled(&self.dir),
+            content: s::notification_content(&self.dir).key().to_owned(),
+        }
+    }
+
+    pub fn set_notify_enabled(&self, on: bool) -> Result<(), crate::FfiError> {
+        morpheus_view_model::settings::set_notifications_enabled(&self.dir, on).map_err(|e| crate::FfiError::Failed { reason: e.to_string() })
+    }
+
+    pub fn set_notify_sounds(&self, on: bool) -> Result<(), crate::FfiError> {
+        morpheus_view_model::settings::set_message_sounds_enabled(&self.dir, on).map_err(|e| crate::FfiError::Failed { reason: e.to_string() })
+    }
+
+    pub fn notify_content_choices(&self) -> Vec<NotifyContentChoice> {
+        morpheus_view_model::settings::NotificationContent::ALL
+            .into_iter()
+            .map(|c| NotifyContentChoice { key: c.key().to_owned(), label: morpheus_view_model::i18n::t(c.label()) })
+            .collect()
+    }
+
+    pub fn set_notify_content(&self, key: String) -> Result<(), crate::FfiError> {
+        let content = morpheus_view_model::settings::NotificationContent::ALL
+            .into_iter()
+            .find(|c| c.key() == key)
+            .ok_or_else(|| crate::FfiError::Failed { reason: "That is not a choice.".into() })?;
+        morpheus_view_model::settings::set_notification_content(&self.dir, content).map_err(|e| crate::FfiError::Failed { reason: e.to_string() })
+    }
+}

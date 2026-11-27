@@ -128,35 +128,59 @@ private fun OneField(hint: String, placeholder: String, button: String, busy: Bo
     }
 }
 
+/** Discover (#427): the public rooms and spaces of several servers' directories at once, merged; each directory switched on or off, more typed in, more loaded a page at a time. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Browse(app: AppModel, busy: Boolean, onJoin: (String, String?) -> Unit) {
+    val discover = remember { app.morpheus.discoverSession() }
     var term by remember { mutableStateOf("") }
-    var rooms by remember { mutableStateOf<List<DirectoryItem>?>(null) }
-    var failure by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(term) {
+    var view by remember { mutableStateOf<uniffi.morpheus_ffi.DiscoverView?>(null) }
+    var directories by remember { mutableStateOf(discover.directories()) }
+    var typedServer by remember { mutableStateOf("") }
+    var serverError by remember { mutableStateOf<String?>(null) }
+    var round by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(term, round) {
         kotlinx.coroutines.delay(300)
-        try {
-            rooms = app.morpheus.publicRooms(null, term.trim(), null).rooms.filter { !it.isSpace }
-            failure = null
-        } catch (e: Exception) {
-            failure = e.sentence()
+        val start = discover.beginSearch(term.trim())
+        view = discover.current()
+        kotlinx.coroutines.coroutineScope { for (server in start.servers) launch { view = discover.askDirectory(start.generation, server) } }
+    }
+    SearchField(term, { term = it }, t("Search public rooms and spaces"), "directory-search")
+    androidx.compose.foundation.layout.FlowRow(Modifier.testTag("directory-servers"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (choice in directories) {
+            androidx.compose.material3.FilterChip(choice.on, { discover.toggleDirectory(choice.server); directories = discover.directories(); round++ }, { Text(choice.server) }, Modifier.testTag("directory-server-${choice.server}"))
         }
     }
-    SearchField(term, { term = it }, t("Search public rooms"), "directory-search")
-    failure?.let { Text(it, color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
-    val listed = rooms
-    if (listed != null && listed.isEmpty() && failure == null) Text(t("No public rooms found."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(typedServer, { typedServer = it }, Modifier.weight(1f).testTag("discover-server"), placeholder = { Text(t("Add a server, e.g. matrix.org")) }, singleLine = true)
+        TextButton({
+            try { discover.addDirectory(typedServer); typedServer = ""; serverError = null; directories = discover.directories(); round++ } catch (e: Exception) { serverError = e.sentence() }
+        }, Modifier.testTag("discover-server-add"), enabled = typedServer.isNotBlank()) { Text(t("Add")) }
+    }
+    serverError?.let { Text(it, Modifier.testTag("discover-server-error"), color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
+    val shown = view
+    shown?.errors?.forEach { Text(it, Modifier.testTag("discover-error"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall) }
+    if (shown != null && shown.entries.isEmpty() && !shown.loading) Text(t("No public rooms found."), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     LazyColumn(Modifier.testTag("directory")) {
-        items(listed.orEmpty(), key = { it.id }) { room ->
+        items(shown?.entries.orEmpty(), key = { it.id }) { room ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.ListItem(
                     headlineContent = { Text(room.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("directory-name")) },
                     modifier = Modifier.weight(1f),
-                    supportingContent = { Text(listOfNotNull(room.members, room.topic).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = { Text(listOfNotNull(if (room.isSpace) t("Server") else null, room.members, room.topic, room.servers).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis) },
                     colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
-                TextButton({ onJoin(room.id, null) }, Modifier.testTag("join-${room.name}"), enabled = !busy) { Text(t("Join")) }
+                TextButton({ onJoin(room.id, room.via.ifBlank { null }) }, Modifier.testTag("join-${room.name}"), enabled = !busy) { Text(t("Join")) }
             }
+        }
+        if (shown?.hasMore == true && !shown.loading) item(key = "more") {
+            TextButton({
+                scope.launch {
+                    val start = discover.beginMore()
+                    kotlinx.coroutines.coroutineScope { for (server in start.servers) launch { view = discover.askDirectory(start.generation, server) } }
+                }
+            }, Modifier.testTag("discover-more")) { Text(t("Load more")) }
         }
     }
 }

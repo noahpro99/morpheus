@@ -104,3 +104,37 @@ impl Morpheus {
         self.with_locks(|locks| locks.tick(std::time::Instant::now(), watching.as_deref()))
     }
 }
+
+/// One row of the auto-lock choices.
+#[derive(Clone, uniffi::Record)]
+pub struct LockTimeoutChoice {
+    pub key: String,
+    pub label: String,
+    pub selected: bool,
+}
+
+#[uniffi::export]
+impl Morpheus {
+    /// How long an unlocked chat may be left before it locks again, as the desktop's choices.
+    pub fn lock_timeout_choices(&self) -> Vec<LockTimeoutChoice> {
+        let now = self.with_locks(|locks| locks.auto_lock());
+        rules::timeout_choices(now).into_iter().map(|c| LockTimeoutChoice { key: c.key, label: c.label, selected: c.selected }).collect()
+    }
+
+    /// Pick one of the choices by its key (`now`, `60`, `never`...).
+    pub fn set_lock_timeout(&self, key: String) -> Result<(), FfiError> {
+        let choice = rules::timeout_from_key(&key).ok_or_else(|| failed("That is not a choice."))?;
+        self.with_locks(|locks| locks.set_auto_lock(choice));
+        self.keep_locks();
+        Ok(())
+    }
+
+    /// A time typed as a number of `unit` (`seconds`, `minutes`, `hours`); the reason when it is out of range.
+    pub fn set_lock_timeout_custom(&self, number: String, unit: String) -> Result<(), FfiError> {
+        let unit = rules::unit_from_label(&unit).ok_or_else(|| failed("That is not a unit."))?;
+        let secs = rules::parse_custom(&number, unit).map_err(|why| failed(i18n::t(&why)))?;
+        self.with_locks(|locks| locks.set_timeout_secs(secs));
+        self.keep_locks();
+        Ok(())
+    }
+}

@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +46,13 @@ fun SignInScreen(model: AppModel) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     val submit = { model.signIn(homeserver, username, password) }
+    // What the homeserver offers, asked once the address has stopped changing: single sign-on gets its button.
+    var flows by remember { mutableStateOf<uniffi.morpheus_ffi.SignInFlows?>(null) }
+    androidx.compose.runtime.LaunchedEffect(homeserver) {
+        flows = null
+        kotlinx.coroutines.delay(600)
+        flows = try { model.morpheus.loginFlows(homeserver.trim()) } catch (_: Exception) { null }
+    }
 
     Column(
         Modifier
@@ -96,5 +104,13 @@ fun SignInScreen(model: AppModel) {
             shape = RoundedCornerShape(Radius.md),
             enabled = !signingIn && username.isNotBlank() && password.isNotEmpty(),
         ) { Text(if (signingIn) "Signing in…" else "Sign in") }
+        if (flows?.sso == true) {
+            androidx.compose.material3.OutlinedButton(
+                { model.signInSso(homeserver) },
+                field.height(52.dp).testTag("sign-in-sso"),
+                shape = RoundedCornerShape(Radius.md),
+                enabled = !signingIn,
+            ) { Text(t("Continue with single sign-on")) }
+        }
     }
 }

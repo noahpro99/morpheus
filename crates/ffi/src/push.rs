@@ -2,7 +2,10 @@
 //! and the words of one pushed message decrypted without the app running.
 
 use morpheus_core::{Core, SessionStoreKind};
-use morpheus_view_model::{notices::notice_text, settings::NotificationContent};
+use morpheus_view_model::{
+    notices::device_notice,
+    settings::{self, NotificationContent},
+};
 
 use crate::{FfiError, Morpheus};
 
@@ -39,16 +42,16 @@ impl Morpheus {
 /// nothing to show (filtered out, redacted, not found, nobody signed in).
 #[uniffi::export]
 pub async fn preview_push(data_dir: String, room_id: String, event_id: String) -> Option<PushNotice> {
-    let core = Core::with_session_store(data_dir, SessionStoreKind::File).ok()?;
+    let core = Core::with_session_store(data_dir.clone(), SessionStoreKind::File).ok()?;
     let preview = core.preview_notification(room_id, event_id).await.ok()??;
-    let text = notice_text(
-        NotificationContent::Full,
-        &preview.sender,
-        &preview.room,
-        &preview.body,
-        preview.is_dm,
-        preview.is_mention,
-    );
+    // What this device's settings allow: nothing at all when notifications are off here.
+    let dir = std::path::Path::new(&data_dir);
+    // A call rings whatever the content setting says; a message follows it, and nothing shows when notifications are off here.
+    let text = match device_notice(dir, &preview.sender, &preview.room, &preview.body, preview.is_dm, preview.is_mention) {
+        Some(text) => text,
+        None if preview.is_call => morpheus_view_model::notices::notice_text(NotificationContent::Full, &preview.sender, &preview.room, &preview.body, preview.is_dm, preview.is_mention),
+        None => return None,
+    };
     Some(PushNotice {
         title: text.title,
         body: text.body,
@@ -57,4 +60,16 @@ pub async fn preview_push(data_dir: String, room_id: String, event_id: String) -
         icon: preview.sender_avatar.filter(|_| text.sender_picture).map(|m| m.bytes),
         image: preview.image.filter(|_| text.photo).map(|m| m.bytes),
     })
+}
+
+/// Whether this device shows notifications for messages (the Notifications setting; on unless turned off).
+#[uniffi::export]
+pub fn push_enabled(data_dir: String) -> bool {
+    settings::notifications_enabled(std::path::Path::new(&data_dir))
+}
+
+/// Whether a message that notifies makes a sound on this device.
+#[uniffi::export]
+pub fn push_sounds(data_dir: String) -> bool {
+    settings::message_sounds_enabled(std::path::Path::new(&data_dir))
 }

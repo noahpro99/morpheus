@@ -26,6 +26,7 @@ import uniffi.morpheus_ffi.previewPush
 /** Notifications through UnifiedPush (Sunup, ntfy, ...): the endpoint, the push service and the notification. */
 object Push {
     private const val CHANNEL = "messages"
+    private const val CHANNEL_QUIET = "messages-quiet"
     private const val PREFS = "push"
     const val EXTRA_ROOM = "room_id"
 
@@ -91,7 +92,13 @@ object Push {
             dev.morpheus.app.Ringer.show(context, payload.roomId, payload.eventId, notice.sender.ifEmpty { notice.title })
             return
         }
+        // Notifications are off on this device (Settings > Notifications): a message shows nothing.
+        val dir = context.filesDir.resolve("morpheus").absolutePath
+        if (!uniffi.morpheus_ffi.pushEnabled(dir)) return
+        val sounds = uniffi.morpheus_ffi.pushSounds(dir)
+        val channel = if (sounds) CHANNEL else CHANNEL_QUIET
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Chat messages", NotificationManager.IMPORTANCE_HIGH))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Chat messages (silent)", NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null) })
         val open = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(EXTRA_ROOM, payload.roomId)
@@ -99,7 +106,7 @@ object Push {
             context, payload.roomId.hashCode(), open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val builder = Notification.Builder(context, CHANNEL)
+        val builder = Notification.Builder(context, channel)
             .setSmallIcon(dev.morpheus.app.R.drawable.ic_notification)
             .setContentTitle(notice?.title ?: "Morpheus")
             .setContentText(notice?.body ?: if (payload.unread > 1) dev.morpheus.app.ui.t("%{count} unread messages", "count" to payload.unread.toString()) else dev.morpheus.app.ui.t("New message"))

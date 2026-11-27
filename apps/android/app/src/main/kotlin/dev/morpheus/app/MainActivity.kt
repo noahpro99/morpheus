@@ -136,5 +136,6 @@ class MainActivity : ComponentActivity() {
         }
         intent?.getStringExtra(Ringer.EXTRA_ANSWER)?.let { model.answerWhenSignedIn(it, intent.getStringExtra(Ringer.EXTRA_ANSWER_NAME).orEmpty()) }
         intent?.getStringExtra(dev.morpheus.app.push.Push.EXTRA_ROOM)?.let { model.openRoomWhenKnown(it) }
+        if (intent?.action == android.content.Intent.ACTION_VIEW) intent.dataString?.let { model.openLinkWhenSignedIn(it) }
     }
 }

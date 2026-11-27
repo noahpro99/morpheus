@@ -357,3 +357,16 @@ impl Morpheus {
         Ok(self.session()?.pin(room_id(&room_id_of)?, event, false).await?)
     }
 }
+
+#[uniffi::export]
+impl Morpheus {
+    /// Whether this server has not been welcomed yet (its overview shows the first time it is opened, as on the desktop); asking marks it welcomed.
+    pub fn take_welcome(&self, space_id: String) -> bool {
+        let user = self.account().map(|a| a.user_id).unwrap_or_default();
+        if user.is_empty() || morpheus_view_model::last_place::is_welcomed(&self.dir, &user, &space_id) {
+            return false;
+        }
+        let _ = morpheus_view_model::last_place::mark_welcomed(&self.dir, &user, &space_id);
+        true
+    }
+}

@@ -619,6 +619,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     fun selectScope(key: String) {
         keep("scope", key)
         _scopeKey.value = key
+        if (AppState.welcome && key.startsWith("space:") && morpheus.takeWelcome(key.removePrefix("space:"))) openPage(PageRequest("overview", key.removePrefix("space:")))
     }
 
     /** The bottom bar's tab the signed-in home shows. */
@@ -648,6 +649,48 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), startBar)
 
+    /** The messages that mentioned me since the app started, newest first (the Inbox's Mentions, #448). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val rawMentions: StateFlow<List<uniffi.morpheus_ffi.MentionItem>> = _screen
+        .flatMapLatest { if (it is Screen.SignedIn) morpheus.mentions() else emptyFlow() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val seenMentions = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The mentions not opened yet, leaving out chats locked with a password. */
+    val mentions: StateFlow<List<uniffi.morpheus_ffi.MentionItem>> = kotlinx.coroutines.flow.combine(rawMentions, seenMentions) { all, seen ->
+        all.filter { it.eventId !in seen && !morpheus.lockState(it.roomId).locked }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Open the chat a mention is in; the mention is read. */
+    fun openMention(item: uniffi.morpheus_ffi.MentionItem) {
+        seenMentions.value += item.eventId
+        closeInbox()
+        openRoomWhenKnown(item.roomId)
+    }
+
+    private val _linkPreview = MutableStateFlow<uniffi.morpheus_ffi.LinkTarget?>(null)
+
+    /** The room a Matrix link named that I am not in: its preview page reads it (#454). */
+    val linkPreview: StateFlow<uniffi.morpheus_ffi.LinkTarget?> = _linkPreview.asStateFlow()
+
+    /** Open a Matrix link (matrix.to or matrix:): a person, a chat I am in, or a preview of a room with Join or Ask to join. Returns false when `url` is not one. */
+    fun openMatrixLink(url: String): Boolean {
+        if (_screen.value !is Screen.SignedIn || !morpheus.isMatrixLink(url)) return false
+        viewModelScope.launch {
+            try {
+                val target = morpheus.resolveLink(url)
+                when (target.kind) {
+                    "user" -> openProfile(target.id, target.id, null)
+                    "chat" -> openNewRoom(morpheus.startDm(target.id))
+                    "room" -> openRoomWhenKnown(target.id)
+                    "preview" -> { _linkPreview.value = target; openPage(PageRequest("link-preview", target.id)) }
+                }
+            } catch (e: Exception) { _error.value = e.sentence() }
+        }
+        return true
+    }
+
     /** Rooms just left, out of the lists while "Undo" is on offer (#415). */
     private val leftRooms = MutableStateFlow<Set<String>>(emptySet())
 
@@ -672,8 +715,14 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         )
     }
 
+    /** A link that started the app or came while it was closed: opened once I am signed in. */
+    fun openLinkWhenSignedIn(url: String) {
+        viewModelScope.launch { _screen.first { it is Screen.SignedIn }; openMatrixLink(url) }
+    }
+
     init {
-        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile() }; signedInChanged(it) }.launchIn(viewModelScope)
+        AppState.matrixLinks = { openMatrixLink(it) }
+        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile(); startUpdateChecks() }; signedInChanged(it) }.launchIn(viewModelScope)
         kotlinx.coroutines.flow.combine(pendingRoom, sidebar) { id, bar -> id to bar }.onEach { (id, bar) ->
             val room = bar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == id }
             if (room != null) {
@@ -738,6 +787,29 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         }
     }
 
+    /** Sign in through the homeserver's single sign-on page (#450): the browser opens it and comes back to the app. */
+    fun signInSso(homeserver: String) {
+        if (_signingIn.value) return
+        _signingIn.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val opener = object : uniffi.morpheus_ffi.UrlLauncher {
+                    override fun open(url: String) = morpheusApp?.openLink(url) == null
+                }
+                val account = morpheus.loginSso(homeserver.trim(), opener)
+                _adding.value = false
+                keep("account", listOf(account.userId, account.homeserver, account.deviceId).joinToString("\n"))
+                _screen.value = Screen.SignedIn(account)
+                morpheusApp?.registerPushNow()
+            } catch (e: Exception) {
+                _error.value = e.sentence()
+            } finally {
+                _signingIn.value = false
+            }
+        }
+    }
+
     private val _adding = MutableStateFlow(false)
 
     /** The sign-in screen is up to add another account, over the signed-in one (back cancels it). */
@@ -783,6 +855,38 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             try { _status.value = morpheus.ownStatus() } catch (_: Exception) {}
         }
     }
+
+    private val _update = MutableStateFlow<uniffi.morpheus_ffi.UpdateOffer?>(null)
+
+    /** A newer release than this one, when the release feed names one (#447). */
+    val update: StateFlow<uniffi.morpheus_ffi.UpdateOffer?> = _update.asStateFlow()
+
+    private var updateChecks: kotlinx.coroutines.Job? = null
+
+    /** Ask the release feed now and then (every six hours while the app is signed in). */
+    private fun startUpdateChecks() {
+        AppState.recheckUpdate = { viewModelScope.launch { checkForUpdate() } }
+        updateChecks?.cancel()
+        updateChecks = viewModelScope.launch {
+            while (true) {
+                checkForUpdate()
+                kotlinx.coroutines.delay(6 * 60 * 60 * 1000L)
+            }
+        }
+    }
+
+    /** Build the bug report page (the diagnostics filled in) and hand it to `open`. */
+    fun reportBug(os: String, device: String, open: (String) -> Unit) {
+        viewModelScope.launch { try { open(morpheus.bugReportUrl(os, device)) } catch (e: Exception) { _error.value = e.sentence() } }
+    }
+
+    /** Ask the release feed whether a newer release is out. */
+    suspend fun checkForUpdate() {
+        try { _update.value = morpheus.checkForUpdate() } catch (_: Exception) {}
+    }
+
+    /** Read my name and picture again (after they were changed). */
+    fun refreshOwnProfile() = loadOwnProfile()
 
     private fun loadOwnProfile() {
         viewModelScope.launch {
@@ -871,6 +975,22 @@ object People {
 
 /** What the e2e bridge reports as the app's state (debug builds read it; nothing else does). */
 object AppState {
+    /** Opens a Matrix link in the app (set by the model; `Context.openLink` asks it first). */
+    @Volatile
+    var matrixLinks: ((String) -> Boolean)? = null
+
+    /** Asks the release feed again now (the debug bridge calls it after pointing the feed at a test server). */
+    @Volatile
+    var recheckUpdate: (() -> Unit)? = null
+
+    /** A server's overview shows the first time it is opened (#429); the debug bridge turns it off for the other tests. */
+    @Volatile
+    var welcome: Boolean = true
+
+    /** A stand-in for the homeserver's account page address (the debug bridge sets it; null means ask the homeserver). */
+    @Volatile
+    var manageUrl: String? = null
+
     /** The app is in picture-in-picture (the debug bridge reads it). */
     @Volatile
     var pip: Boolean = false

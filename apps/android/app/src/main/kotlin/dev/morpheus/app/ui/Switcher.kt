@@ -120,12 +120,18 @@ fun InboxScreen(model: AppModel, modifier: Modifier = Modifier) {
     }) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
             val invites = bar?.invites.orEmpty()
-            if (rooms.isEmpty() && invites.isEmpty()) {
+            val mentions by model.mentions.collectAsState()
+            if (rooms.isEmpty() && invites.isEmpty() && mentions.isEmpty()) {
                 EmptyState(dev.morpheus.app.R.drawable.ic_ms_inbox, t("All caught up"), t("Mentions and unread rooms show here."))
             } else {
                 LazyColumn(Modifier.fillMaxSize().testTag("inbox-list")) {
                     items(invites, key = { "invite-${it.id}" }) { invite ->
                         InviteCard(invite, model)
+                    }
+                    if (mentions.isNotEmpty()) item(key = "mentions-header") { SectionHeader(t("Mentions")) }
+                    items(mentions.size, key = { "mention-${mentions[it].eventId}" }) { index ->
+                        val mention = mentions[index]
+                        ListRow(mention.headline, "inbox-mention-$index", supporting = mention.body, leading = { GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_alternate_email) }) { model.openMention(mention) }
                     }
                     items(rooms, key = { it.id }) { room ->
                         ListRow(

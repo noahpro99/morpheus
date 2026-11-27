@@ -240,6 +240,9 @@ internal fun ProfileSheet(app: AppModel, request: dev.morpheus.app.ProfileReques
                         }
                     }
                 }
+                if (!card.isMe && request.roomId != null) {
+                    TextButton({ app.openPage(dev.morpheus.app.PageRequest("mod-view", card.userId)) }, Modifier.testTag("card-mod-view")) { Text(t("Mod view")) }
+                }
                 if (!card.isMe && kept != null) {
                     androidx.compose.material3.OutlinedTextField(
                         note, { note = it }, Modifier.fillMaxWidth().testTag("card-note"),
