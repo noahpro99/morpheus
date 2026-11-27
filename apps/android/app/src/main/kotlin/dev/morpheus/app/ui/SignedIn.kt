@@ -130,11 +130,13 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
         Box(modifier) { ProfilePane(model, state) }
         return
     }
+    val haptic = androidx.compose.ui.platform.LocalView.current
     BoxWithConstraints(modifier.clipToBounds().pointerInput(model, tab) {
         var total = 0f
         var lock = 0f
+        var startPlace = 0f
         var peeking = false
-        val flick = FlickTracker()
+        val flick = FlickTracker(haptic)
         val list = if (tab == Tab.Dms) uniffi.morpheus_ffi.SwipeList.DMS else uniffi.morpheus_ffi.SwipeList.SERVERS
         fun endPeek() {
             if (!peeking) return
@@ -143,7 +145,7 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
             scope.launch { slide.f.snapTo(0f) }
         }
         detectHorizontalDragGestures(
-            onDragStart = { total = 0f; lock = 0f; flick.reset(); dragging = true; peeking = false },
+            onDragStart = { total = 0f; lock = 0f; startPlace = place.value; flick.reset(); dragging = true; peeking = false },
             onDragEnd = {
                 dragging = false
                 val commits = flick.commits(total, size.width.toFloat())
@@ -174,7 +176,8 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
                 if (peeking) scope.launch { slide.f.snapTo((kotlin.math.abs(total) / size.width).coerceIn(0f, 1f)) }
             } else endPeek()
             // The finger moves the lists (past the far edge of either there is nothing to show, so they stay).
-            scope.launch { place.snapTo((place.value - moved / size.width).coerceIn(0f, 1f)) }
+            // (From where the drag began and the clamped distance, not step by step: at an edge with nothing to show, coming back must not start the other pane.)
+            scope.launch { place.snapTo((startPlace - total / size.width).coerceIn(0f, 1f)) }
         }
     }) {
         val width = constraints.maxWidth
@@ -412,7 +415,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                 leading = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                         if (room.isDm) {
-                            Avatar(room.avatar, room.name, Size.avatar, key = room.avatarKey)
+                            Avatar(room.avatar, room.name, Size.avatar, Modifier.testTag("dm-avatar-${room.name}"), key = room.avatarKey, userId = room.dmUser)
                         } else {
                             GlyphIcon(if (room.isVoice) dev.morpheus.app.R.drawable.ic_lucide_volume_2 else dev.morpheus.app.R.drawable.ic_lucide_hash, Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }

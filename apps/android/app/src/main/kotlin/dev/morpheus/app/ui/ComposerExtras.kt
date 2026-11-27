@@ -83,7 +83,7 @@ fun CustomEmojiImage(media: MediaHandle, size: Int) {
 
 /** The emoji panel: a search box, every category, and the custom emoji in reach. */
 @Composable
-fun EmojiPanel(model: RoomModel, onPick: (String) -> Unit) {
+fun EmojiPanel(model: RoomModel, height: androidx.compose.ui.unit.Dp, onPick: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     var sections by remember { mutableStateOf<List<EmojiSection>>(emptyList()) }
     var custom by remember { mutableStateOf<List<CustomEmojiSection>>(emptyList()) }
@@ -91,7 +91,7 @@ fun EmojiPanel(model: RoomModel, onPick: (String) -> Unit) {
         sections = model.emojiSections(query)
         custom = model.customEmoji(query)
     }
-    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().height(300.dp).background(Palette.Surface).testTag("emoji-panel")) {
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().height(height).background(Palette.Surface).testTag("emoji-panel")) {
         SearchField(query, { query = it }, t("Search emoji"), "emoji-search", Modifier.padding(8.dp))
         LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.fillMaxWidth()) {
             for (pack in custom) {

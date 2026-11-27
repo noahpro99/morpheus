@@ -124,7 +124,7 @@ class ScreenShots(private val light: Boolean) {
 
     private fun room(name: String, dm: Boolean = false, unread: ULong = 0UL, highlights: ULong = 0UL, muted: Boolean = false) = uniffi.morpheus_ffi.RoomItem(
         id = name, name = name, topic = null, avatar = null, avatarKey = null, isDm = dm, isVoice = false, isEncrypted = false,
-        unread = unread, highlights = highlights, muted = muted, pinned = false, call = emptyList(),
+        unread = unread, highlights = highlights, muted = muted, pinned = false, call = emptyList(), dmUser = null,
     )
 
     /** The channel list as the phone draws it (#478): the real rows, full width, with counts and a selection; the touch-target check runs over them. */

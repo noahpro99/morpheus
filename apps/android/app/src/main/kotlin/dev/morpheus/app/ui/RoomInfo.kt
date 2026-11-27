@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -46,8 +50,7 @@ import uniffi.morpheus_ffi.RoomItem
 /** A room's details: what it is, how it notifies, who is in it (a tap opens their card), and leaving it. */
 @Composable
 fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onClose: () -> Unit) {
-    var card by remember { mutableStateOf<ProfileCard?>(null) }
-    BackHandler { if (card != null) card = null else onClose() }
+    BackHandler { onClose() }
     var members by remember { mutableStateOf<List<MemberRow>?>(null) }
     var mode by remember { mutableStateOf<String?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -101,13 +104,7 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                                 app.openSheet(row.member.name, onOutcome = { o -> if (o is uniffi.morpheus_ffi.MenuOutcome.OpenRoom) app.openRoomWhenKnown(o.roomId) }) { app.morpheus.memberMenuRows(model.room.id, row.member.userId) }
                             },
                         ) {
-                            scope.launch {
-                                try {
-                                    card = model.profile(row.member.userId)
-                                } catch (e: Exception) {
-                                    problem = e.sentence()
-                                }
-                            }
+                            app.openProfile(row.member.userId, row.member.name, row.member.avatar, model.room.id)
                         }
                     }
                 }
@@ -136,33 +133,48 @@ fun RoomInfo(app: AppModel, model: RoomModel, room: RoomItem, title: String, onC
                 }
             }
         }
-        card?.let { ProfileSheet(app, it, { card = null }) }
     }
 }
 
+/**
+ * Someone's profile sheet (#431): opens at once with the name and picture already known, skeletons for what still loads (the
+ * card's status, role, mutual rooms and actions) and fills in as the card arrives (#488, #489). No network before it shows.
+ */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit) {
-    var friend by remember(card.userId) { mutableStateOf(card.isFriend) }
-    var problem by remember { mutableStateOf<String?>(null) }
+internal fun ProfileSheet(app: AppModel, request: dev.morpheus.app.ProfileRequest, onClose: () -> Unit) {
+    val userId = request.userId
+    var loaded by remember(request) { mutableStateOf<ProfileCard?>(null) }
+    var problem by remember(request) { mutableStateOf<String?>(null) }
+    LaunchedEffect(request) {
+        try {
+            if (dev.morpheus.app.AppState.profileDelayMs > 0) kotlinx.coroutines.delay(dev.morpheus.app.AppState.profileDelayMs)
+            loaded = app.morpheus.profileCard(request.roomId, userId)
+        } catch (e: Exception) {
+            problem = e.sentence()
+        }
+    }
+    val card = loaded
+    var friend by remember(request, card?.isFriend) { mutableStateOf(card?.isFriend ?: false) }
     val scope = rememberCoroutineScope()
     // A note only I can see: loaded, then kept a moment after the last key (and when the card goes away).
-    var note by remember(card.userId) { mutableStateOf("") }
-    var kept by remember(card.userId) { mutableStateOf<String?>(null) }
+    var note by remember(userId) { mutableStateOf("") }
+    var kept by remember(userId) { mutableStateOf<String?>(null) }
     val latestNote by androidx.compose.runtime.rememberUpdatedState(note)
     val latestKept by androidx.compose.runtime.rememberUpdatedState(kept)
-    LaunchedEffect(card.userId) {
-        if (!card.isMe) try { app.morpheus.noteOf(card.userId).let { note = it; kept = it } } catch (_: Exception) {}
+    val mine = card?.isMe == true
+    LaunchedEffect(userId, card != null) {
+        if (card != null && !mine) try { app.morpheus.noteOf(userId).let { note = it; kept = it } } catch (_: Exception) {}
     }
     LaunchedEffect(note) {
         if (kept != null && note != kept) {
             kotlinx.coroutines.delay(600)
-            app.saveNote(card.userId, note)
+            app.saveNote(userId, note)
             kept = note
         }
     }
-    androidx.compose.runtime.DisposableEffect(card.userId) {
-        onDispose { latestKept?.let { if (latestNote != it) app.saveNote(card.userId, latestNote) } }
+    androidx.compose.runtime.DisposableEffect(userId) {
+        onDispose { latestKept?.let { if (latestNote != it) app.saveNote(userId, latestNote) } }
     }
     // A page opened from the card's menu covers it: the card goes.
     val page by app.page.collectAsState()
@@ -174,55 +186,74 @@ internal fun ProfileSheet(app: AppModel, card: ProfileCard, onClose: () -> Unit)
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp).tapHaptics(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Avatar(card.avatar, card.name, 56.dp)
+                Avatar(card?.avatar ?: request.avatar, card?.name ?: request.name, 56.dp)
                 Column {
-                    Text(card.name, Modifier.testTag("card-name"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(card.userId, Modifier.testTag("card-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+                    Text(card?.name ?: request.name, Modifier.testTag("card-name"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(userId, Modifier.testTag("card-id"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_lucide_ellipsis, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
-            card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, style = MaterialTheme.typography.bodyMedium) }
-            card.status?.let { Text(it, color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
-            Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
-            Text(card.mutualRooms.joinToString(", "), maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-            if (!card.isMe) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button({
-                        scope.launch {
-                            try {
-                                app.openNewRoom(app.morpheus.startDm(card.userId))
-                            } catch (e: Exception) {
-                                problem = e.sentence()
-                            }
-                        }
-                    }, Modifier.testTag("card-message")) { Text(t("Message")) }
-                    TextButton({
-                        scope.launch {
-                            try {
-                                app.morpheus.setFriend(card.userId, !friend)
-                                friend = !friend
-                            } catch (e: Exception) {
-                                problem = e.sentence()
-                            }
-                        }
-                    }, Modifier.testTag("card-friend")) { Text(if (friend) "Remove friend" else "Add friend") }
-                    val ignored by People.ignored.collectAsState()
-                    TextButton({ app.setIgnored(card.userId, card.userId !in ignored) }, Modifier.testTag("card-ignore")) {
-                        Text(if (card.userId in ignored) t("Unignore") else t("Ignore"))
+            if (card == null) {
+                // What is still on its way: grey placeholders in the shapes of what will be there.
+                if (problem == null) {
+                    Skeleton(Modifier.fillMaxWidth(0.5f).height(16.dp))
+                    Skeleton(Modifier.fillMaxWidth(0.35f).height(12.dp))
+                    Skeleton(Modifier.fillMaxWidth(0.8f).height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Skeleton(Modifier.width(96.dp).height(40.dp), CircleShape)
+                        Skeleton(Modifier.width(112.dp).height(40.dp), CircleShape)
                     }
                 }
-            }
-            if (!card.isMe && kept != null) {
-                androidx.compose.material3.OutlinedTextField(
-                    note, { note = it }, Modifier.fillMaxWidth().testTag("card-note"),
-                    label = { Text(t("Note")) }, placeholder = { Text(t("Only you can see this")) },
-                )
+            } else {
+                if (!card.isMe) IconAction(dev.morpheus.app.R.drawable.ic_lucide_ellipsis, t("More"), "card-more", { app.openSheet(card.name) { app.morpheus.profileMoreRows(card.userId) } }, Modifier.align(Alignment.End))
+                card.role?.let { Text(it, Modifier.testTag("card-role"), color = Palette.Accent, style = MaterialTheme.typography.bodyMedium) }
+                card.status?.let { Text(it, color = Palette.Muted, style = MaterialTheme.typography.bodyLarge) }
+                Text(card.mutualHeading, Modifier.testTag("card-mutual"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
+                Text(card.mutualRooms.joinToString(", "), maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                if (!card.isMe) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button({
+                            scope.launch {
+                                try {
+                                    app.openNewRoom(app.morpheus.startDm(card.userId))
+                                } catch (e: Exception) {
+                                    problem = e.sentence()
+                                }
+                            }
+                        }, Modifier.testTag("card-message")) { Text(t("Message")) }
+                        TextButton({
+                            scope.launch {
+                                try {
+                                    app.morpheus.setFriend(card.userId, !friend)
+                                    friend = !friend
+                                } catch (e: Exception) {
+                                    problem = e.sentence()
+                                }
+                            }
+                        }, Modifier.testTag("card-friend")) { Text(if (friend) "Remove friend" else "Add friend") }
+                        val ignored by People.ignored.collectAsState()
+                        TextButton({ app.setIgnored(card.userId, card.userId !in ignored) }, Modifier.testTag("card-ignore")) {
+                            Text(if (card.userId in ignored) t("Unignore") else t("Ignore"))
+                        }
+                    }
+                }
+                if (!card.isMe && kept != null) {
+                    androidx.compose.material3.OutlinedTextField(
+                        note, { note = it }, Modifier.fillMaxWidth().testTag("card-note"),
+                        label = { Text(t("Note")) }, placeholder = { Text(t("Only you can see this")) },
+                    )
+                }
             }
             problem?.let { Text(it, color = Palette.Danger, style = MaterialTheme.typography.bodyMedium) }
         }
     }
+}
+
+/** A grey placeholder where something is still loading (#489), tagged so a test sees that the sheet was drawn before the card. */
+@Composable
+fun Skeleton(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(6.dp)) {
+    Box(modifier.clip(shape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)).testTag("profile-skeleton"))
 }

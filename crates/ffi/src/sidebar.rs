@@ -34,6 +34,8 @@ pub struct RoomItem {
     pub pinned: bool,
     /// Who is in the room's call (a voice channel's list), with what they have on.
     pub call: Vec<crate::CallListing>,
+    /// The other person of a direct message (their picture opens their profile, #488).
+    pub dm_user: Option<String>,
 }
 
 /// What a scope is: the app may draw the first three with icons.
@@ -98,6 +100,7 @@ fn room_item(room: &RoomSummary, session: &morpheus_core::Session, marks: &Marks
         muted: marks.is_muted(room),
         pinned: marks.is_pinned(room),
         call: crate::calls::listing(room),
+        dm_user: room.dm_user.as_ref().map(ToString::to_string),
     }
 }
 

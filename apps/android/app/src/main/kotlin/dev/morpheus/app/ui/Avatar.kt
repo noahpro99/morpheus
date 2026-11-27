@@ -4,6 +4,8 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -65,13 +67,23 @@ object Images {
     }
 }
 
+/** Opens a person's profile sheet: (user id, name, picture, room it was seen in); the signed-in screen provides it. */
+val LocalOpenProfile = staticCompositionLocalOf<((String, String, MediaHandle?, String?) -> Unit)?> { null }
+
+/** The room whose people the avatars below show (their role there is on the card). */
+val LocalProfileRoom = staticCompositionLocalOf<String?> { null }
+
 /** A server's icon: always a squircle (a rounded square, the rail's and the desktop's shape), wherever it is drawn (#510). */
 @Composable
 fun ServerIcon(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, key: String? = null) = Avatar(media, name, size, modifier, square = true, key = key)
 
 /** A round picture, or the first letter of the name on a colour made from it while there is none. */
 @Composable
-fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, square: Boolean = false, key: String? = null) {
+fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, square: Boolean = false, key: String? = null, userId: String? = null) {
+    // Every person's picture opens their profile sheet when it knows whose it is (#488): the one click path.
+    val openProfile = LocalOpenProfile.current
+    val profileRoom = LocalProfileRoom.current
+    val tap = if (userId != null && openProfile != null) Modifier.clickable(onClickLabel = t("Show profile")) { openProfile(userId, name, media, profileRoom) } else Modifier
     val shape = if (square) RoundedCornerShape(size * 0.3f) else CircleShape
     val px = with(LocalDensity.current) { size.roundToPx() }
     // The picture of this key if it was seen before (the list of the last run has keys, no pictures), else fetched.
@@ -83,12 +95,12 @@ fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Mod
         androidx.compose.runtime.LaunchedEffect(shown) { AppState.avatarsDrawn++ }
         Image(
             shown, name,
-            modifier.size(size).clip(shape),
+            modifier.size(size).clip(shape).then(tap),
             contentScale = ContentScale.Crop,
         )
     } else {
         Box(
-            modifier.size(size).clip(shape).background(colourOf(name)),
+            modifier.size(size).clip(shape).background(colourOf(name)).then(tap),
             contentAlignment = Alignment.Center,
         ) {
             Text(

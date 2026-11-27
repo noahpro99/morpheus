@@ -164,6 +164,19 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         _page.value = null
     }
 
+    private val _profile = MutableStateFlow<ProfileRequest?>(null)
+
+    /** The profile sheet, if one is open: it opens at once with what is known and fills in as the card arrives (#488, #489). */
+    val profile: StateFlow<ProfileRequest?> = _profile.asStateFlow()
+
+    fun openProfile(userId: String, name: String, avatar: uniffi.morpheus_ffi.MediaHandle?, roomId: String? = null) {
+        _profile.value = ProfileRequest(userId, name, avatar, roomId)
+    }
+
+    fun closeProfile() {
+        _profile.value = null
+    }
+
     private var sheetIds = 0
     private val _sheet = MutableStateFlow<SheetRequest?>(null)
 
@@ -877,6 +890,10 @@ object AppState {
     @Volatile
     var olderDelayMs: Long = 0L
 
+    /** What the debug bridge adds before a profile card is fetched, to see the sheet open while it loads (0 otherwise; #489). */
+    @Volatile
+    var profileDelayMs: Long = 0L
+
     @Volatile
     var screen: String = "loading"
 
@@ -972,6 +989,9 @@ enum class Tab { Servers, Dms, Profile }
 
 
 /** An open long-press sheet: its rows and what to do with what only the screen can. */
+/** Whose profile sheet is open: what is known before the card is fetched. */
+class ProfileRequest(val userId: String, val name: String, val avatar: uniffi.morpheus_ffi.MediaHandle?, val roomId: String?)
+
 class SheetRequest(
     val id: Int,
     val title: String,

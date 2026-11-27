@@ -15,7 +15,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.launch
 
 /** The speed of a drag, so a quick flick commits a swipe whatever its length (the rule is view-model list_swipes, #486). */
-class FlickTracker {
+class FlickTracker(private val view: android.view.View? = null) {
     private val times = ArrayList<Long>()
     private val xs = ArrayList<Float>()
     private var along = 0f
@@ -44,7 +44,10 @@ class FlickTracker {
 
     /** Whether a drag of `distance` px across a pane `width` px wide goes through, by its length or by how fast the finger left. */
     fun commits(distance: Float, width: Float): Boolean {
-        return uniffi.morpheus_ffi.swipeCommitsWithVelocity(distance, velocity(), width)
+        val goes = uniffi.morpheus_ffi.swipeCommitsWithVelocity(distance, velocity(), width)
+        // A swipe that goes through gives a light haptic (#485).
+        if (goes) view?.let { Haptics.commit(it) }
+        return goes
     }
 }
 
@@ -60,7 +63,8 @@ fun SwipeBack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val offset = remember { androidx.compose.animation.core.Animatable(0f) }
     var width by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val flick = remember { FlickTracker() }
+    val haptic = androidx.compose.ui.platform.LocalView.current
+    val flick = remember { FlickTracker(haptic) }
     var lock by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     Box(

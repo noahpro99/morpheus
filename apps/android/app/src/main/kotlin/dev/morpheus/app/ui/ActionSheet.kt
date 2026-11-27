@@ -146,7 +146,7 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
             }
         }
         // Tall enough that half the screen is a stop and nearly all of it is the other.
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).pointerInput(Unit) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).tapHaptics().pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) fingerDown = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.any { it.pressed }
             }

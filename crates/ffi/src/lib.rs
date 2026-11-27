@@ -39,6 +39,7 @@ mod room_info;
 mod room_pages;
 mod security;
 mod settings;
+mod shapes;
 mod theme_row;
 mod share;
 mod switcher;

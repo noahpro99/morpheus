@@ -202,10 +202,10 @@ call-peer-build:
     nix develop .#android-emulator -c env CARGO_TARGET_DIR=$PWD/target/android-host cargo build -p morpheus-ffi --example call_peer
 
 # Drive the native app on the virtual phone (`just android-emulator-headless` first): builds (Gradle skips what did not change), installs, runs
-e2e-android-native file="android_native" name="": (android-native-build "x86_64") (e2e-android-native-run file name)
+e2e-android-native file="android_lists" name="": (android-native-build "x86_64") (e2e-android-native-run file name)
 
 # Only install the last build and run the native app's tests: for a change to the tests alone
-e2e-android-native-run file="android_native" name="": _android-emulator-up hs-seed-if-needed
+e2e-android-native-run file="android_lists" name="": _android-emulator-up hs-seed-if-needed
     nix develop .#android-emulator -c env MORPHEUS_TEST_HOMESERVER={{hs}} scripts/android-e2e-run.sh {{file}} {{name}}
 
 # Run on the virtual phone (start it with `just android-emulator` first)

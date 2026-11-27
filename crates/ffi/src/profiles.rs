@@ -30,6 +30,42 @@ pub struct FullProfile {
 
 #[uniffi::export]
 impl Morpheus {
+    /// The card of anyone, from anywhere (#488): with the room it was opened from, their role there shows too.
+    pub async fn profile_card(&self, room_id: Option<String>, user_id: String) -> Result<crate::ProfileCard, FfiError> {
+        let session = self.session()?;
+        let who = user(&user_id)?;
+        let found = session.profile(who.clone()).await?;
+        let role = match room_id {
+            Some(room) => {
+                let id = OwnedRoomId::try_from(room.as_str()).map_err(|_| FfiError::Failed { reason: format!("{room} is not a room id") })?;
+                session
+                    .members_known(id)
+                    .await?
+                    .members
+                    .iter()
+                    .find(|m| m.user_id == who)
+                    .map(|m| m.role)
+                    .filter(|role| *role != morpheus_core::MemberRole::Member)
+                    .map(|role| profile::role_tag(role).to_owned())
+            }
+            None => None,
+        };
+        let own = session.user_id().as_ref() == Some(&who);
+        let mutual: Vec<String> = session.mutual_rooms(who.clone()).await?.into_iter().map(|(_, name)| name).collect();
+        let is_friend = session.friends().await?.contains(&who);
+        Ok(crate::ProfileCard {
+            user_id: who.to_string(),
+            name: nicknames::shown_name(&self.nicks.snapshot(), who.as_str(), &found.name),
+            avatar: found.avatar.map(|a| MediaHandle::new(a, &session)),
+            status: found.status,
+            role,
+            mutual_heading: morpheus_view_model::i18n::tf("Mutual rooms — %{count}", &[("count", &mutual.len().to_string())]),
+            mutual_rooms: mutual,
+            is_friend,
+            is_me: own,
+        })
+    }
+
     /// The note you keep about someone (empty for none).
     pub async fn note_of(&self, user_id: String) -> Result<String, FfiError> {
         Ok(self.session()?.note(user(&user_id)?).await?)

@@ -173,7 +173,13 @@ class TestBridge(private val app: Application) {
             if (request.optBoolean("back")) onMain { pressBack() }
             // Or a drag (`swipe`: x1, y1, x2, y2, ms) that runs while the samples are taken.
             request.optJSONObject("swipe")?.let { s ->
-                Thread { swipe(s.getDouble("x1").toFloat(), s.getDouble("y1").toFloat(), s.getDouble("x2").toFloat(), s.getDouble("y2").toFloat(), s.getLong("ms"), false, 0) }.start()
+                Thread {
+                    val via = s.optJSONArray("via")
+                    if (via != null) {
+                        val pts = (0 until via.length()).map { via.getJSONArray(it).let { p -> p.getDouble(0).toFloat() to p.getDouble(1).toFloat() } }
+                        swipePath(listOf(s.getDouble("x1").toFloat() to s.getDouble("y1").toFloat()) + pts + (s.getDouble("x2").toFloat() to s.getDouble("y2").toFloat()), s.getLong("ms"))
+                    } else swipe(s.getDouble("x1").toFloat(), s.getDouble("y1").toFloat(), s.getDouble("x2").toFloat(), s.getDouble("y2").toFloat(), s.getLong("ms"), false, 0)
+                }.start()
             }
             val tags = request.getJSONArray("tags")
             val until = SystemClock.uptimeMillis() + request.optLong("ms", 900)
@@ -196,6 +202,7 @@ class TestBridge(private val app: Application) {
         "slide_reset" -> { AppState.slideLog.clear(); true }
         "clock_offset" -> { AppState.clockOffsetMs = request.getLong("ms"); true }
         "older_delay" -> { AppState.olderDelayMs = request.getLong("ms"); true }
+        "profile_delay" -> { AppState.profileDelayMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
         "click" -> onMain { click(find(request)) }
         "type" -> onMain {

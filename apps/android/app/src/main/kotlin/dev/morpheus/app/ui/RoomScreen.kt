@@ -8,6 +8,9 @@ import androidx.compose.foundation.gestures.horizontalDrag
 import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -174,6 +177,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             // A chat has no top bar (#502): its name is the composer's label and its buttons are the row above the composer. A thread keeps a title.
             if (threadRoot != null) TopBar(t("Thread"), titleTag = "thread-title")
         }) { inner -> Column(Modifier.fillMaxSize().padding(inner)) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalProfileRoom provides room.id) {
             Timeline(
                 model, rows, Modifier.weight(1f),
                 onActions = { message, held ->
@@ -202,7 +206,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onPull = { pulled = true },
                 // Starting to scroll towards older messages with an empty box puts the keyboard away, for more of the conversation (#526).
                 onScrollOlder = { if (boxEmpty) { scrollFocus.clearFocus(); scrollKeyboard?.hide() } },
+                listTag = if (threadRoot == null) "timeline" else "thread-timeline",
             )
+            }
             typingLine?.let {
                 Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).testTag("typing-line"), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
             }
@@ -274,6 +280,7 @@ private fun Timeline(
     onPull: () -> Unit,
     isDm: Boolean,
     onScrollOlder: () -> Unit = {},
+    listTag: String = "timeline",
 ) {
     val state = rememberLazyListState()
     // The start of a scroll towards older messages (the first item of this bottom-up list moves away from the newest), once per gesture.
@@ -350,7 +357,7 @@ private fun Timeline(
     Box(modifier) {
     // Nothing yet: placeholders where the messages will be.
     if (rows.isEmpty()) Column(Modifier.align(Alignment.BottomStart).padding(bottom = Space.lg)) { SkeletonRows(7) }
-    LazyColumn(Modifier.fillMaxSize().nestedScroll(pullDown).testTag("timeline"), state = state, reverseLayout = true) {
+    LazyColumn(Modifier.fillMaxSize().nestedScroll(pullDown).testTag(listTag), state = state, reverseLayout = true) {
         items(items, key = { rowKey(it) }) { row ->
             when (row) {
                 is TimelineRow.Message -> if (row.message.senderId in ignored && row.message.key !in revealed) {
@@ -391,6 +398,10 @@ private fun Timeline(
         // this bottom-up list, past the one the list is anchored on (#470), so their coming and going moves nothing the person is reading.
         if (waitingForOlder) item(key = "older-skeleton") { Box(Modifier.padding(vertical = Space.md).testTag("older-skeleton")) { SkeletonRows(3) } }
     }
+    // A long history has a handle on its right edge with the date under it (#493).
+    val dateAt = remember(items) { items.indices.filter { items[it] is TimelineRow.Date } }
+    val clock = rememberNow()
+    FastScroll(state, items.size, { i -> dateAt.firstOrNull { it >= i }?.let { dayLabel((items[it] as TimelineRow.Date).timestampMs.toLong(), clock) } })
     if (dividerAt >= 0 && !dividerShowing) {
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         Button(
@@ -403,15 +414,22 @@ private fun Timeline(
     val away by remember { derivedStateOf { uniffi.morpheus_ffi.awayFromPresent(state.firstVisibleItemIndex.toUInt(), state.firstVisibleItemScrollOffset / density) } }
     // (The scope lives outside the button: the button goes while the scroll is still on its way.)
     val jumpScope = androidx.compose.runtime.rememberCoroutineScope()
+    // How many messages came in while the reader was up in the history: the badge on the button.
+    val messageCount = items.count { it is TimelineRow.Message }
+    var countWhenAway by remember { mutableIntStateOf(messageCount) }
+    LaunchedEffect(away) { if (away) countWhenAway = messageCount }
     if (away) {
         val scope = jumpScope
-        androidx.compose.material3.ExtendedFloatingActionButton(
-            { scope.launch { state.animateScrollToItem(0) } },
-            Modifier.align(Alignment.BottomCenter).padding(bottom = Space.lg).testTag("jump-present"),
+        val fresh = (messageCount - countWhenAway).coerceAtLeast(0)
+        // A small round button with a down arrow at the bottom right, above the composer (#492); a count of what is new below on its corner.
+        androidx.compose.material3.BadgedBox(
+            { if (fresh > 0) androidx.compose.material3.Badge { Text(if (fresh > 99) "99+" else fresh.toString(), Modifier.testTag("jump-present-count")) } },
+            Modifier.align(Alignment.BottomEnd).padding(end = Space.lg, bottom = Space.lg),
         ) {
-            GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 24.dp)
-            Spacer(Modifier.width(Space.sm))
-            Text(t("Jump to present"))
+            androidx.compose.material3.SmallFloatingActionButton(
+                { scope.launch { state.animateScrollToItem(0) } },
+                Modifier.semantics { contentDescription = t("Jump to present") }.testTag("jump-present"),
+            ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_chevron_down, size = 24.dp) }
         }
     }
     }
@@ -459,7 +477,7 @@ private fun MessageRow(
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
         if (message.showHeader) {
-            Avatar(message.senderAvatar, message.senderName, Size.avatar, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey)
+            Avatar(message.senderAvatar, message.senderName, Size.avatar, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey, userId = message.senderId)
         } else {
             Spacer(Modifier.size(Size.avatar))
         }
@@ -611,6 +629,11 @@ private fun Composer(
     // (the focus stays, so a selection in the draft is kept); the keyboard coming up again, or a change of focus, takes it away again.
     var focused by remember { mutableStateOf(false) }
     val keyboardUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    // How tall the keyboard was (above the navigation bar): the emoji panel that takes its place is as tall, so nothing jumps (#484).
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val imeHeight: Int = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) - androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(density)
+    LaunchedEffect(imeHeight) { if (imeHeight > KeyboardHeight.px) KeyboardHeight.px = imeHeight }
+    val panelHeight = with(density) { (if (KeyboardHeight.px > 0) KeyboardHeight.px.toDp() else 300.dp) }
     var keyboardWasUp by remember { mutableStateOf(false) }
     var dismissed by remember { mutableStateOf(false) }
     LaunchedEffect(keyboardUp, focused) {
@@ -618,7 +641,7 @@ private fun Composer(
         else if (keyboardWasUp) { keyboardWasUp = false; dismissed = focused }
         if (!focused) dismissed = false
     }
-    val composing = (focused && !dismissed) || text.isNotEmpty()
+    val composing = (focused && !dismissed) || text.isNotEmpty() || panel
     val composingChanged by androidx.compose.runtime.rememberUpdatedState(onComposing)
     LaunchedEffect(composing, text) { composingChanged(composing) }
     val emptyChanged by androidx.compose.runtime.rememberUpdatedState(onEmpty)
@@ -642,9 +665,20 @@ private fun Composer(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
+        // The pill: a plus at its start, the text, the emoji button at its end. The buttons are 48 dp circles centred on the pill's end caps, inset by
+        // the concentric rule's R - r (#504, view_model::concentric through ffi), so the corner curves run parallel to the buttons.
+        val inset = remember { uniffi.morpheus_ffi.concentricEndCapInset(28f, Size.target.value).dp }
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        val touches = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        val touching by touches.collectIsPressedAsState()
+        // A touch on the box while the emoji panel stands in the keyboard's place brings the keyboard back and closes the panel (#484).
+        LaunchedEffect(touching) { if (touching && panel) { panel = false; keyboard?.show() } }
+        Row(Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).clip(RoundedCornerShape(28.dp)).background(fill).testTag("composer-field"), verticalAlignment = Alignment.Bottom) {
+        IconAction(dev.morpheus.app.R.drawable.ic_lucide_plus, t("Attach a file"), "attach", onAttach, Modifier.padding(start = inset, bottom = inset), tint = hint)
         androidx.compose.material3.TextField(
             field, { field = it },
             Modifier.weight(1f).heightIn(min = 56.dp, max = 160.dp).focusRequester(focus).onFocusChanged { focused = it.isFocused }.testTag("composer"),
+            interactionSource = touches,
             // The chat's name is the placeholder, and floats above what is typed (#502): a lock before it when encrypted, a # for a channel that is not.
             label = { ChatLabel(title, dm, encrypted, hint, room, server) },
             maxLines = 5,
@@ -652,32 +686,34 @@ private fun Composer(
             shape = RoundedCornerShape(28.dp),
             textStyle = MaterialTheme.typography.bodyLarge,
             colors = androidx.compose.material3.TextFieldDefaults.colors(
-                focusedContainerColor = fill, unfocusedContainerColor = fill, disabledContainerColor = fill,
+                focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
                 focusedTextColor = ink, unfocusedTextColor = ink, cursorColor = scheme.primary,
                 focusedPlaceholderColor = hint, unfocusedPlaceholderColor = hint, focusedLabelColor = hint, unfocusedLabelColor = hint,
                 focusedLeadingIconColor = hint, unfocusedLeadingIconColor = hint, focusedTrailingIconColor = hint, unfocusedTrailingIconColor = hint,
             ),
-            leadingIcon = {
-                IconAction(dev.morpheus.app.R.drawable.ic_lucide_paperclip, t("Attach a file"), "attach", onAttach, tint = hint)
-            },
-            trailingIcon = {
-                androidx.compose.material3.IconButton({ panel = !panel }, Modifier.size(Size.target).semantics { contentDescription = t("Emoji") }.testTag("emoji-button")) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = hint) }
-            },
         )
-        val canSend = text.isNotBlank()
-        androidx.compose.material3.FilledIconButton(
-            { onSend(text.trim()); setText(""); model.stopTyping() },
-            // Level with a one-line field (56 dp tall): 4 dp up from its bottom.
-            Modifier.padding(bottom = Space.xs).size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
-            enabled = canSend,
-            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                containerColor = scheme.primary, contentColor = scheme.onPrimary,
-                disabledContainerColor = fill, disabledContentColor = hint,
-            ),
-        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
+        androidx.compose.material3.IconButton(
+            // The panel takes the keyboard's place (the keyboard goes, the panel is as tall as it was); the box again brings the keyboard back.
+            { if (panel) { panel = false; keyboard?.show() } else { panel = true; keyboard?.hide() } },
+            Modifier.padding(end = inset, bottom = inset).size(Size.target).semantics { contentDescription = t("Emoji") }.testTag("emoji-button"),
+        ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_lucide_smile, tint = hint) }
+        }
+        // Send is there only when there is something to send, and comes and goes on the motion tokens (#484).
+        androidx.compose.animation.AnimatedVisibility(
+            text.isNotBlank(),
+            enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedDecelerate)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.Short4)) + androidx.compose.animation.expandHorizontally(androidx.compose.animation.core.tween(Motion.Short4, easing = Motion.EmphasizedDecelerate)),
+            exit = androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(Motion.Short3, easing = Motion.EmphasizedAccelerate)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.Short3)) + androidx.compose.animation.shrinkHorizontally(androidx.compose.animation.core.tween(Motion.Short3, easing = Motion.EmphasizedAccelerate)),
+        ) {
+            androidx.compose.material3.FilledIconButton(
+                { onSend(text.trim()); setText(""); model.stopTyping() },
+                // Level with a one-line field (56 dp tall): 4 dp up from its bottom.
+                Modifier.padding(bottom = Space.xs).size(Size.target).semantics { contentDescription = t("Send") }.testTag("send"),
+                colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(containerColor = scheme.primary, contentColor = scheme.onPrimary),
+            ) { GlyphIcon(dev.morpheus.app.R.drawable.ic_send, size = 24.dp) }
+        }
     }
-    if (panel) EmojiPanel(model) { setText(withEmoji(text, it)) }
+    if (panel) EmojiPanel(model, panelHeight) { setText(withEmoji(text, it)) }
     }
 }
 
@@ -760,7 +796,8 @@ private fun RoomPages(app: AppModel, room: RoomItem, panes: Boolean, isDm: Boole
     }
     var leaveDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var leaveLock by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val flick = remember { FlickTracker() }
+    val haptic = androidx.compose.ui.platform.LocalView.current
+    val flick = remember { FlickTracker(haptic) }
     val dragScope = androidx.compose.runtime.rememberCoroutineScope()
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -853,7 +890,7 @@ private fun ReadReceipts(readers: List<String>) {
                 readers.forEach { id ->
                     Row(Modifier.padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Text(People.nameOf(id, names), Modifier.testTag("read-by-$id"), color = Palette.Muted, style = MaterialTheme.typography.labelMedium)
-                        Avatar(avatars[id], People.nameOf(id, names), face, key = null)
+                        Avatar(avatars[id], People.nameOf(id, names), face, key = null, userId = id)
                     }
                 }
             }
@@ -862,3 +899,8 @@ private fun ReadReceipts(readers: List<String>) {
 }
 
 private const val MAX_FACES = 5
+
+/** The tallest the keyboard has been in this run, in px above the navigation bar: what the emoji panel is as tall as. */
+private object KeyboardHeight {
+    var px = 0
+}

@@ -138,6 +138,7 @@ pub(crate) fn decode(text: &str) -> Option<Sidebar> {
                                 muted: room.muted,
                                 pinned: room.pinned,
                                 call: Vec::new(),
+                                dm_user: None,
                             })
                             .collect(),
                     })
@@ -164,7 +165,7 @@ mod tests {
     fn a_list_comes_back_as_it_was_saved() {
         let room = RoomItem {
             id: "!a:s".into(), name: "general".into(), topic: Some("t".into()), avatar: None, avatar_key: Some("mxc://s/a".into()), is_dm: false,
-            is_voice: false, is_encrypted: true, unread: 3, highlights: 1, muted: false, pinned: true, call: Vec::new(),
+            is_voice: false, is_encrypted: true, unread: 3, highlights: 1, muted: false, pinned: true, call: Vec::new(), dm_user: None,
         };
         let sidebar = Sidebar {
             scopes: vec![ScopeItem {

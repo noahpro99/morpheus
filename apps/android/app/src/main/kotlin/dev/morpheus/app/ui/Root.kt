@@ -47,8 +47,8 @@ fun Root(model: AppModel) {
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
             snackbarHost = { ToastHost() },
-        ) { _ -> Box(Modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+        ) { _ -> Box(Modifier.fillMaxSize().tapHaptics()) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, LocalOpenProfile provides { id, name, media, room -> model.openProfile(id, name, media, room) }) {
         val rings by model.ringModel.rings.collectAsState()
             val sharing by ShareInbox.pending.collectAsState()
             if (sharing != null && screen is Screen.SignedIn) ShareScreen(model, sharing!!)
@@ -137,6 +137,10 @@ fun Root(model: AppModel) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { SignInScreen(model) }
             }
             if (screen is Screen.SignedIn) ActionSheetHost(model)
+            if (screen is Screen.SignedIn) {
+                val profile by model.profile.collectAsState()
+                profile?.let { ProfileSheet(model, it) { model.closeProfile() } }
+            }
             rings.lastOrNull()?.takeIf { screen is Screen.SignedIn }?.let { ring ->
                 Box(Modifier.align(Alignment.TopCenter)) { RingCard(ring, { model.answerRing(ring) }, { model.declineRing(ring) }) }
             }
