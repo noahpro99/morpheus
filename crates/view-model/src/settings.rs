@@ -296,7 +296,7 @@ pub const SETTINGS_INDEX: &[SettingEntry] = &[
         "Theme preview",
         "appearance theme custom colour color accent hex preview sample palette",
         SettingsPage::Appearance,
-        "theme-preview",
+        "theme",
     ),
     entry(
         "Noise suppression",
@@ -1036,7 +1036,7 @@ mod tests {
             ("locked", "locked-chats"),
             ("bridge bot", "bridge-bot"),
             ("changelog", "patch-notes"),
-            ("preview", "theme-preview"),
+            ("preview", "theme"),
             ("recent themes", "theme"),
             ("custom", "theme"),
             ("share theme", "theme-share"),

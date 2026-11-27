@@ -383,7 +383,8 @@ impl SettingsView {
             theme_history::Look,
             theme_row::{ThemeRowKind, theme_row},
         };
-        // One row (#490): the built-in themes, the recent custom colours, then Custom.
+        // One row (#490), no scrolling: the built-in themes, the newest custom colour, then
+        // Custom (its panel has the picker and the whole history).
         let items = theme_row(Look { theme: self.theme, colour: self.custom }, &self.history, false, false);
         let options = items
             .into_iter()
@@ -401,21 +402,6 @@ impl SettingsView {
             .flex()
             .flex_row()
             .gap(px(12.0))
-            .overflow_x_scroll()
-            .track_scroll(&self.theme_row_scroll)
-            .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, window, cx| {
-                // A mouse wheel only turns vertically: over a row that overflows it scrolls the
-                // row sideways (a touchpad's sideways swipe already does).
-                let delta = event.delta.pixel_delta(window.line_height());
-                let max = this.theme_row_scroll.max_offset().width;
-                if max > gpui::px(0.0) && delta.y.abs() > delta.x.abs() {
-                    let mut at = this.theme_row_scroll.offset();
-                    at.x = (at.x + delta.y).clamp(-max, gpui::px(0.0));
-                    this.theme_row_scroll.set_offset(at);
-                    cx.stop_propagation();
-                    cx.notify();
-                }
-            }))
             .children(options)
             .e2e("div", "theme-options");
         // The colour menu hangs under the row (absolute, so it takes no room in the page).
@@ -525,7 +511,6 @@ impl SettingsView {
                 self.hl("theme"),
             )
             .into_any_element(),
-            self.custom_colour_section(cx).into_any_element(),
             self.zoom_section(cx).into_any_element(),
             self.clock_section(cx).into_any_element(),
             self.language_section(cx).into_any_element(),
@@ -1798,7 +1783,10 @@ impl SettingsView {
     ) -> gpui::Stateful<gpui::Div> {
         div()
             .id(ElementId::from(SharedString::from(id)))
-            .flex_none()
+            // The row has no scroll: the tiles share its width, up to their usual size.
+            .flex_1()
+            .min_w_0()
+            .max_w(px(140.0))
             .flex()
             .flex_col()
             .gap(px(8.0))
@@ -1825,7 +1813,7 @@ impl SettingsView {
     fn two_halves(side: u32, chat: u32) -> gpui::Div {
         div()
             .flex()
-            .w(px(120.0))
+            .w_full()
             .h(px(72.0))
             // Inside the tile (padding 8, ring 2): the tile's radius less that (#505).
             .rounded(px(theme::inner_radius(theme::RADIUS_LG, 10.0)))
@@ -2166,10 +2154,6 @@ impl SettingsView {
         let typed = self.import_input.read(cx).value().to_owned();
         self.import = (!typed.trim().is_empty())
             .then(|| crate::view_model::theme_share::SharedTheme::decode(&typed));
-        if matches!(self.import, Some(Ok(_))) {
-            // The preview is under the Share buttons: out of the way of the menu.
-            self.set_colour_open(false, cx);
-        }
         self.share_note = None;
         cx.notify();
     }
@@ -2181,9 +2165,7 @@ impl SettingsView {
             .unwrap_or_else(|| text.to_owned());
         self.import_input.update(cx, |input, cx| input.set_value(&code, cx));
         self.read_import(cx);
-        if matches!(self.import, Some(Err(_))) {
-            self.set_colour_open(true, cx);
-        }
+        self.set_colour_open(true, cx);
         self.redraw_inputs(cx);
     }
 
@@ -2241,11 +2223,9 @@ impl SettingsView {
         };
         let code = parsed.as_ref().map(|t| t.encode()).unwrap_or_default();
         self.import_input.update(cx, |input, cx| input.set_value(&code, cx));
-        let readable = parsed.is_ok();
         self.import = Some(parsed);
-        if readable {
-            self.set_colour_open(false, cx);
-        }
+        // The preview is in the Custom pop-up: it stays open (or opens) to show it.
+        self.set_colour_open(true, cx);
         self.share_note = None;
         self.redraw_inputs(cx);
         cx.notify();
@@ -2319,7 +2299,6 @@ impl SettingsView {
         if let Some(note) = &self.share_note {
             children.push(muted(note, "muted theme-note").into_any_element());
         }
-        children.extend(self.import_preview(cx));
         section("Share a theme", "theme-share", children, self.hl("theme-share"))
     }
 
@@ -2402,7 +2381,7 @@ impl SettingsView {
             .flex()
             .items_center()
             .justify_center()
-            .w(px(120.0))
+            .w_full()
             .h(px(72.0))
             .rounded(px(theme::RADIUS))
             .bg(theme::fill_elevated())
@@ -2437,14 +2416,44 @@ impl SettingsView {
     fn custom_popover(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         self.colour_open.then(|| {
             let grid = self.colour_grid_view(cx);
+            // The picker on the left, the preview beside it (so the pop-up fits a window), the
+            // history under both.
+            let picker = div()
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .w(px(340.0))
+                .flex_none()
+                .child(div().w(px(180.0)).child(self.colour_input.clone()))
+                .child(self.hsv_sliders(cx))
+                .child(grid);
+            let side = div()
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .w(px(420.0))
+                .flex_none()
+                .children(self.import_block(cx))
+                .child(
+                    muted(
+                        "Custom in the theme row sets one colour for the whole app: type a hex colour or pick one. Text turns black on a light colour.",
+                        "muted",
+                    ),
+                )
+                .children(self.panel_preview(cx));
             let content = div()
                 .flex()
                 .flex_col()
                 .gap(px(10.0))
-                .child(div().w(px(180.0)).child(self.colour_input.clone()))
-                .child(self.hsv_sliders(cx))
-                .child(grid)
-                .children(self.import_block(cx))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap(px(16.0))
+                        .child(picker)
+                        .child(side),
+                )
+                .child(self.history_list(cx))
                 .into_any_element();
             let this = cx.entity().downgrade();
             let closer = this.clone();
@@ -2489,25 +2498,63 @@ impl SettingsView {
             .into_any_element()
     }
 
-    /// Appearance's custom colour: a hex box, a grid to pick from and the preview.
-    fn custom_colour_section(&self, _cx: &mut Context<Self>) -> impl IntoElement {
+    /// The preview inside the Custom panel: a pasted or opened theme code with Apply, or else the
+    /// look in use (there is no preview on the page itself).
+    fn panel_preview(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if let Some(shown) = self.import_preview(cx) {
+            return Some(shown);
+        }
         let palette = self
             .custom
             .map(crate::view_model::theme::derive)
             .unwrap_or_else(theme::palette);
-        section(
-            "Preview",
-            "theme-preview",
-            vec![
-                muted(
-                    "Custom in the theme row sets one colour for the whole app: type a hex colour or pick one. Text turns black on a light colour.",
-                    "muted",
-                )
+        Some(
+            div()
+                .child(preview(palette))
+                .e2e("div", "theme-preview")
+                .attr("data-bg", format!("{:06x}", palette.bg_chat))
                 .into_any_element(),
-                preview(palette).into_any_element(),
-            ],
-            self.hl("theme-preview"),
         )
+    }
+
+    /// Under the colour picker: every recent custom theme, newest first, as a list that scrolls
+    /// vertically. Picking one applies it.
+    fn history_list(&self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::view_model::{theme_history::Look, theme_row::recent_customs};
+        let items = recent_customs(Look { theme: self.theme, colour: self.custom }, &self.history, false);
+        div()
+            .id("theme-history")
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .max_h(px(104.0))
+            .overflow_y_scroll()
+            .children(items.into_iter().filter_map(|item| {
+                let colour = item.colour?;
+                let key = format!("{colour:06x}");
+                let p = crate::view_model::theme::derive(colour);
+                let look = Look { theme: item.theme, colour: Some(colour) };
+                Some(
+                    div()
+                        .id(ElementId::from(SharedString::from(format!("history-{key}"))))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .p(px(4.0))
+                        .rounded(px(theme::RADIUS_SM))
+                        .cursor_pointer()
+                        .when(item.selected, |d| d.bg(rgba(theme::bg_selected())))
+                        .hover(|s| s.bg(rgba(theme::bg_hover())))
+                        .child(Self::two_halves(p.bg_sidebar, p.bg_chat).w(px(48.0)).h(px(28.0)))
+                        .child(div().text_color(rgb(theme::text())).child(format!("#{key}")))
+                        .on_click(cx.listener(move |_, _, _, cx| cx.emit(super::HistoryRestore(look))))
+                        .e2e("button", if item.selected { "history-option selected" } else { "history-option" })
+                        .attr("data-colour", key)
+                        .attr("data-base", item.theme.key())
+                )
+            }))
+            .e2e("div", "theme-history")
+            .into_any_element()
     }
 }
 

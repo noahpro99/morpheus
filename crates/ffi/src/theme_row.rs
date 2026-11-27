@@ -1,4 +1,5 @@
-//! The theme row of Settings > Appearance (#490), from `morpheus_view_model::theme_row`.
+//! The theme row of Settings > Appearance (#490), from `morpheus_view_model::theme_row`: the row
+//! (one recent custom theme) and `theme_history_list` (the whole history, for the Custom panel).
 
 use morpheus_view_model::{
     settings::Theme,
@@ -55,7 +56,26 @@ pub fn theme_row(
     for l in history.iter().rev() {
         kept.record(look(l));
     }
-    theme_row::theme_row(look(&current), &kept, material_you_available, material_you_on)
+    entries(theme_row::theme_row(look(&current), &kept, material_you_available, material_you_on))
+}
+
+/// The recent custom themes for the Custom panel, under its colour picker: newest first, the one
+/// in use selected (none while Material You is on). `history` is the looks used, newest first.
+#[uniffi::export]
+pub fn theme_history_list(
+    current: ThemeLook,
+    history: Vec<ThemeLook>,
+    material_you_on: bool,
+) -> Vec<ThemeRowEntry> {
+    let mut kept = ThemeHistory::default();
+    for l in history.iter().rev() {
+        kept.record(look(l));
+    }
+    entries(theme_row::recent_customs(look(&current), &kept, material_you_on))
+}
+
+fn entries(items: Vec<theme_row::ThemeRowItem>) -> Vec<ThemeRowEntry> {
+    items
         .into_iter()
         .map(|item| {
             let (sidebar, chat) = match (item.kind, item.colour) {
@@ -96,9 +116,12 @@ mod tests {
         let row = theme_row(l("dark", Some("2a4d8f")), vec![l("dark", Some("2a4d8f")), l("dark", Some("8f2a4d"))], true, false);
         let kinds: Vec<_> = row.iter().map(|e| e.kind).collect();
         use ThemeRowItemKind::*;
-        assert_eq!(kinds, [MaterialYou, Builtin, Builtin, Builtin, Recent, Recent, Custom]);
+        assert_eq!(kinds, [MaterialYou, Builtin, Builtin, Builtin, Recent, Custom]);
         assert_eq!(row[4].colour.as_deref(), Some("2a4d8f"));
-        assert!(row[4].selected && !row[5].selected);
+        assert!(row[4].selected);
+        let all = theme_history_list(l("dark", Some("2a4d8f")), vec![l("dark", Some("2a4d8f")), l("dark", Some("8f2a4d"))], false);
+        assert_eq!(all.iter().map(|e| e.colour.clone().unwrap()).collect::<Vec<_>>(), ["2a4d8f", "8f2a4d"]);
+        assert!(all[0].selected && !all[1].selected);
         let none = theme_row(l("light", None), vec![], false, false);
         assert_eq!(none.len(), 4);
         assert!(none[2].selected);

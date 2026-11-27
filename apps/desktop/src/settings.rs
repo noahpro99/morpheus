@@ -205,8 +205,6 @@ pub struct SettingsView {
     pub glass: crate::view_model::glass::Glass,
     /// The looks used lately, as shown (the shell tells us).
     pub history: crate::view_model::theme_history::ThemeHistory,
-    /// The theme row's horizontal scroll: a vertical wheel over it scrolls it sideways.
-    pub(crate) theme_row_scroll: gpui::ScrollHandle,
     /// The custom colour as hue, saturation and value: kept apart so a grey keeps its hue
     /// while the sliders move.
     hsv: (f32, f32, f32),
@@ -487,7 +485,6 @@ impl SettingsView {
             custom: None,
             glass: Default::default(),
             history: Default::default(),
-            theme_row_scroll: gpui::ScrollHandle::new(),
             hsv: crate::view_model::theme::to_hsv(crate::view_model::theme::DARK.bg_chat),
             hsv_dragging: false,
             colour_input,
