@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import UIKit
 
 final class TimelineBridge: TimelineListener, @unchecked Sendable {
     let handler: @Sendable ([TimelineRow]) -> Void
