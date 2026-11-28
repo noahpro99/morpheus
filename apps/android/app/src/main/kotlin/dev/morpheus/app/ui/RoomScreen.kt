@@ -418,15 +418,15 @@ private fun Timeline(
                 }
                 // The desktop's: a red line edge to edge with the NEW pill at its right end, centred on it.
                 TimelineRow.New -> Row(
-                    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp, end = 8.dp).testTag("new-divider"),
+                    Modifier.fillMaxWidth().padding(top = Space.md, bottom = 2.dp, end = 8.dp).testTag("new-divider"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.weight(1f).height(1.dp).background(Palette.Danger).testTag("new-line"))
                     Text(
                         t("NEW"),
-                        Modifier.background(Palette.Danger, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp).testTag("new-pill"),
+                        Modifier.background(Palette.Danger, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = Space.sm, vertical = 1.dp).testTag("new-pill"),
                         color = Palette.OnDanger,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 14.sp),
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                     )
                 }

@@ -446,7 +446,7 @@ private fun OutputMenu(calls: CallModel, close: () -> Unit) {
         tick
         for (route in calls.routes()) {
             androidx.compose.material3.DropdownMenuItem(
-                { Text(route.label) },
+                { Text(route.label, style = MaterialTheme.typography.bodyLarge) },
                 { calls.chooseRoute(route.key); tick++; close() },
                 Modifier.semantics { stateDescription = if (route.on) "On" else "Off" }.testTag("route-${route.key}"),
                 leadingIcon = { GlyphIcon(routeIcon(route.kind), Modifier.testTag("route-icon-${route.key}"), size = 20.dp) },
