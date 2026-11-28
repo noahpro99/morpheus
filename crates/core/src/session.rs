@@ -782,9 +782,7 @@ impl Core {
         let core = self.clone();
         self.run(async move {
             let (client, room_id) = core.restored_for_push(&room_id).await?;
-            let room = client
-                .get_room(&room_id)
-                .ok_or_else(|| Error::Other(format!("room {room_id} is not known")))?;
+            let room = known_room(&client, &room_id).await?;
             let content =
                 matrix_sdk::ruma::events::room::message::RoomMessageEventContent::from(
                     crate::emotes::message_content(&body, &[]),
@@ -805,9 +803,7 @@ impl Core {
                 .parse()
                 .map_err(|_| Error::Other(format!("not an event id: {event_id}")))?;
             let (client, room_id) = core.restored_for_push(&room_id).await?;
-            let room = client
-                .get_room(&room_id)
-                .ok_or_else(|| Error::Other(format!("room {room_id} is not known")))?;
+            let room = known_room(&client, &room_id).await?;
             room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone())
                 .await?;
             room.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id)
@@ -900,4 +896,17 @@ fn with_store(
     // looks for one before reusing a folder).
     let _ = crate::fs::write(store.join("indexeddb"), b"");
     builder.indexeddb_store(&store.to_string_lossy(), passphrase)
+}
+
+/// A room of a client that has not synced in this process: from its store, else after one quick sync.
+async fn known_room(client: &Client, room_id: &crate::OwnedRoomId) -> Result<matrix_sdk::Room> {
+    if let Some(room) = client.get_room(room_id) {
+        return Ok(room);
+    }
+    client
+        .sync_once(matrix_sdk::config::SyncSettings::default().timeout(std::time::Duration::ZERO))
+        .await?;
+    client
+        .get_room(room_id)
+        .ok_or_else(|| Error::Other(format!("room {room_id} is not known")))
 }

@@ -80,4 +80,24 @@ async fn a_pushed_event_is_worded_without_the_app_and_a_pusher_is_registered() {
     assert!(notice.title.contains(&name) || notice.title.to_lowercase().contains("alice"), "{}", notice.title);
     assert!(!notice.call);
     assert!(preview_push(dir.path().display().to_string(), room_id.to_string(), "$nonexistent".into()).await.is_none());
+
+    // The notification's buttons, with the app closed (#548): Mark as read sends a receipt; Reply sends a message alice sees.
+    let data = dir.path().display().to_string();
+    morpheus_ffi::read_from_push(data.clone(), room_id.to_string(), event_id.clone()).await.expect("mark as read");
+    let answer = format!("on my way {}", std::process::id());
+    morpheus_ffi::reply_from_push(data, room_id.to_string(), answer.clone()).await.expect("reply");
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let diffs = updates.next().await.expect("timeline ended");
+            for diff in diffs {
+                diff.apply(&mut entries);
+            }
+            let seen = entries.iter().any(|e| matches!(e, morpheus_core::TimelineEntry::Message(m) if m.kind.plain_body() == Some(answer.as_str())));
+            if seen {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("alice sees bob's reply sent from the notification");
 }
