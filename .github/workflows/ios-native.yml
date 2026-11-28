@@ -112,6 +112,7 @@ jobs:
       - name: Homeserver log
         if: failure()
         run: |
+          tail -40 "$RUNNER_TEMP/xcodebuild.log" || true
           grep -B3 -A30 -iE "failed to install|Underlying Error" "$RUNNER_TEMP/xcodebuild.log" | head -80 || true
           grep -A60 "accessibility tree" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
           tail -30 "$RUNNER_TEMP/hs/synapse.log" || true
