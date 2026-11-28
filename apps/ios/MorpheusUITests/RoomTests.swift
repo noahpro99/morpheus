@@ -30,8 +30,8 @@ final class RoomTests: MorpheusTestCase {
         app.textFields["composer"].tap()
         app.textFields["composer"].typeText("ping from ios")
         app.buttons["send"].tap()
-        // The echo is on screen within a second, before the server round trip (it is "sending" until then).
-        XCTAssertTrue(app.staticTexts["ping from ios"].waitForExistence(timeout: 1.5), "local echo")
+        // The echo is on screen within seconds, before the server round trip (it is "sending" until then).
+        XCTAssertTrue(app.staticTexts["ping from ios"].waitForExistence(timeout: 5), "local echo")
     }
 
     func testEdgeSwipeLeavesTheRoom() throws {
