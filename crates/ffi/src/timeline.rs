@@ -144,6 +144,34 @@ pub enum FileKind {
     Audio,
 }
 
+/// A picture message.
+#[derive(uniffi::Record)]
+pub struct ImageBody {
+    /// The file name or caption.
+    pub caption: String,
+    pub media: Arc<MediaHandle>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// A GIF: it moves when drawn (#412).
+    pub animated: bool,
+    /// Its BlurHash: the blurred placeholder drawn while it loads (#547).
+    pub blurhash: Option<String>,
+}
+
+/// A file, video or audio clip.
+#[derive(uniffi::Record)]
+pub struct FileBody {
+    pub name: String,
+    pub kind: FileKind,
+    pub size: Option<u64>,
+    pub media: Arc<MediaHandle>,
+    /// A video's poster picture, size and length, when the message says (#412).
+    pub thumbnail: Option<Arc<MediaHandle>>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub duration_ms: Option<u64>,
+}
+
 /// What a message says.
 #[derive(uniffi::Enum)]
 pub enum MessageBody {
@@ -153,29 +181,10 @@ pub enum MessageBody {
         /// The text cut into plain runs and links (`url` set), for drawing.
         segments: Vec<TextSegment>,
     },
-    Image {
-        /// The file name or caption.
-        caption: String,
-        media: Arc<MediaHandle>,
-        width: Option<u32>,
-        height: Option<u32>,
-        /// A GIF: it moves when drawn (#412).
-        animated: bool,
-        /// Its BlurHash: the blurred placeholder drawn while it loads (#547).
-        blurhash: Option<String>,
-    },
+    /// A picture. One record, so a new field never changes the variant's shape in Swift or Kotlin.
+    Image { image: ImageBody },
     /// A file, video or audio clip: a row to tap, which fetches it whole.
-    File {
-        name: String,
-        kind: FileKind,
-        size: Option<u64>,
-        media: Arc<MediaHandle>,
-        /// A video's poster picture, size and length, when the message says (#412).
-        thumbnail: Option<Arc<MediaHandle>>,
-        width: Option<u32>,
-        height: Option<u32>,
-        duration_ms: Option<u64>,
-    },
+    File { file: FileBody },
     /// A deleted or unreadable message, a state change, in one line.
     Other { summary: String },
 }
@@ -269,15 +278,15 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             width,
             height,
             blurhash,
-        } => MessageBody::Image {
+        } => MessageBody::Image { image: ImageBody {
             caption: body.clone(),
             media: MediaHandle::new(media.clone(), session),
             width: *width,
             height: *height,
             animated: morpheus_view_model::attachments::is_gif(body),
             blurhash: blurhash.clone(),
-        },
-        MessageKind::File { body, media, size, .. } => MessageBody::File {
+        } },
+        MessageKind::File { body, media, size, .. } => MessageBody::File { file: FileBody {
             name: body.clone(),
             kind: FileKind::File,
             size: *size,
@@ -286,8 +295,8 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             width: None,
             height: None,
             duration_ms: None,
-        },
-        MessageKind::Audio { body, media, size, .. } => MessageBody::File {
+        } },
+        MessageKind::Audio { body, media, size, .. } => MessageBody::File { file: FileBody {
             name: body.clone(),
             kind: FileKind::Audio,
             size: *size,
@@ -296,8 +305,8 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             width: None,
             height: None,
             duration_ms: None,
-        },
-        MessageKind::Video { body, media, thumbnail, width, height, duration } => MessageBody::File {
+        } },
+        MessageKind::Video { body, media, thumbnail, width, height, duration } => MessageBody::File { file: FileBody {
             name: body.clone(),
             kind: FileKind::Video,
             size: None,
@@ -306,7 +315,7 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             width: *width,
             height: *height,
             duration_ms: duration.map(|d| d.as_millis() as u64),
-        },
+        } },
         kind => match kind.plain_body() {
             Some(text) => MessageBody::Text {
                 text: text.to_owned(),

@@ -47,8 +47,8 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import uniffi.morpheus_ffi.FileBody
 import uniffi.morpheus_ffi.MediaHandle
-import uniffi.morpheus_ffi.MessageBody
 
 /** A GIF that moves (#412): the file decoded as an animation and started; `state` says "playing" while it runs. Older systems draw the still picture. */
 @Composable
@@ -78,7 +78,7 @@ fun AnimatedPicture(media: MediaHandle, caption: String, modifier: Modifier) {
  * screen with the system's controls. `state` of the card is its length, of the player "playing" or "paused".
  */
 @Composable
-fun VideoCard(body: MessageBody.File, onLongPress: () -> Unit) {
+fun VideoCard(body: FileBody, onLongPress: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     val poster by produceState<ImageBitmap?>(null, body.thumbnail?.key()) { value = body.thumbnail?.let { Images.load(it, 720, 720) } }
     val ratio = if ((body.width ?: 0u) > 0u && (body.height ?: 0u) > 0u) body.width!!.toFloat() / body.height!!.toFloat() else 16f / 9f

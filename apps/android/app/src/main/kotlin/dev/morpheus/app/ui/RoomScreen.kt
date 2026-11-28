@@ -63,6 +63,7 @@ import dev.morpheus.app.read
 import dev.morpheus.app.size
 import kotlinx.coroutines.launch
 import uniffi.morpheus_ffi.FileKind
+import uniffi.morpheus_ffi.ImageBody
 import uniffi.morpheus_ffi.SuggestionItem
 import uniffi.morpheus_ffi.withEmoji
 import androidx.compose.runtime.DisposableEffect
@@ -276,7 +277,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
             }
         } } }
         viewing?.let { shown ->
-            val pictures = remember(rows) { rows.filterIsInstance<TimelineRow.Message>().mapNotNull { (it.message.body as? MessageBody.Image)?.media } }
+            val pictures = remember(rows) { rows.filterIsInstance<TimelineRow.Message>().mapNotNull { (it.message.body as? MessageBody.Image)?.image?.media } }
             PictureViewer(pictures.ifEmpty { listOf(shown) }, pictures.indexOfFirst { it.key() == shown.key() }.coerceAtLeast(0)) { viewing = null }
         }
         thread?.let { root ->
@@ -287,8 +288,8 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
 
 private fun summary(body: MessageBody): String = when (body) {
     is MessageBody.Text -> body.text
-    is MessageBody.Image -> body.caption
-    is MessageBody.File -> body.name
+    is MessageBody.Image -> body.image.caption
+    is MessageBody.File -> body.file.name
     is MessageBody.Other -> body.summary
 }
 
@@ -573,8 +574,8 @@ private fun MessageRow(
                     }
                 }
                 is MessageBody.Other -> StateOrText(body.summary, message.state) { Avatar(message.senderAvatar, message.senderName, Size.stateIcon, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey, userId = message.senderId) }
-                is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
-                is MessageBody.File -> if (body.kind == FileKind.VIDEO) VideoCard(body) { onActions(latest, true) } else Row(
+                is MessageBody.Image -> PictureBody(body.image, onImage) { onActions(latest, true) }
+                is MessageBody.File -> body.file.let { body -> if (body.kind == FileKind.VIDEO) VideoCard(body) { onActions(latest, true) } else Row(
                     Modifier
                         .padding(vertical = 2.dp)
                         .background(Palette.Raised, RoundedCornerShape(8.dp))
@@ -588,7 +589,7 @@ private fun MessageRow(
                         size = 20.dp,
                     )
                     Text(body.name + (size(body.size).let { if (it.isEmpty()) "" else " ($it)" }), Modifier.testTag("msg-file"), style = MaterialTheme.typography.bodyLarge)
-                }
+                } }
             }
             message.thread?.let { chip ->
                 Text(
@@ -639,7 +640,7 @@ private fun MessageRow(
 
 @Composable
 // A long press on the picture opens the message sheet like anywhere on the message (the picture takes its own taps).
-private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit, onLongPress: () -> Unit) {
+private fun PictureBody(body: ImageBody, onImage: (MediaHandle) -> Unit, onLongPress: () -> Unit) {
     val bitmap by produceState<ImageBitmap?>(null, body.media.key()) {
         if (dev.morpheus.app.AppState.imageDelayMs > 0) kotlinx.coroutines.delay(dev.morpheus.app.AppState.imageDelayMs)
         value = Images.load(body.media, 720, 720)

@@ -81,7 +81,7 @@ pub use security::{
 };
 pub use sidebar::{MuteChoice, mute_choices, RoomItem, ScopeItem, ScopeKind, SectionItem, Sidebar, SidebarListener};
 pub use timeline::{
-    FileKind, MessageBody, MessageItem, ReactionItem, ReplyItem, RichKind, RichLine, RichRun, ShieldItem, StateLook, StateTone, TextSegment, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
+    FileBody, FileKind, ImageBody, MessageBody, MessageItem, ReactionItem, ReplyItem, RichKind, RichLine, RichRun, ShieldItem, StateLook, StateTone, TextSegment, ThreadChip, RoomTimeline, TimelineListener, TimelineRow,
 };
 
 uniffi::setup_scaffolding!();

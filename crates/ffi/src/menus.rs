@@ -120,7 +120,7 @@ fn failed(reason: impl Into<String>) -> FfiError {
 /// The core message a [`MessageItem`] came from, as far as the menu looks at it.
 fn message_of(item: &MessageItem) -> morpheus_core::Message {
     let kind = match &item.body {
-        MessageBody::Image { caption, media, width, height, .. } => MessageKind::Image { body: caption.clone(), media: media.media_ref(), width: *width, height: *height, blurhash: None },
+        MessageBody::Image { image } => MessageKind::Image { body: image.caption.clone(), media: image.media.media_ref(), width: image.width, height: image.height, blurhash: None },
         MessageBody::Text { text, .. } => MessageKind::Text { body: text.clone(), html: None },
         _ => MessageKind::Text { body: String::new(), html: None },
     };

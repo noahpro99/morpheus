@@ -15,10 +15,10 @@ pub fn transcript_of(messages: Vec<MessageItem>) -> String {
             reply_to: m.reply_to.as_ref().and_then(|r| r.sender_name.clone()),
             body: match &m.body {
                 MessageBody::Text { text, .. } => Body::Text(text.clone()),
-                MessageBody::Image { caption, .. } => Body::Image(caption.clone()),
-                MessageBody::File { name, kind: FileKind::File, .. } => Body::File(name.clone()),
-                MessageBody::File { name, kind: FileKind::Video, .. } => Body::Video(name.clone()),
-                MessageBody::File { name, kind: FileKind::Audio, .. } => Body::Audio(name.clone()),
+                MessageBody::Image { image } => Body::Image(image.caption.clone()),
+                MessageBody::File { file } if file.kind == FileKind::File => Body::File(file.name.clone()),
+                MessageBody::File { file } if file.kind == FileKind::Video => Body::Video(file.name.clone()),
+                MessageBody::File { file } => Body::Audio(file.name.clone()),
                 MessageBody::Other { summary } => Body::Text(summary.clone()),
             },
         })

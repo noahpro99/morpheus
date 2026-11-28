@@ -224,10 +224,10 @@ extension MessageItem {
         switch self.body {
         case let .text(text, _):
             return text
-        case let .image(caption, _, _, _, _, _):
-            return caption
-        case let .file(name, _, _, _, _, _, _, _):
-            return name
+        case let .image(image):
+            return image.caption
+        case let .file(file):
+            return file.name
         case let .other(summary):
             return summary
         }
@@ -280,8 +280,8 @@ struct MessageView: View {
 
     @ViewBuilder
     private var content: some View {
-        if case let .image(caption, media, width, height, _, _) = message.body {
-            MediaImage(media: media, caption: caption, width: width, height: height)
+        if case let .image(image) = message.body {
+            MediaImage(media: image.media, caption: image.caption, width: image.width, height: image.height)
         } else {
             let shown: String = message.edited ? message.plainText + " (edited)" : message.plainText
             Text(shown)
