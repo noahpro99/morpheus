@@ -125,7 +125,8 @@ private fun CustomThemeDialog(app: AppModel, t: (String) -> String, look: Appear
         onConfirm = { pending?.let { p -> attempt { MaterialYou.set(context, false); app.useAppearance(app.morpheus.useThemeLook(p.theme, p.colour)); p.colour?.let { app.morpheus.noteRecentColour(it) }; version++; changed(); colour = ""; fromCode = null } } },
         onDismiss = close,
         content = {
-            Column(Modifier.heightIn(max = 640.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).testTag("custom-theme"), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            val panelScroll = androidx.compose.foundation.rememberScrollState()
+            Column(Modifier.stretch(panelScroll).heightIn(max = 640.dp).verticalScroll(panelScroll).testTag("custom-theme"), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Row(Modifier.fillMaxWidth().height(48.dp).testTag("theme-preview").semantics { stateDescription = "#" + String.format("%06x", (swatch?.chat ?: 0u).toInt() and 0xFFFFFF) }) {
                     Box(Modifier.weight(1f).fillMaxSize().background(argb(swatch?.sidebar ?: 0u)))
                     Box(Modifier.weight(2f).fillMaxSize().background(argb(swatch?.chat ?: 0u)))
