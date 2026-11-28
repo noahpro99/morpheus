@@ -217,6 +217,8 @@ object Size {
     val avatar = 40.dp
     val avatarLg = 36.dp
     val avatarXl = 88.dp
+    /** A room event line (a join, a leave): the desktop's 18 px icon, with an avatar of the same size (#559, #569). */
+    val stateIcon = 18.dp
 }
 
 
@@ -234,4 +236,9 @@ object ComposerColours {
     fun fill(s: ColorScheme): Color = s.surfaceContainerHigh
     fun text(s: ColorScheme): Color = readable(s.onSurface, fill(s))
     fun hint(s: ColorScheme): Color = readable(s.onSurfaceVariant, fill(s))
+}
+
+/** Text styles the Material roles do not have: the desktop's room event line, 13.6 sp on a 19 dp line (#569). */
+object Lines {
+    val stateLine: androidx.compose.ui.text.TextStyle @Composable get() = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.6.sp, lineHeight = 19.sp)
 }

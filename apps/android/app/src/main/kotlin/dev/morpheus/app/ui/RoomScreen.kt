@@ -567,7 +567,7 @@ private fun MessageRow(
                         TextButton({ onFull(message) }, Modifier.testTag("show-more")) { Text(t("Show more")) }
                     }
                 }
-                is MessageBody.Other -> StateOrText(body.summary, message.state) { Avatar(message.senderAvatar, message.senderName, 18.dp, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey, userId = message.senderId) }
+                is MessageBody.Other -> StateOrText(body.summary, message.state) { Avatar(message.senderAvatar, message.senderName, Size.stateIcon, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey, userId = message.senderId) }
                 is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
                 is MessageBody.File -> if (body.kind == FileKind.VIDEO) VideoCard(body) { onActions(latest, true) } else Row(
                     Modifier
