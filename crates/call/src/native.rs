@@ -2801,12 +2801,23 @@ async fn aggregate(mut input: UnboundedReceiver<Speech>, out: UnboundedSender<Ca
 ///
 /// `echo`: what they say also goes to the echo canceller, as the speakers
 /// play it (a deafened track carries no frames, so nothing then).
+/// What each remote voice measured so far (frames heard, the loudest, whether the detector opened): for the tests' diagnostics.
+static VOICE_STATS: LazyLock<Mutex<std::collections::BTreeMap<String, (u64, f32, bool)>>> = LazyLock::new(Mutex::default);
+
+/// `who frames=<n> max=<level> open=<bool>` for each remote voice being measured.
+pub fn voice_stats() -> String {
+    VOICE_STATS.lock().map(|m| m.iter().map(|(who, (n, max, open))| format!("{who} frames={n} max={max:.3} open={open}")).collect::<Vec<_>>().join("; ")).unwrap_or_default()
+}
+
 async fn watch_voice(
     track: RemoteAudioTrack,
     who: String,
     speech: UnboundedSender<Speech>,
     echo: bool,
 ) {
+    if let Ok(mut stats) = VOICE_STATS.lock() {
+        stats.insert(who.clone(), (0, 0.0, false));
+    }
     let mut stream = NativeAudioStream::new(track.rtc_track(), SAMPLE_RATE as i32, 1);
     // 20 ms over the attack level to start.
     let mut gate = Gate::new(2);
@@ -2860,6 +2871,12 @@ async fn watch_voice(
             vad_open
         };
         record::note_speaking(&who, now);
+        if let Ok(mut stats) = VOICE_STATS.lock() {
+            let entry = stats.entry(who.clone()).or_insert((0, 0.0, false));
+            entry.0 += 1;
+            entry.1 = entry.1.max(level);
+            entry.2 = now;
+        }
         if reported != Some(now) {
             reported = Some(now);
             let sent = speech.send(Speech::Measured {

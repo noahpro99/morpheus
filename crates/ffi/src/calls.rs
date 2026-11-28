@@ -807,6 +807,12 @@ async fn run_call(
                     sync_foci(call, &members, &mut focus_asked);
                 }
             }
+            // Someone speaking whose membership this phone has not seen yet (it arrives after their audio): look again, or they would never be
+            // shown speaking (the set of speakers does not change again, so nothing else would map them).
+            if model.said.speaking.iter().any(|id| !model.people.by_identity.contains_key(id)) {
+                let learned = refresh_people(&session, &room_id, &mut model.people).await;
+                model.show_learned(&learned);
+            }
         }
         match next {
             Next::Tick => {}

@@ -359,6 +359,7 @@ class TestBridge(private val app: Application) {
                 .put("keep_screen_on", AppState.keepScreenOn)
                 .put("pip_armed", AppState.pipArmed)
                 .put("call_people", dev.morpheus.app.CallModel.current?.snapshot?.value?.people?.joinToString { "${it.userId}:${if (it.speaking) "S" else "-"}${if (it.muted) "m" else ""}" } ?: "none")
+                .put("voice_stats", uniffi.morpheus_ffi.callVoiceStats())
                 .put("call_speakers", dev.morpheus.app.CallModel.speakers.value.let { it.first + "=" + it.second.joinToString() })
                 .put("call_watchers", dev.morpheus.app.CallModel.current?.snapshot?.value?.watchers?.toLong() ?: JSONObject.NULL)
                 .put("screen_frames", AppState.screenFrames)

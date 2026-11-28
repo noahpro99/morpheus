@@ -24,3 +24,9 @@ mod tests {
         assert!(call_card_colour(vec![0, 0, 0, 0, 9, 9, 9, 0]).is_none(), "transparent pixels give nothing");
     }
 }
+
+/// What the call heard of each remote voice (frames, loudest, whether the voice detector opened): a test diagnostic.
+#[uniffi::export]
+pub fn call_voice_stats() -> String {
+    morpheus_call::voice_stats()
+}
