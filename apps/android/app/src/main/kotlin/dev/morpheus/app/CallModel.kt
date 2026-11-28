@@ -84,6 +84,10 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
             _open.value = true
             return
         }
+        // The call screen is up at once, joining; the first snapshot from the call replaces this (the screen waited for it, a third of a second on a phone).
+        _snapshot.value = CallSnapshot(roomId, roomName, CallPhase.JOINING, null, false, false, false, false, false, emptyList(), emptyList(), 0u, null)
+        _open.value = true
+        AppState.screen = "call"
         scope.launch {
             handle?.let { it.leave() }
             current = this@CallModel

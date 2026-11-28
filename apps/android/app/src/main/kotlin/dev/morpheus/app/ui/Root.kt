@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.semantics.semantics
@@ -94,8 +96,10 @@ private fun RootContent(model: AppModel) {
                     val going = call
                     val inPip by model.calls.pip.collectAsState()
                     if (going != null && inPip) PipCall(model.calls, going)
-                    else if (going != null && callOpen) CallScreen(model.calls, going) { model.openRoomWhenKnown(going.roomId); model.calls.show(false) }
-                    else androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+                    else Box(Modifier.fillMaxSize()) {
+                    // The call screen is drawn over the lists, which stay composed under it: minimising or hanging up shows them at once, not after composing them again.
+                    val covered = going != null && callOpen
+                    androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().then(if (covered) Modifier.clearAndSetSemantics { } else Modifier)) {
                         Box(Modifier.weight(1f)) {
                             // The room covers the lists and the lists under it stay exactly where they are (they are only drawn while the room is
                             // moving or not open; #394). It comes from its own edge (a DM from the left, a channel from the right: the way the finger
@@ -140,6 +144,10 @@ private fun RootContent(model: AppModel) {
                             if (going != null && !callOpen) FloatingCall(model.calls, going)
                             if (switcherOpen) SwipeBack(Modifier.fillMaxSize()) { QuickFind(model) }
                         }
+                    }
+                    if (covered && going != null) Box(Modifier.fillMaxSize()) {
+                        CallScreen(model.calls, going) { model.openRoomWhenKnown(going.roomId); model.calls.show(false) }
+                    }
                     }
                 }
             }

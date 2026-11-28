@@ -39,8 +39,11 @@ private fun Modifier.stretchWhen(fits: Boolean): Modifier = composed {
         dev.morpheus.app.AppState.overscrollEffects.add(effect.javaClass.simpleName)
         val connection = remember(effect) {
             object : NestedScrollConnection {
-                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-                    if (source == NestedScrollSource.UserInput && available != Offset.Zero) effect.applyToScroll(available, source) { Offset.Zero } else Offset.Zero
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    // The pull is drawn but not claimed: a parent that acts on the leftover (the call screen minimising by a pull down) still gets all of it.
+                    if (source == NestedScrollSource.UserInput && available != Offset.Zero) effect.applyToScroll(available, source) { Offset.Zero }
+                    return Offset.Zero
+                }
 
                 override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                     effect.applyToFling(available) { Velocity.Zero }
