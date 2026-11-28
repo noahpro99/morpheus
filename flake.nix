@@ -302,7 +302,6 @@
                 gst-plugins-good
                 gst-libav # H.264 and H.265 (videos in messages)
               ];
-            MORPHEUS_HOMESERVER = "http://localhost:8008";
             # Vulkan's validation layer, found but off unless asked for:
             # MORPHEUS_GPU_VALIDATION=1 (or VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation).
             VK_ADD_LAYER_PATH = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
@@ -313,6 +312,8 @@
           };
 
           shellHook = ''
+            # The dev homeserver; a lane (local-run.sh --lane android2, desktop, phone2) names the second one (:8009) and keeps it: a value set by the shell itself overrode it, and the harness then made rooms on :8008 while the phone was on :8009 (#575).
+            export MORPHEUS_HOMESERVER="''${MORPHEUS_HOMESERVER:-http://localhost:8008}"
             export XDG_DATA_DIRS="$GSETTINGS_SCHEMAS_PATH''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
             # Once a day: keep target/ to the builds in use (it grew past 300 GB).
             stamp=target/.pruned
