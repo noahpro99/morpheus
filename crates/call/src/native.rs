@@ -476,13 +476,18 @@ impl Call {
                 let mut return_source: Option<NativeAudioSource> = None;
                 // Strong (#531): the app captures the microphone and this cleans it with DeepFilterNet; the platform's own recording is off.
                 #[cfg(target_os = "android")]
-                if crate::noise_suppression() == crate::NoiseSuppression::Strong {
-                    let source = NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 0);
-                    if android_mic::attach(source.clone()) {
-                        use livekit::webrtc::peer_connection_factory::native::PeerConnectionFactoryExt as _;
-                        livekit::rtc_engine::lk_runtime::LkRuntime::instance().pc_factory().set_adm_recording_enabled(false);
-                        crate::noise::note_applied(Some(crate::NoiseSuppression::Strong));
-                        return_source = Some(source);
+                {
+                    let (strong, gate) = android_mic::wants();
+                    if strong || gate.is_some() {
+                        let source = NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 0);
+                        if android_mic::attach(source.clone(), strong, gate) {
+                            use livekit::webrtc::peer_connection_factory::native::PeerConnectionFactoryExt as _;
+                            livekit::rtc_engine::lk_runtime::LkRuntime::instance().pc_factory().set_adm_recording_enabled(false);
+                            if strong {
+                                crate::noise::note_applied(Some(crate::NoiseSuppression::Strong));
+                            }
+                            return_source = Some(source);
+                        }
                     }
                 }
                 match return_source {
@@ -497,10 +502,15 @@ impl Call {
                 let mut return_tone_cleaned = false;
                 // Strong on a phone: the tone goes through the cleaner, as a microphone would (#531).
                 #[cfg(target_os = "android")]
-                if crate::noise_suppression() == crate::NoiseSuppression::Strong && android_mic::attach(source.clone()) {
-                    crate::noise::note_applied(Some(crate::NoiseSuppression::Strong));
-                    tasks.push(tokio::spawn(android_mic::tone_through_cleaner()));
-                    return_tone_cleaned = true;
+                {
+                    let (strong, gate) = android_mic::wants();
+                    if (strong || gate.is_some()) && android_mic::attach(source.clone(), strong, gate) {
+                        if strong {
+                            crate::noise::note_applied(Some(crate::NoiseSuppression::Strong));
+                        }
+                        tasks.push(tokio::spawn(android_mic::tone_through_cleaner()));
+                        return_tone_cleaned = true;
+                    }
                 }
                 if !return_tone_cleaned {
                     tasks.push(tokio::spawn(play_tone(source.clone())));

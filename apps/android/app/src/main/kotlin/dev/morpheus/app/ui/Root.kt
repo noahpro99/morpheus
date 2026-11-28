@@ -57,7 +57,7 @@ private fun RootContent(model: AppModel) {
             contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
             snackbarHost = { ToastHost() },
         ) { _ -> Box(Modifier.fillMaxSize().tapHaptics()) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, LocalOpenProfile provides { id, name, media, room -> model.openProfile(id, name, media, room) }) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, LocalOpenProfile provides { id, name, media, room -> model.openProfile(id, name, media, room) }, LocalOpenMemberMenu provides { id, name, room -> model.openSheet(name, onOutcome = { o -> if (o is uniffi.morpheus_ffi.MenuOutcome.OpenRoom) model.openRoomWhenKnown(o.roomId) }) { model.morpheus.memberMenuRows(room, id) } }) {
         val rings by model.ringModel.rings.collectAsState()
             val sharing by ShareInbox.pending.collectAsState()
             if (sharing != null && screen is Screen.SignedIn) ShareScreen(model, sharing!!)

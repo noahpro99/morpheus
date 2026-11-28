@@ -426,6 +426,8 @@ private fun ChannelList(
 fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier, onChat: () -> Unit = {}, onPress: () -> Unit = {}) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
     Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent).pointerInput(room.id) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial); onPress() } }) {
+        // Just left (#497): my own name is out of the list at once, not when the server's echo arrives.
+        val inCall = if (dev.morpheus.app.LeftCalls.hidesMe(room.id)) room.call.filter { it.userId != dev.morpheus.app.LeftCalls.me } else room.call
         Column {
             ListRow(
                 if (room.isDm) dev.morpheus.app.Streamer.name(room.name) else room.name, "room-${room.name}",
@@ -437,7 +439,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                         if (room.isDm) {
                             Avatar(room.avatar, room.name, Size.avatar, Modifier.testTag("dm-avatar-${room.name}"), key = room.avatarKey, userId = room.dmUser)
                         } else {
-                            GlyphIcon(if (room.isVoice) (if (selected) dev.morpheus.app.R.drawable.ic_ms_volume_up_fill else dev.morpheus.app.R.drawable.ic_ms_volume_up) else (if (selected) dev.morpheus.app.R.drawable.ic_ms_tag_fill else dev.morpheus.app.R.drawable.ic_ms_tag), Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && room.call.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            GlyphIcon(if (room.isVoice) (if (selected) dev.morpheus.app.R.drawable.ic_ms_volume_up_fill else dev.morpheus.app.R.drawable.ic_ms_volume_up) else (if (selected) dev.morpheus.app.R.drawable.ic_ms_tag_fill else dev.morpheus.app.R.drawable.ic_ms_tag), Modifier.testTag(if (room.isVoice) "voice-icon-${room.name}" else "text-icon-${room.name}"), size = 20.dp, tint = if (room.isVoice && inCall.isNotEmpty()) Palette.Green else if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (room.pinned) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_keep_fill, Modifier.semantics { contentDescription = t("Pinned") }.testTag("pin-${room.name}"), size = 16.dp)
                         if (room.muted) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_notifications_off_fill, Modifier.semantics { contentDescription = t("Muted") }.testTag("muted-room-${room.name}"), size = 16.dp)
@@ -453,10 +455,10 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                 onLongClick = onMenu,
                 onClick = onOpen,
             )
-            if (room.call.isNotEmpty()) {
+            if (inCall.isNotEmpty()) {
                 Column(Modifier.padding(start = 44.dp, bottom = Space.sm)) {
-                    CallRowTimer(room.name, room.call.firstOrNull()?.startedMs)
-                    for (member in room.call) {
+                    CallRowTimer(room.name, inCall.firstOrNull()?.startedMs)
+                    for (member in inCall) {
                         val name = callName(member.userId)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                             // Each person with their picture, as the desktop lists them (#477).
@@ -464,7 +466,7 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                             Avatar(avatars[member.userId], name, 24.dp, Modifier.testTag("in-call-avatar-${room.name}-$name"), userId = member.userId)
                             Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                             if (member.muted || member.deafened) GlyphIcon(
-                                if (member.deafened) dev.morpheus.app.R.drawable.ic_ms_headset_off else dev.morpheus.app.R.drawable.ic_ms_mic_off,
+                                if (member.deafened) dev.morpheus.app.R.drawable.ic_ms_hearing_disabled else dev.morpheus.app.R.drawable.ic_ms_mic_off,
                                 Modifier.testTag("in-call-muted-${room.name}-$name"), size = 16.dp, tint = Palette.Muted,
                             )
                             CallMemberMarks(room.id, room.name, name, member.userId, member)

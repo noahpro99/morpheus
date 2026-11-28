@@ -18,6 +18,10 @@ class MicTest(private val inputVolume: () -> Float) {
     @Volatile var level = 0f
         private set
 
+    /** The level in dBFS (the unit of the sensitivity threshold, #545); -100 when nothing is heard. */
+    @Volatile var levelDb = -100f
+        private set
+
     @Volatile var running = false
         private set
 
@@ -61,6 +65,7 @@ class MicTest(private val inputVolume: () -> Float) {
                     val gain = inputVolume()
                     val scaled = ShortArray(buffer.size) { (buffer[it] * gain).toInt().coerceIn(-32768, 32767).toShort() }
                     level = micTestLevel(level, scaled.toList())
+                    levelDb = uniffi.morpheus_ffi.gateLevelDb(scaled.toList())
                 }
             } catch (e: Exception) {
                 problem = e.message ?: "The microphone could not be opened."
@@ -69,6 +74,7 @@ class MicTest(private val inputVolume: () -> Float) {
                 record?.release()
                 running = false
                 level = 0f
+                levelDb = -100f
             }
         }, "morpheus-mic-test").also { it.start() }
     }

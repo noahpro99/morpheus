@@ -4,7 +4,9 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -71,6 +73,10 @@ object Images {
 @Suppress("CompositionLocalAllowlist")
 val LocalOpenProfile = staticCompositionLocalOf<((String, String, MediaHandle?, String?) -> Unit)?> { null }
 
+/** Opens a person's member menu (the desktop's right click on their picture or name): (user id, name, room they were seen in); a long press. */
+@Suppress("CompositionLocalAllowlist")
+val LocalOpenMemberMenu = staticCompositionLocalOf<((String, String, String) -> Unit)?> { null }
+
 /** The room whose people the avatars below show (their role there is on the card). */
 @Suppress("CompositionLocalAllowlist")
 val LocalProfileRoom = staticCompositionLocalOf<String?> { null }
@@ -80,12 +86,14 @@ val LocalProfileRoom = staticCompositionLocalOf<String?> { null }
 fun ServerIcon(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, key: String? = null) = Avatar(media, name, size, modifier, square = true, key = key)
 
 /** A round picture, or the first letter of the name on a colour made from it while there is none. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Avatar(media: MediaHandle?, name: String, size: Dp, modifier: Modifier = Modifier, square: Boolean = false, key: String? = null, userId: String? = null) {
     // Every person's picture opens their profile sheet when it knows whose it is (#488): the one click path.
     val openProfile = LocalOpenProfile.current
     val profileRoom = LocalProfileRoom.current
-    val tap = if (userId != null && openProfile != null) Modifier.clickable(onClickLabel = t("Show profile")) { openProfile(userId, name, media, profileRoom) } else Modifier
+    val memberMenu = LocalOpenMemberMenu.current
+    val tap = if (userId != null && openProfile != null) Modifier.combinedClickable(onClickLabel = t("Show profile"), onLongClick = if (memberMenu != null && profileRoom != null) ({ memberMenu(userId, name, profileRoom) }) else null, onLongClickLabel = t("Member menu"), onClick = { openProfile(userId, name, media, profileRoom) }) else Modifier
     val shape = if (square) RoundedCornerShape(size * 0.3f) else CircleShape
     val px = with(LocalDensity.current) { size.roundToPx() }
     // The picture of this key if it was seen before (the list of the last run has keys, no pictures), else fetched.

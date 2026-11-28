@@ -15,6 +15,11 @@ import uniffi.morpheus_ffi.pushCallMic
 class MicPump {
     @Volatile
     private var running = false
+
+    companion object {
+        /** Debug tests: a tone in place of the microphone (the emulator's is silent). */
+        @Volatile var tone = false
+    }
     private var thread: Thread? = null
 
     /** Frames handed over (the debug bridge reports it, so a test sees the pump work). */
@@ -36,6 +41,17 @@ class MicPump {
                 if (!running || !callMicWanted()) return@Thread
                 val rate = 48_000
                 val chunk = rate / 100
+                if (tone) {
+                    var phase = 0.0
+                    val sine = ShortArray(chunk)
+                    while (running) {
+                        for (i in sine.indices) { sine[i] = (kotlin.math.sin(phase) * 8000).toInt().toShort(); phase += 2 * Math.PI * 440 / rate }
+                        if (!pushCallMic(sine.toList())) break
+                        frames++
+                        Thread.sleep(10)
+                    }
+                    return@Thread
+                }
                 val size = maxOf(AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), chunk * 8)
                 record = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, size)
                 if (record.state != AudioRecord.STATE_INITIALIZED) return@Thread

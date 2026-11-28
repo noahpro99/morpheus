@@ -50,6 +50,7 @@ impl Morpheus {
         morpheus_call::set_input_volume(prefs.input_volume);
         morpheus_call::set_output_volume(prefs.output_volume);
         morpheus_call::set_noise_suppression(self.noise_mode());
+        self.apply_sensitivity();
         for (user, volume) in read_person_volumes(&self.dir, &self.account_id()) {
             morpheus_call::set_user_volume(&user, volume.voice_gain());
         }
@@ -324,4 +325,64 @@ mod share_tests {
         assert_eq!(fit_for_phone(q(ScreenResolution::P720), 2400, 1080), (1600, 720), "landscape: the short side is the same");
         assert_eq!(fit_for_phone(q(ScreenResolution::P1080), 700, 1200), (700, 1200), "never enlarged");
     }
+}
+
+const SENSITIVITY_FILE: &str = "input-sensitivity.json";
+
+/// Input sensitivity (#545): the voice gate of Voice & Video, as the desktop has it: the threshold is found automatically, or is set, and the
+/// mic is let through above it. A phone starts with it off.
+#[derive(Clone, uniffi::Record)]
+pub struct InputSensitivity {
+    pub auto: bool,
+    /// The manual threshold, dBFS (-100: off).
+    pub threshold_db: f32,
+    /// The gate does something (automatic, or a threshold above the bottom of the meter).
+    pub active: bool,
+}
+
+/// What a call hears of the gate now: the level of the voice going in (dBFS), the threshold, and whether the gate lets it through.
+#[derive(Clone, uniffi::Record)]
+pub struct GateReading {
+    pub level_db: f32,
+    pub threshold_db: f32,
+    pub open: bool,
+}
+
+impl Morpheus {
+    fn sensitivity(&self) -> (bool, f32) {
+        let kept: serde_json::Value = std::fs::read_to_string(self.dir.join(SENSITIVITY_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(serde_json::Value::Null);
+        (kept.get("auto").and_then(|v| v.as_bool()).unwrap_or(false), kept.get("db").and_then(|v| v.as_f64()).map_or(-100.0, |v| v as f32))
+    }
+
+    /// Make the kept sensitivity the one calls use (at the start of a call).
+    pub(crate) fn apply_sensitivity(&self) {
+        let (auto, db) = self.sensitivity();
+        morpheus_call::set_noise_tuning(morpheus_call::NoiseTuning { gate_auto: auto, gate_threshold_db: db, ..morpheus_call::noise_tuning() });
+    }
+}
+
+#[uniffi::export]
+impl Morpheus {
+    pub fn input_sensitivity(&self) -> InputSensitivity {
+        let (auto, db) = self.sensitivity();
+        InputSensitivity { auto, threshold_db: db, active: auto || db > morpheus_call::GATE_MIN_DB + 0.5 }
+    }
+
+    /// Choose automatic, or a threshold in dBFS (-100: off); kept, and used by the next call.
+    pub fn set_input_sensitivity(&self, auto: bool, threshold_db: f32) {
+        let db = threshold_db.clamp(morpheus_call::GATE_MIN_DB, morpheus_call::GATE_MAX_DB);
+        let _ = std::fs::write(self.dir.join(SENSITIVITY_FILE), serde_json::json!({ "auto": auto, "db": db }).to_string());
+    }
+
+    /// What the call going measures: the voice's level, the gate's threshold and whether it is open.
+    pub fn gate_reading(&self) -> GateReading {
+        let (level_db, threshold_db, open) = morpheus_call::input_sensitivity();
+        GateReading { level_db, threshold_db, open }
+    }
+}
+
+/// The level of 16-bit samples in dBFS (-100 for silence), the unit the sensitivity threshold is in (the meter of the settings page).
+#[uniffi::export]
+pub fn gate_level_db(samples: Vec<i16>) -> f32 {
+    morpheus_call::mic_level_db(&samples)
 }

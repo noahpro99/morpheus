@@ -127,10 +127,12 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
         val goes = pulled[0] > height * 0.2f || fling > 1200f
         scope.launch {
             if (goes && snapshot.phase != CallPhase.FAILED) {
-                drop.animateTo(height, Motion.slide())
+                val began = android.os.SystemClock.elapsedRealtime()
+                drop.animateTo(height, Motion.release(), initialVelocity = maxOf(fling, 0f))
+                dev.morpheus.app.AppState.lastDismissMs = android.os.SystemClock.elapsedRealtime() - began
                 calls.show(false)
                 drop.snapTo(0f)
-            } else drop.animateTo(0f, Motion.slide())
+            } else drop.animateTo(0f, Motion.release())
         }
     }
     val pull = remember {
@@ -171,7 +173,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 detectVerticalDragGestures(
                     onDragStart = { speed = 0f; pulled[0] = 0f },
                     onDragEnd = { release(speed) },
-                    onDragCancel = { scope.launch { drop.animateTo(0f, Motion.slide()) } },
+                    onDragCancel = { scope.launch { drop.animateTo(0f, Motion.release()) } },
                 ) { change, amount ->
                     val dt = (change.uptimeMillis - change.previousUptimeMillis).coerceAtLeast(1L)
                     speed = amount / dt * 1000f
@@ -227,8 +229,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
                 items(snapshot.cards, key = { it.key }) { card -> Card(calls, snapshot, card, card.userId in hidden, { focused = card.key }) { panel = it } }
             }
         }
-        if (panel == OUTPUT_PANEL) OutputSheet(calls) { panel = null }
-        Controls(calls, snapshot, speaker, openOutput = { panel = if (panel == OUTPUT_PANEL) null else OUTPUT_PANEL }) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
+        Controls(calls, snapshot, speaker, openOutput = { panel = if (panel == OUTPUT_PANEL) null else OUTPUT_PANEL }, outputOpen = panel == OUTPUT_PANEL, closeOutput = { panel = null }) { panel = if (panel == SETTINGS_PANEL) null else SETTINGS_PANEL }
     }
 }
 
@@ -284,7 +285,7 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
                 color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (card.kind != CardKind.SCREEN && card.kind != CardKind.UNWATCHED_SCREEN) {
-                if (person?.deafened == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_headset_off, Modifier.testTag("deafened-${card.name}"), size = 16.dp, tint = Color.White)
+                if (person?.deafened == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_hearing_disabled, Modifier.testTag("deafened-${card.name}"), size = 16.dp, tint = Color.White)
                 else if (person?.muted == true) GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_mic_off, Modifier.testTag("muted-${card.name}"), size = 16.dp, tint = Color.White)
             }
         }
@@ -316,7 +317,7 @@ internal fun VideoPicture(calls: CallModel, card: CallCard, modifier: Modifier =
 }
 
 @Composable
-private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean, openOutput: () -> Unit, openSettings: () -> Unit) {
+private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean, openOutput: () -> Unit, outputOpen: Boolean, closeOutput: () -> Unit, openSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Palette.Background).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -327,11 +328,14 @@ private fun Controls(calls: CallModel, snapshot: CallSnapshot, speaker: Boolean,
             return@Row
         }
         Control(if (snapshot.muted) dev.morpheus.app.R.drawable.ic_ms_mic_off_fill else dev.morpheus.app.R.drawable.ic_ms_mic, t("Mute"), "call-mute", snapshot.muted) { calls.toggleMute() }
-        Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_ms_headset_off_fill else dev.morpheus.app.R.drawable.ic_ms_headphones, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
+        Control(if (snapshot.deafened) dev.morpheus.app.R.drawable.ic_ms_hearing_disabled_fill else dev.morpheus.app.R.drawable.ic_ms_hearing, t("Deafen"), "call-deafen", snapshot.deafened) { calls.toggleDeafen() }
         if (snapshot.canShareScreen) Control(if (snapshot.people.any { it.me && it.screen }) dev.morpheus.app.R.drawable.ic_ms_stop_screen_share_fill else dev.morpheus.app.R.drawable.ic_ms_screen_share, t("Share screen"), "call-share", snapshot.people.any { it.me && it.screen }) { calls.toggleScreenShare() }
         if (snapshot.canSendVideo) Control(if (snapshot.camera) dev.morpheus.app.R.drawable.ic_ms_videocam_fill else dev.morpheus.app.R.drawable.ic_ms_videocam, t("Camera"), "call-camera", snapshot.camera) { calls.toggleCamera() }
         if (snapshot.camera && calls.canFlipCamera) Control(dev.morpheus.app.R.drawable.ic_ms_refresh, t("Flip camera"), "call-camera-flip", false) { calls.flipCamera() }
-        Control(if (speaker) dev.morpheus.app.R.drawable.ic_ms_volume_up_fill else dev.morpheus.app.R.drawable.ic_ms_call, t("Speaker"), "call-speaker", speaker) { openOutput() }
+        Box {
+            Control(if (speaker) dev.morpheus.app.R.drawable.ic_ms_volume_up_fill else dev.morpheus.app.R.drawable.ic_ms_call, t("Speaker"), "call-speaker", speaker) { openOutput() }
+            if (outputOpen) OutputMenu(calls, closeOutput)
+        }
         Control(dev.morpheus.app.R.drawable.ic_ms_settings, t("Call settings"), "call-settings", false) { openSettings() }
         androidx.compose.material3.FilledIconButton(
             { calls.hangUp() },
@@ -424,10 +428,9 @@ private fun ColumnScope.CallSettings(calls: CallModel, close: () -> Unit) {
     }
 }
 
-/** Where the call's sound goes (#496, #533): a bottom sheet as high as its radio rows, the current output chosen; a headset coming or going updates the list and the sheet follows. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+/** Where the call's sound goes (#496, #561): a compact menu anchored to the speaker button, an icon on each output (loudspeaker, earpiece, headphones, Bluetooth, USB), the current one checked; a headset coming or going updates the list. */
 @Composable
-private fun OutputSheet(calls: CallModel, close: () -> Unit) {
+private fun OutputMenu(calls: CallModel, close: () -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -439,16 +442,27 @@ private fun OutputSheet(calls: CallModel, close: () -> Unit) {
         audio.registerAudioDeviceCallback(watch, null)
         onDispose { audio.unregisterAudioDeviceCallback(watch) }
     }
-    androidx.compose.material3.ModalBottomSheet(close, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp).testTag("output-panel")) {
-        Text(t("Sound goes to"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+    androidx.compose.material3.DropdownMenu(true, close, Modifier.testTag("output-panel")) {
         tick
         for (route in calls.routes()) {
-            ChoiceRow(route.label, route.on, "route-${route.key}") { calls.chooseRoute(route.key); tick++ }
+            androidx.compose.material3.DropdownMenuItem(
+                { Text(route.label) },
+                { calls.chooseRoute(route.key); tick++; close() },
+                Modifier.semantics { stateDescription = if (route.on) "On" else "Off" }.testTag("route-${route.key}"),
+                leadingIcon = { GlyphIcon(routeIcon(route.kind), Modifier.testTag("route-icon-${route.key}"), size = 20.dp) },
+                trailingIcon = if (route.on) ({ GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_check, size = 20.dp, tint = MaterialTheme.colorScheme.primary) }) else null,
+            )
         }
-        TextButton(close, Modifier.testTag("output-close")) { Text(t("Close")) }
     }
-    }
+}
+
+@androidx.annotation.DrawableRes
+private fun routeIcon(kind: String): Int = when (kind) {
+    "speaker" -> dev.morpheus.app.R.drawable.ic_ms_volume_up
+    "earpiece" -> dev.morpheus.app.R.drawable.ic_ms_call
+    "bluetooth" -> dev.morpheus.app.R.drawable.ic_ms_bluetooth
+    "headphones" -> dev.morpheus.app.R.drawable.ic_ms_headphones
+    else -> dev.morpheus.app.R.drawable.ic_ms_headset_mic
 }
 
 /** Ask a friend into the call (#438): your friends, each with a button that invites them (a DM's call: the room's invite; a voice channel: a message with its link). */
@@ -607,3 +621,4 @@ private fun personCardColour(avatar: uniffi.morpheus_ffi.MediaHandle?): Color? {
     }
     return colour
 }
+

@@ -24,6 +24,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.material3.Slider
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +62,7 @@ internal fun VoicePage(app: AppModel, t: (String) -> String) {
         CameraCheck(app, t, inCall)
         SmallHeading(t("Microphone"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
         MicCheck(app, t, inCall)
+        InputSensitivity(app, t)
         NoiseSuppression(app, t)
         ScreenShareQuality(app, t)
         SmallHeading(t("People"), Modifier.padding(start = Space.lg, end = Space.lg, top = Space.lg))
@@ -221,4 +225,40 @@ private fun ScreenShareQuality(app: AppModel, t: (String) -> String) {
     SectionHeader(t("Screen share quality"))
     for (size in sizes) ChoiceRow(size.label, size.selected, "share-size-${size.key}") { app.morpheus.setShareResolution(size.key); sizes = app.morpheus.shareResolutions() }
     for (rate in rates) ChoiceRow(rate.label, rate.selected, "share-fps-${rate.key}") { app.morpheus.setShareFrameRate(rate.key.toUInt()); rates = app.morpheus.shareFrameRates() }
+}
+
+/**
+ * Input sensitivity (#545): the voice gate of the desktop's Voice & Video. The threshold is found automatically, or set (down to Off), and the
+ * mic is let through above it in the next call, with the live level of the microphone test beside it. A phone starts with it off.
+ */
+@Composable
+private fun InputSensitivity(app: AppModel, t: (String) -> String) {
+    var kept by remember { mutableStateOf(app.morpheus.inputSensitivity()) }
+    var db by remember { mutableFloatStateOf(kept.thresholdDb) }
+    var heard by remember { mutableFloatStateOf(-100f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            heard = MicTestState.current?.takeIf { it.running }?.levelDb ?: -100f
+            delay(100)
+        }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+        SectionHeader(t("Input sensitivity"))
+        ToggleRow(t("Automatically determine sensitivity"), kept.auto, "gate-auto", supporting = t("Your voice is let through above the room's noise.")) { on ->
+            app.morpheus.setInputSensitivity(on, db); kept = app.morpheus.inputSensitivity()
+        }
+        if (!kept.auto) {
+            Row(Modifier.padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Slider(db, { db = it }, Modifier.weight(1f).testTag("gate-threshold"), valueRange = -100f..0f, onValueChangeFinished = { app.morpheus.setInputSensitivity(false, db); kept = app.morpheus.inputSensitivity() })
+                Text(if (db <= -99.5f) t("Off") else "${Math.round(db)} dB", Modifier.testTag("gate-threshold-value"), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        // The microphone test's level, against the threshold: green where the voice is let through.
+        Box(Modifier.padding(horizontal = Space.lg).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Palette.Divider).testTag("gate-meter")) {
+            val past = !kept.auto && db > heard
+            Box(Modifier.fillMaxWidth(((heard + 100f) / 100f).coerceIn(0f, 1f)).height(8.dp).background(if (past) Palette.Muted else MaterialTheme.colorScheme.primary))
+            if (!kept.auto) Box(Modifier.fillMaxWidth(((db + 100f) / 100f).coerceIn(0f, 1f)).height(8.dp).wrapContentWidth(Alignment.End).width(2.dp).background(MaterialTheme.colorScheme.onSurface))
+        }
+        Text(if (heard > -99f) "${Math.round(heard)} dB" else t("Test your microphone above to see your level."), Modifier.padding(horizontal = Space.lg).testTag("gate-level"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
+    }
 }

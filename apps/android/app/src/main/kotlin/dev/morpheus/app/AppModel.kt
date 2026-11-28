@@ -752,7 +752,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     init {
         AppState.matrixLinks = { openMatrixLink(it) }
-        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile(); startUpdateChecks(); Streamer.update(morpheus) }; signedInChanged(it) }.launchIn(viewModelScope)
+        _screen.onEach { AppState.screen = it.name(); if (it is Screen.SignedIn) { AppState.sessionBack(); loadOwnProfile(); startUpdateChecks(); Streamer.update(morpheus); LeftCalls.me = it.account.userId }; signedInChanged(it) }.launchIn(viewModelScope)
         kotlinx.coroutines.flow.combine(pendingRoom, sidebar) { id, bar -> id to bar }.onEach { (id, bar) ->
             val room = bar?.scopes?.flatMap { it.sections }?.flatMap { it.rooms }?.firstOrNull { it.id == id }
             if (room != null) {
@@ -1062,6 +1062,10 @@ object AppState {
     /** The call screen keeps the display on (video is being watched; the debug bridge reports it). */
     @Volatile
     var keepScreenOn: Boolean = false
+
+    /** How long the call screen took to go after a swipe down was let go (ms; the debug bridge reports it, #552). */
+    @Volatile
+    var lastDismissMs: Long = -1
 
     /** The last theme code handed to the share sheet (the debug bridge reports it). */
     @Volatile

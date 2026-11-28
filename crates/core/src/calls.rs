@@ -248,13 +248,16 @@ impl Session {
                     .await
                     .is_ok()
             {
+                // The leave was sent; make sure the server shows it (#497): a name that stays in a voice channel for long is a leave that did not land.
+                session.verify_left(room.clone(), user_id.clone(), device_id.clone());
                 return Ok(());
             }
             room.send_state_event_for_key(
-                &member_state_key(user_id, device_id.as_str()),
+                &member_state_key(user_id.clone(), device_id.as_str()),
                 CallMemberEventContent::new_empty(None),
             )
             .await?;
+            session.verify_left(room.clone(), user_id.clone(), device_id.clone());
             Ok(())
         })
     }
@@ -2586,5 +2589,33 @@ impl Session {
         self.client
             .user_id()
             .is_some_and(|user| delayed_leave_armed(&user.to_owned(), room_id))
+    }
+}
+
+impl Session {
+    /// A few seconds after a leave: ask the server (not the local store, which may not have synced) whether this device is still in the room's
+    /// call, and clear it again if so (#497). The delayed-event send can answer yes and not take effect; a state event cannot.
+    fn verify_left(&self, room: matrix_sdk::Room, user_id: OwnedUserId, device_id: matrix_sdk::ruma::OwnedDeviceId) {
+        self.core.spawn(async move {
+            for _ in 0..3 {
+                crate::rt::sleep(std::time::Duration::from_secs(4)).await;
+                let key = format!("_{user_id}_{device_id}_m.call");
+                let now = room
+                    .client()
+                    .send(get_state_event_for_key::v3::Request::new(room.room_id().to_owned(), StateEventType::CallMember, key))
+                    .await;
+                let still_in = now
+                    .ok()
+                    .and_then(|reply| serde_json::from_str::<Value>(reply.event_or_content.get()).ok())
+                    .is_some_and(|content| content.get("device_id").is_some());
+                if !still_in {
+                    return;
+                }
+                tracing::warn!(room = %room.room_id(), "the call leave did not land; sending it again");
+                let _ = room
+                    .send_state_event_for_key(&member_state_key(user_id.clone(), device_id.as_str()), CallMemberEventContent::new_empty(None))
+                    .await;
+            }
+        });
     }
 }

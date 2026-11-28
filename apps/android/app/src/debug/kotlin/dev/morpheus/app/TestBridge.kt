@@ -322,7 +322,7 @@ class TestBridge(private val app: Application) {
         }
         // The microphone test on the Voice & Video page: `tone` true makes it hear a tone (the emulator's microphone is silent); `running` and `level` say how it is.
         "mic_test" -> {
-            if (request.has("tone")) dev.morpheus.app.MicTest.tone = request.getBoolean("tone")
+            if (request.has("tone")) { dev.morpheus.app.MicTest.tone = request.getBoolean("tone"); dev.morpheus.app.MicPump.tone = request.getBoolean("tone") }
             val test = dev.morpheus.app.ui.MicTestState.current
             JSONObject().put("running", test?.running == true).put("level", (test?.level ?: 0f).toDouble())
         }
@@ -358,12 +358,16 @@ class TestBridge(private val app: Application) {
                 .put("call_watchers", dev.morpheus.app.CallModel.current?.snapshot?.value?.watchers?.toLong() ?: JSONObject.NULL)
                 .put("screen_frames", AppState.screenFrames)
                 .put("noise_applied", dev.morpheus.app.CallModel.current?.noiseSuppressionApplied() ?: JSONObject.NULL)
+                .put("gate_open", (app as dev.morpheus.app.MorpheusApp).morpheus.gateReading().open)
+                .put("gate_kept", (app as dev.morpheus.app.MorpheusApp).morpheus.inputSensitivity().thresholdDb.toDouble())
+                .put("gate_threshold", (app as dev.morpheus.app.MorpheusApp).morpheus.gateReading().thresholdDb.toDouble())
                 .put("strong_frames", uniffi.morpheus_ffi.callMicFramesCleaned().toLong())
                 .put("mic_pump_frames", dev.morpheus.app.CallModel.current?.micPump?.frames ?: 0L)
                 .put("noise_applied_key", dev.morpheus.app.CallModel.current?.noiseApplied() ?: JSONObject.NULL)
                 .put("last_link", AppState.lastLink)
                 .put("last_copy", AppState.lastCopy)
                 .put("last_share", AppState.lastShare)
+                .put("last_dismiss_ms", AppState.lastDismissMs)
                 .put("colour_source", AppState.colourSource)
                 .put("sdk", android.os.Build.VERSION.SDK_INT)
                 .put("colour_pairs", JSONArray(AppState.colourPairs.map { JSONArray().put(it.first).put(it.second.toLong() and 0xFFFFFF).put(it.third.toLong() and 0xFFFFFF) }))

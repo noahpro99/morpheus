@@ -29,7 +29,7 @@ pub use imp::*;
     allow(dead_code)
 )]
 mod gate;
-pub use gate::{AUTO_MARGIN_DB, AUTO_MIN_DB, MAX_DB as GATE_MAX_DB, MIN_DB as GATE_MIN_DB};
+pub use gate::{AUTO_MARGIN_DB, AUTO_MIN_DB, MAX_DB as GATE_MAX_DB, MIN_DB as GATE_MIN_DB, level_db as mic_level_db};
 
 #[path = "noise.rs"]
 #[cfg_attr(

@@ -1,6 +1,7 @@
 package dev.morpheus.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
@@ -490,9 +491,9 @@ private fun MessageRow(
     val selection = LocalSelection.current
     val selecting = selection?.active == true
     val picked = selecting && message.key in selection!!.keys
-    // A tap anywhere on a message offers its actions. (Not `clickable`: that
     // A join, a leave or another room event is one compact line (#559): its icon, the small avatar of the same size, the words.
     val compact = message.state != null && message.body is MessageBody.Other
+    // A tap anywhere on a message offers its actions. (Not `clickable`: that
     // merges the message into one semantics node, and the tests, like a
     // screen reader, want the parts.)
     Row(
@@ -943,4 +944,17 @@ private const val MAX_FACES = 5
 /** The tallest the keyboard has been in this run, in px above the navigation bar: what the emoji panel is as tall as. */
 private object KeyboardHeight {
     var px = 0
+}
+
+/** A sender's name does what their picture does: a tap opens their profile, a long press their member menu (the desktop's right click). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun senderTaps(message: uniffi.morpheus_ffi.MessageItem): Modifier {
+    val openProfile = LocalOpenProfile.current ?: return Modifier
+    val memberMenu = LocalOpenMemberMenu.current
+    val room = LocalProfileRoom.current
+    return Modifier.combinedClickable(
+        onClick = { openProfile(message.senderId, message.senderName, message.senderAvatar, room) },
+        onLongClick = if (memberMenu != null && room != null) ({ memberMenu(message.senderId, message.senderName, room) }) else null,
+    )
 }

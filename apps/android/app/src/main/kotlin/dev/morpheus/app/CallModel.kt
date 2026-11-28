@@ -75,6 +75,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     val roomId: String? get() = _snapshot.value?.roomId
 
     fun join(roomId: String, roomName: String) {
+    LeftCalls.clear(roomId)
         if (_snapshot.value?.roomId == roomId && _snapshot.value?.phase != CallPhase.ENDED && _snapshot.value?.phase != CallPhase.FAILED) {
             _open.value = true
             return
@@ -108,6 +109,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
         val before = _snapshot.value
         _snapshot.value = snapshot
         CallSounds.changed(before, snapshot)
+        if (snapshot.phase == CallPhase.ENDED || snapshot.phase == CallPhase.FAILED) LeftCalls.mark(snapshot.roomId)
         speakers.value = snapshot.roomId to snapshot.people.filter { it.speaking }.map { it.userId }.toSet()
         ringbackStep(snapshot)
         val sharingNow = snapshot.people.any { it.me && it.screen }
@@ -279,6 +281,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
 
     fun hangUp() {
         val call = handle
+        _snapshot.value?.roomId?.let { LeftCalls.mark(it) }
         if (call == null) {
             // A failed call is dismissed.
             _snapshot.value = null
@@ -334,7 +337,7 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
     // ---- where the sound goes
 
     /** A place the call's sound can go: the phone's loudspeaker or earpiece, or a headset. */
-    data class Route(val key: String, val label: String, val on: Boolean)
+    data class Route(val key: String, val label: String, val on: Boolean, val kind: String = key)
 
 
     private var picked: String? = null
@@ -364,7 +367,11 @@ class CallModel(private val morpheus: Morpheus, private val context: Context) {
                     AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> d.productName.toString().ifBlank { t("USB headset") }
                     else -> continue
                 }
-                out += Route("device-${d.id}", label, chosen == "device-${d.id}")
+                out += Route("device-${d.id}", label, chosen == "device-${d.id}", when (d.type) {
+                    AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET -> "bluetooth"
+                    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "headphones"
+                    else -> "usb"
+                })
             }
         }
         return out
