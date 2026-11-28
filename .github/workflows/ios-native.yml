@@ -1,3 +1,5 @@
+          cat "$RUNNER_TEMP/samples.txt" | head -300 || true
+          xcrun simctl spawn "$SIM" log show --last 40m --style compact --predicate 'process == "Morpheus"' 2>&1 | tail -80 || true
 # The native iPhone app (apps/ios, #520): lint and spec rules (fast, first), then the Rust XCFramework, the app and the
 # XCUITests on a simulator against a Synapse started in the job, in parallel with the device build (an unsigned .ipa).
 # Fast-CI rules (#358): cargo and SPM caches, the simulator boots and Synapse installs while Rust builds.
@@ -95,7 +97,7 @@ jobs:
           cd apps/ios
           set -o pipefail
           # A hung app is sampled every 45 s (its main thread, in the log): the tests hang after sign-in on the runner.
-          ( while sleep 20; do pid=$(pgrep -f "Morpheus.app/Morpheus" | head -1); [ -n "$pid" ] && { echo "SAMPLE cpu=$(ps -o %cpu= -p $pid)"; sample $pid 3 -mayDie 2>&1 | head -60 | sed "s/^/SAMPLE /"; }; done ) &
+          ( while sleep 20; do { date; ps -axo pid,%cpu,etime,comm | grep -i "[m]orpheus"; pid=$(pgrep -f "Morpheus.app/Morpheus" | head -1); [ -n "$pid" ] && sample $pid 3 -mayDie 2>&1 | head -70; } >> "$RUNNER_TEMP/samples.txt" 2>&1; done ) &
           trap 'kill $! 2>/dev/null' EXIT
           xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
             -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
@@ -113,6 +115,8 @@ jobs:
         if: failure()
         run: |
           tail -40 "$RUNNER_TEMP/xcodebuild.log" || true
+          head -300 "$RUNNER_TEMP/samples.txt" || true
+          xcrun simctl spawn "$SIM" log show --last 40m --style compact --predicate 'process == "Morpheus"' 2>&1 | tail -80 || true
           grep -B3 -A30 -iE "failed to install|Underlying Error" "$RUNNER_TEMP/xcodebuild.log" | head -80 || true
           grep -A60 "accessibility tree" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
           tail -30 "$RUNNER_TEMP/hs/synapse.log" || true
