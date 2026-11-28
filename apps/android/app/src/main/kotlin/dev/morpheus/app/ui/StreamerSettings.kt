@@ -12,6 +12,7 @@ import dev.morpheus.app.Streamer
 
 /** Settings > Streamer mode (#540): hide names, IDs and notification words while the screen is shared, or by hand. */
 @Composable
+@Suppress("ModifierMissing") // a settings page: the host lays it out
 fun StreamerPage(app: AppModel, t: (String) -> String) {
     var choices by remember { mutableStateOf(app.morpheus.streamerChoices()) }
     fun flip(key: String, now: Boolean) {

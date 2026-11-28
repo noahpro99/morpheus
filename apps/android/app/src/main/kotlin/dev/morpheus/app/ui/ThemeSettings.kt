@@ -49,6 +49,7 @@ private fun argb(v: UInt) = Color(0xFF000000.toInt() or v.toInt())
  * opens Android's share sheet with the code. The rules (the row's order, the history) are Rust's (`view_model::theme_row`).
  */
 @Composable
+@Suppress("ModifierMissing", "MultipleEmitters") // a settings section: the host lays it out, its rows and dialog are one unit
 fun ThemeSettings(app: AppModel, t: (String) -> String, look: Appearance, attempt: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     var version by remember { mutableIntStateOf(0) }

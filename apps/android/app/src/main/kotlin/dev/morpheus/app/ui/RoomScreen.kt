@@ -528,7 +528,7 @@ private fun MessageRow(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
                     Text(
                         dev.morpheus.app.Streamer.name(message.senderName),
-                        Modifier.testTag("msg-sender").then(senderTaps(message)),
+                        Modifier.testTag("msg-sender").senderTaps(message),
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
                    style = MaterialTheme.typography.bodyLarge,
@@ -955,11 +955,11 @@ private object KeyboardHeight {
 /** A sender's name does what their picture does: a tap opens their profile, a long press their member menu (the desktop's right click). */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun senderTaps(message: uniffi.morpheus_ffi.MessageItem): Modifier {
-    val openProfile = LocalOpenProfile.current ?: return Modifier
+private fun Modifier.senderTaps(message: uniffi.morpheus_ffi.MessageItem): Modifier {
+    val openProfile = LocalOpenProfile.current ?: return this
     val memberMenu = LocalOpenMemberMenu.current
     val room = LocalProfileRoom.current
-    return Modifier.combinedClickable(
+    return this.combinedClickable(
         onClick = { openProfile(message.senderId, message.senderName, message.senderAvatar, room) },
         onLongClick = if (memberMenu != null && room != null) ({ memberMenu(message.senderId, message.senderName, room) }) else null,
     )
