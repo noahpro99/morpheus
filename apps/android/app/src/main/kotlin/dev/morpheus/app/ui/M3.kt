@@ -317,6 +317,6 @@ object Motion {
     /** The shared axis (X) transition: a pane slides in or out over medium2 on the emphasized curve (the lists, the chat). */
     fun <T> slide() = androidx.compose.animation.core.tween<T>(Medium2, easing = Emphasized)
 
-    /** A swipe let go of finishes (or springs back) fast, about 200 ms, critically damped (#552): the screen goes on from where the finger left it. */
-    fun <T> release() = androidx.compose.animation.core.spring<T>(dampingRatio = 1f, stiffness = 1500f)
+    /** What a swipe let go of does: the pane swipes and the swipe down that closes a call finish (or come back) on this one spec (#552). */
+    fun <T> release() = slide<T>()
 }

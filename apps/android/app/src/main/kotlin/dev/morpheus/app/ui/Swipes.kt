@@ -78,13 +78,13 @@ fun SwipeBack(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
                         val goes = flick.commits(kotlin.math.abs(offset.value), width)
                         scope.launch {
                             if (goes) {
-                                offset.animateTo(if (offset.value < 0f) -width else width, Motion.slide())
+                                offset.animateTo(if (offset.value < 0f) -width else width, Motion.release())
                                 dispatcher?.onBackPressed()
                                 offset.snapTo(0f)
-                            } else offset.animateTo(0f, Motion.slide())
+                            } else offset.animateTo(0f, Motion.release())
                         }
                     },
-                    onDragCancel = { scope.launch { offset.animateTo(0f, Motion.slide()) } },
+                    onDragCancel = { scope.launch { offset.animateTo(0f, Motion.release()) } },
                 ) { change, amount ->
                     // Reversing only undoes the drag; it never crosses into the other way (#525).
                     lock = uniffi.morpheus_ffi.swipeDragLock(lock, amount)

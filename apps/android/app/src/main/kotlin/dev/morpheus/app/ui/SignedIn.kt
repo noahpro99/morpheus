@@ -124,7 +124,11 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
         val goal = if (tab == Tab.Dms) 0f else 1f
         // Coming from You, or from under a chat that is moving off the screen, there is nothing to slide from.
         if (before == Tab.Profile || slide.f.value > 0f) place.snapTo(goal)
-        else if (!dragging) place.animateTo(goal, Motion.slide())
+        else if (!dragging) {
+            val began = android.os.SystemClock.elapsedRealtime()
+            place.animateTo(goal, Motion.release())
+            dev.morpheus.app.AppState.lastPaneMs = android.os.SystemClock.elapsedRealtime() - began
+        }
         before = tab
     }
     if (tab == Tab.Profile) {

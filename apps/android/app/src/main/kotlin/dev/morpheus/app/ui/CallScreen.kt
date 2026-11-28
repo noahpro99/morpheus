@@ -128,7 +128,7 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
         scope.launch {
             if (goes && snapshot.phase != CallPhase.FAILED) {
                 val began = android.os.SystemClock.elapsedRealtime()
-                drop.animateTo(height, Motion.release(), initialVelocity = maxOf(fling, 0f))
+                drop.animateTo(height, Motion.release())
                 dev.morpheus.app.AppState.lastDismissMs = android.os.SystemClock.elapsedRealtime() - began
                 calls.show(false)
                 drop.snapTo(0f)

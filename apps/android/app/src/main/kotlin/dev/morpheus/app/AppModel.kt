@@ -1063,6 +1063,10 @@ object AppState {
     @Volatile
     var keepScreenOn: Boolean = false
 
+    /** How long the lists' left or right pane swipe took to settle after it was let go (ms; the debug bridge reports it, #552). */
+    @Volatile
+    var lastPaneMs: Long = -1
+
     /** How long the call screen took to go after a swipe down was let go (ms; the debug bridge reports it, #552). */
     @Volatile
     var lastDismissMs: Long = -1
