@@ -27,6 +27,13 @@ cargo build -q -p morpheus-ffi --example call_peer
 # 190 MB library takes 5 to 15 s. The phone's copy is the file itself, so its size says whether it is the same.
 apk=${MORPHEUS_APK:-apps/android/app/build/outputs/apk/debug/app-debug.apk} # a phone needs arm64: `just android-native-build-phone` copies its APK to target/phone-apk
 stamp=target/.android-installed-$ANDROID_SERIAL
+# The APK must carry the phone's ABI: x86_64 emulator builds and arm64 phone builds share apps/android/app/build/outputs, and the wrong one installs fine but never starts.
+abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
+libs=$(unzip -l "$apk")
+if ! grep -q "lib/$abi/" <<<"$libs"; then
+    echo "refusing: $apk has no lib/$abi (the phone $ANDROID_SERIAL runs $abi); build for it: just android-native-build (x86_64 emulator) or just android-native-build-phone (arm64 phone)" >&2
+    exit 1
+fi
 sum=$(sha256sum "$apk" | cut -d' ' -f1)
 installed=$(adb shell pm path $pkg 2>/dev/null | head -n 1 | cut -d: -f2 | tr -d "\r" || true)
 remote_size=""
