@@ -23,6 +23,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   lint:
@@ -104,6 +105,18 @@ jobs:
             -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 480 \
                         ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep --line-buffered -E "Test Case|error:|SAMPLE|\*\* TEST|Executed|AUDIT"
 
+      # The repository's cache quota is 10 GB, shared with Android, desktop and Windows. Every Cargo.lock change makes
+      # rust-cache save another ~1.7 GB entry and the old ones then push the iOS entry out (a miss costs a 28 min build, a hit 5-8).
+      # Keep the newest entry of this job's key and delete the older ones.
+      - name: Prune older rust caches of this job
+        if: always() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: v0-rust-ios-sim-test-
+        run: |
+          gh cache list --limit 100 --json id,key,createdAt -q "[.[] | select(.key | startswith(\"$PREFIX\"))] | sort_by(.createdAt) | reverse | .[1:] | .[].id" \
+            | while read -r id; do gh cache delete "$id" || true; done
+
       - name: Results
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,6 +165,18 @@ jobs:
           mkdir -p build/ipa/Payload
           cp -R build/dd/Build/Products/Release-iphoneos/Morpheus.app build/ipa/Payload/
           (cd build/ipa && zip -qry ../Morpheus-unsigned.ipa Payload)
+      # The repository's cache quota is 10 GB, shared with Android, desktop and Windows. Every Cargo.lock change makes
+      # rust-cache save another ~1.7 GB entry and the old ones then push the iOS entry out (a miss costs a 28 min build, a hit 5-8).
+      # Keep the newest entry of this job's key and delete the older ones.
+      - name: Prune older rust caches of this job
+        if: always() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: v0-rust-ios-device-
+        run: |
+          gh cache list --limit 100 --json id,key,createdAt -q "[.[] | select(.key | startswith(\"$PREFIX\"))] | sort_by(.createdAt) | reverse | .[1:] | .[].id" \
+            | while read -r id; do gh cache delete "$id" || true; done
+
       - uses: actions/upload-artifact@v4
         with:
           name: Morpheus-unsigned-ipa
