@@ -526,7 +526,7 @@ private fun MessageRow(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
                     Text(
                         dev.morpheus.app.Streamer.name(message.senderName),
-                        Modifier.testTag("msg-sender"),
+                        Modifier.testTag("msg-sender").then(senderTaps(message)),
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
                    style = MaterialTheme.typography.bodyLarge,
