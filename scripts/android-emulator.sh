@@ -20,6 +20,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 case "${ANDROID_SERIAL:-}" in emulator-*) port=${MORPHEUS_EMULATOR_PORT:-${ANDROID_SERIAL#emulator-}} ;; *) port=${MORPHEUS_EMULATOR_PORT:-5554} ;; esac # a plugged-in phone in ANDROID_SERIAL is never touched
 serial=emulator-$port
+case "${ANDROID_SERIAL:-}" in "" | emulator-*) ;; *) echo "emulator: $ANDROID_SERIAL is a real phone, nothing to start"; exit 0 ;; esac
 avd=${MORPHEUS_AVD:-morpheus}
 gpu=${MORPHEUS_EMULATOR_GPU:-swiftshader_indirect}
 snap=headless

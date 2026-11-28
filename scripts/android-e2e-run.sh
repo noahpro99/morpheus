@@ -12,6 +12,13 @@ cd "$(dirname "$0")/.."
 file=${1:?test file}
 shift
 export ANDROID_SERIAL=${ANDROID_SERIAL:-emulator-5554}
+pkg=dev.morpheus.mobile.debug # the tests' app; dev.morpheus.mobile is a person's own release app on a real phone and is never touched
+case "$ANDROID_SERIAL" in
+    emulator-*) ;;
+    *) # a real phone: the guard adb first on PATH, and only a debug-suffixed build goes on it
+        export PATH=$PWD/scripts/phone-guard:$PATH
+        grep -q '"applicationId": *"dev.morpheus.mobile.debug"' apps/android/app/build/outputs/apk/debug/output-metadata.json || { echo "refusing: the debug APK is not dev.morpheus.mobile.debug" >&2; exit 1; } ;;
+esac
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/target/android-host}
 
 cargo build -q -p morpheus-ffi --example call_peer
@@ -21,13 +28,13 @@ cargo build -q -p morpheus-ffi --example call_peer
 apk=apps/android/app/build/outputs/apk/debug/app-debug.apk
 stamp=target/.android-installed-$ANDROID_SERIAL
 sum=$(sha256sum "$apk" | cut -d' ' -f1)
-installed=$(adb shell pm path dev.morpheus.mobile 2>/dev/null | head -n 1 | cut -d: -f2 | tr -d "\r" || true)
+installed=$(adb shell pm path $pkg 2>/dev/null | head -n 1 | cut -d: -f2 | tr -d "\r" || true)
 remote_size=""
 [ -z "$installed" ] || remote_size=$(adb shell stat -c %s "$installed" 2>/dev/null | tr -d '\r' || true)
 if [ -n "$installed" ] && [ "$remote_size" = "$(stat -c %s "$apk")" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$sum" ]; then
     echo "app: this APK is installed already"
 else
-    adb install -r "$apk" || { adb uninstall dev.morpheus.mobile; adb install "$apk"; }
+    adb install -r "$apk" || { adb uninstall $pkg; adb install "$apk"; }
     echo "$sum" > "$stamp"
 fi
 

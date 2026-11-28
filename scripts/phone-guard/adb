@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# An `adb` in front of the real one for runs on a REAL phone (lane `phone`, scripts/android-e2e-run.sh puts it first on PATH).
+# The person's own app there is dev.morpheus.mobile (release-signed, their account): nothing may install, clear, uninstall, stop,
+# start, grant or run-as it. Any command naming that package (not dev.morpheus.mobile.debug) is refused, except read-only dumps.
+# The tests' package is dev.morpheus.mobile.debug. An emulator serial is never restricted.
+self_dir=$(cd "$(dirname "$0")" && pwd)
+real=$(PATH=$(printf %s "$PATH" | tr : '\n' | grep -vxF "$self_dir" | paste -sd:) command -v adb) || { echo "phone-guard: no real adb" >&2; exit 127; }
+serial=${ANDROID_SERIAL:-}
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[i]}" = -s ] && serial=${args[i + 1]:-}; done
+case "$serial" in emulator-*) exec "$real" "$@" ;; esac
+all=" $* "
+# the release id, not followed by .debug or another id character
+if printf '%s' "$all" | grep -Eq 'dev\.morpheus\.mobile($|[^.A-Za-z0-9_])|dev\.morpheus\.mobile\.[^d]|dev\.morpheus\.mobile\.d[^e]'; then
+    case "$all" in
+    *" dumpsys "* | *" pm path "* | *" pm list "* | *" pidof "*) ;; # looking is fine
+    *) echo "phone-guard: refused on a real phone (it is the person's own app): adb $*" >&2; exit 1 ;;
+    esac
+fi
+case "$all" in *" uninstall "* | *" pm clear "* | *" pm uninstall "*) # whatever it names, only the debug app
+    printf '%s' "$all" | grep -q 'dev\.morpheus\.mobile\.debug' || { echo "phone-guard: refused (no debug package named): adb $*" >&2; exit 1; } ;;
+esac
+exec "$real" "$@"

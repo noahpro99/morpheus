@@ -87,10 +87,14 @@ android {
 
     buildTypes {
         debug {
+            // Its own app beside the real one (release-signed, the person's account): other ID, other name. Tests only ever touch this one.
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "Morpheus Dev"
             // The dev homeserver on the host, from the emulator.
             buildConfigField("String", "DEFAULT_HOMESERVER", "\"http://10.0.2.2:8008\"")
         }
         release {
+            manifestPlaceholders["appLabel"] = "Morpheus"
             isMinifyEnabled = true
             buildConfigField("String", "DEFAULT_HOMESERVER", "\"matrix.org\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
