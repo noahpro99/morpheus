@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import uniffi.morpheus_ffi.ShieldItem
 import uniffi.morpheus_ffi.StateLook
 import uniffi.morpheus_ffi.StateTone
@@ -41,9 +42,9 @@ fun StateOrText(summary: String, state: StateLook?, avatar: @Composable () -> Un
     }
     val name = when (state.tone) { StateTone.GOOD -> "good"; StateTone.BAD -> "bad"; StateTone.QUIET -> "quiet" }
     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-        GlyphIcon(drawable, Modifier.semantics { stateDescription = "${state.kind} $name" }.testTag("state-icon"), size = 20.dp, tint = tone)
+        GlyphIcon(drawable, Modifier.semantics { stateDescription = "${state.kind} $name" }.testTag("state-icon"), size = 18.dp, tint = tone)
         avatar()
-        Text(summary, Modifier.testTag("msg-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
+        Text(summary, Modifier.testTag("msg-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.6.sp, lineHeight = 19.sp))
     }
 }
 
