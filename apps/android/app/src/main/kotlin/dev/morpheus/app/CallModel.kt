@@ -27,6 +27,10 @@ import uniffi.morpheus_ffi.Morpheus
 class CallModel(private val morpheus: Morpheus, private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    init {
+        CallSounds.audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
     /** The microphone, captured here while a call cleans it with the strong noise model (#531). */
     val micPump = MicPump()
 

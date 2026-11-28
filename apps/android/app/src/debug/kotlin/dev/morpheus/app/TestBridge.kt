@@ -302,7 +302,10 @@ class TestBridge(private val app: Application) {
         // The call sounds played so far (#439), by key; "clear" forgets them first.
         "call_sounds" -> {
             if (request.optBoolean("clear")) CallSounds.played.clear()
-            JSONObject().put("played", JSONArray(CallSounds.played.toList()))
+            // "media_volume": set the media stream (the test turns it to 0 and back; adb cannot on every phone).
+            if (request.has("media_volume")) (app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager).setStreamVolume(android.media.AudioManager.STREAM_MUSIC, request.optInt("media_volume"), 0)
+            request.optString("play").takeIf { it.isNotEmpty() }?.let { CallSounds.play(it) }
+            JSONObject().put("played", JSONArray(CallSounds.played.toList())).put("stream", CallSounds.lastStream)
         }
         // Make someone a friend (or not) of the signed-in account, for tests that start from a friends list.
         "friend" -> {
