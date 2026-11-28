@@ -410,6 +410,7 @@ private fun ChannelList(
                             onChat = { onOpenRoom(room) },
                             onMenu = { model.openSheet(room.name) { model.menu("room:${room.id}") { model.morpheus.roomMenuRows(room.id) } } },
                             onPress = { model.prefetchMenu("room:${room.id}") { model.morpheus.roomMenuRows(room.id) } },
+                            onHold = { if (!room.isVoice) model.warm(room) },
                             callName = { id ->
                                 val names by model.callNames.collectAsState()
                                 LaunchedEffect(id) { model.wantName(id) }
@@ -434,9 +435,25 @@ private fun ChannelList(
  * slot, so a name never runs under it), at least 48 dp tall (a DM 60). `callName` names someone in the room's call.
  */
 @Composable
-fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier, onChat: () -> Unit = {}, onPress: () -> Unit = {}) {
+fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier, onChat: () -> Unit = {}, onPress: () -> Unit = {}, onHold: () -> Unit = {}) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
-    Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent).pointerInput(room.id) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial); onPress() } }) {
+    Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent).pointerInput(room.id) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            onPress()
+            // Still down and not moved after a moment: most likely a tap, so the chat is composed while the finger is on the row.
+            val slop = viewConfiguration.touchSlop
+            val ended = withTimeoutOrNull(30) {
+                var done = false
+                while (!done) {
+                    val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id }
+                    done = change == null || !change.pressed || (change.position - down.position).getDistance() > slop
+                }
+                true
+            }
+            if (ended == null) onHold()
+        }
+    }) {
         // Just left (#497): my own name is out of the list at once, not when the server's echo arrives.
         val inCall = if (dev.morpheus.app.LeftCalls.hidesMe(room.id)) room.call.filter { it.userId != dev.morpheus.app.LeftCalls.me } else room.call
         Column {

@@ -78,6 +78,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -153,14 +155,16 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         scope.launch { for (uri in uris) context.read(uri)?.let { stage(it.name, it.mime, it.bytes) } }
     }
-    if (threadRoot == null) DisposableEffect(model) {
+    // A chat composed off screen before its tap (see AppModel.warm) takes neither Back nor the share and attach hooks.
+    val active = app.openRoom.collectAsState().value != null
+    if (threadRoot == null && active) DisposableEffect(model) {
         RoomHooks.attach = { name, mime, bytes -> stage(name, mime, bytes) }
         onDispose { RoomHooks.attach = null }
     }
 
     // Opening a chat (a tap or a swipe) never focuses the message box or raises the keyboard (#480); a tap on the box does.
     val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    BackHandler {
+    BackHandler(enabled = active) {
         when {
             searching -> searching = false
             info -> info = false
@@ -177,7 +181,7 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
     val openNow by app.openRoom.collectAsState()
     LaunchedEffect(newest, openNow?.id == room.id) { if (newest != null && threadRoot == null && openNow?.id == room.id) model.markRead() }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().onGloballyPositioned { dev.morpheus.app.AppState.stage("room_laid_out") }.drawWithContent { dev.morpheus.app.AppState.stage("room_draw"); drawContent(); dev.morpheus.app.AppState.stage("room_drawn") }) {
         if (searching) SwipeBack(Modifier.fillMaxSize()) { SearchPanel(model) { id ->
             searching = false
             if (id.isNotEmpty()) model.jumpTo(id)

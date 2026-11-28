@@ -77,6 +77,9 @@ private fun RootContent(model: AppModel) {
                     val signedIn = Screen.SignedIn(account)
                     val room by model.openRoom.collectAsState()
                     val open = room
+                    val warm by model.warmRoom.collectAsState()
+                    // A press that was not a tap lets the warm chat go after a moment.
+                    androidx.compose.runtime.LaunchedEffect(warm) { if (warm != null) { kotlinx.coroutines.delay(1500); if (model.openRoom.value == null) model.cool() } }
                     val securityOpen by model.securityOpen.collectAsState()
                     val security by model.security.collectAsState()
                     val shown = security
@@ -99,12 +102,13 @@ private fun RootContent(model: AppModel) {
                             // moves that opens it) and goes back out to it; a finger drag sets its place while it is down (#464).
                             var lastRoom by remember { mutableStateOf(open) }
                             if (open != null) lastRoom = open
+                            else if (warm != null && model.slide.f.value < 0.001f) lastRoom = warm
                             val slide = model.slide
                             androidx.compose.runtime.LaunchedEffect(open != null, slide.dragging) {
                                 if (!slide.dragging) {
                                     // The chat's first composition and layout is a long frame; the slide starts after it, or the frame's time is spent
                                     // from the slide's 300 ms and the pane seems to jump (the curve is fast at its start).
-                                    if (open != null && slide.f.value < 0.001f) { androidx.compose.runtime.withFrameNanos { }; androidx.compose.runtime.withFrameNanos { } }
+                                    if (open != null && slide.f.value < 0.001f && warm?.id != open.id) { androidx.compose.runtime.withFrameNanos { }; androidx.compose.runtime.withFrameNanos { } }
                                     slide.f.animateTo(if (open != null) 1f else 0f, Motion.slide())
                                 }
                             }
@@ -122,7 +126,7 @@ private fun RootContent(model: AppModel) {
                                 }
                             }
                             val shownRoom = lastRoom
-                            if (shownRoom != null && (open != null || at > 0.001f)) {
+                            if (shownRoom != null && (open != null || at > 0.001f || warm != null)) {
                                 val sign = if (slide.leaveSign != 0) slide.leaveSign else if (uniffi.morpheus_ffi.chatEdgeIsLeft(shownRoom.isDm)) -1 else 1
                                 Box(
                                     Modifier.fillMaxSize()

@@ -84,7 +84,9 @@ class RoomModel(
     /** A request for older messages is out (the screen asks again when it ends, if it still needs more). */
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
 
+    init { dev.morpheus.app.AppState.stage("model_start") }
     private val _rows = MutableStateFlow<List<TimelineRow>>(if (threadRoot == null) morpheus.cachedTimeline(room.id).orEmpty() else emptyList())
+    init { dev.morpheus.app.AppState.stage("cached_read") }
 
     /** Oldest first. */
     val rows: StateFlow<List<TimelineRow>> = _rows.asStateFlow()

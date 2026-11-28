@@ -131,6 +131,19 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
     private val _room = MutableStateFlow<RoomItem?>(null)
     val openRoom: StateFlow<RoomItem?> = _room.asStateFlow()
 
+    // A room being pressed is composed off screen before the finger lifts, so the tap that opens it only has to slide it in (the first composition and
+    // layout of a chat is most of what a tap waits for). It goes again if the press was not a tap.
+    private val _warm = MutableStateFlow<RoomItem?>(null)
+    val warmRoom: StateFlow<RoomItem?> = _warm.asStateFlow()
+
+    fun warm(room: RoomItem) {
+        if (_room.value == null && AppState.warmEnabled) _warm.value = room
+    }
+
+    fun cool() {
+        _warm.value = null
+    }
+
     /** Open a room; a locked one asks for its password first (a page), then opens through [openUnlocked]. */
     fun open(room: RoomItem) {
         if (morpheus.lockState(room.id).locked) {
@@ -586,6 +599,7 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
 
     fun closeRoom() {
         _room.value = null
+        _warm.value = null
         keep("room", null)
         AppState.room = ""
         AppState.screen = _screen.value.name()
@@ -1135,6 +1149,10 @@ object AppState {
         val now = android.os.SystemClock.uptimeMillis()
         if (last) stages[name] = now else stages.putIfAbsent(name, now)
     }
+
+    /** Rooms being pressed are composed off screen before the tap (AppModel.warm); the bridge can turn it off to compare. */
+    @Volatile
+    var warmEnabled: Boolean = true
 
     /** The classes of the overscroll effects the lists that fit use (the debug bridge reports them: they must be the platform's, #573). */
     val overscrollEffects: MutableSet<String> = java.util.Collections.synchronizedSet(LinkedHashSet())

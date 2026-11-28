@@ -208,6 +208,7 @@ class TestBridge(private val app: Application) {
         "image_delay" -> { AppState.imageDelayMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
         "stages_reset" -> { AppState.stages.clear(); true }
+        "warm" -> { AppState.warmEnabled = request.getBoolean("on"); true }
         // A tap (or the system back) and the time until something shows or goes: {tag or text or x,y, back, until, gone, timeout_ms} -> ms from the finger lifting to the frame that has it (flow timing).
         "timed" -> timed(request)
         "click" -> onMain { click(find(request)) }
@@ -582,7 +583,7 @@ class TestBridge(private val app: Application) {
             onMain { pressBack() }
         } else {
             touch(MotionEvent.ACTION_DOWN, down, point.first, point.second)
-            Thread.sleep(40)
+            Thread.sleep(80) // a human tap lasts about this long
             start = SystemClock.uptimeMillis()
             touch(MotionEvent.ACTION_UP, down, point.first, point.second)
         }
