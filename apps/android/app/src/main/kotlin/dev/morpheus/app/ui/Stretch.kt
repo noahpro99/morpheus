@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.Velocity
  */
 fun Modifier.stretch(state: LazyListState): Modifier = stretchWhen(!state.canScrollForward && !state.canScrollBackward)
 
+/** The same for a grid. */
+fun Modifier.stretch(state: androidx.compose.foundation.lazy.grid.LazyGridState): Modifier = stretchWhen(!state.canScrollForward && !state.canScrollBackward)
+
 /** The same for a column scrolled by `verticalScroll`. */
 fun Modifier.stretch(state: ScrollState): Modifier = stretchWhen(!state.canScrollForward && !state.canScrollBackward)
 

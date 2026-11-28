@@ -220,9 +220,11 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
         } else if (snapshot.cards.firstOrNull { it.key == focused } != null) {
             FocusedCard(calls, snapshot.cards.first { it.key == focused }) { focused = null }
         } else {
+            val cardGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
             LazyVerticalGrid(
                 GridCells.Fixed(if (snapshot.cards.size <= 1) 1 else 2),
-                Modifier.weight(1f).padding(8.dp),
+                Modifier.stretch(cardGrid).weight(1f).padding(8.dp),
+                state = cardGrid,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

@@ -540,9 +540,10 @@ fn lists_without_stretch(text: &str) -> Vec<usize> {
     let shape = String::from_utf8_lossy(&shape).into_owned();
     let line_of = |at: usize| code[..at].bytes().filter(|b| *b == b'\n').count() + 1;
     let mut out = Vec::new();
-    for (at, _) in code.match_indices("LazyColumn(") {
+    let lists: Vec<(usize, usize)> = code.match_indices("LazyColumn(").map(|(at, _)| (at, "LazyColumn".len())).chain(code.match_indices("LazyVerticalGrid(").map(|(at, _)| (at, "LazyVerticalGrid".len()))).collect();
+    for (at, name_len) in lists {
         // The call's arguments: to the matching parenthesis.
-        let open = at + "LazyColumn".len();
+        let open = at + name_len;
         let mut depth = 0usize;
         let mut end = open;
         for (i, b) in shape.bytes().enumerate().skip(open) {
