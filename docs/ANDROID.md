@@ -204,3 +204,11 @@ The signed-in home has no bottom bar (#500): DMs and Servers are two pages a swi
 A launch with a saved session draws the last state before the session is back: the channel list (ffi `sidebar_cache`), the tab, the server, and the open room with its last 40 rows (ffi `timeline_cache`, one room, no pictures); the live rows replace them. `Root` shows both the restoring and the signed-in state through one branch, so a room and what is typed in its composer stay as they are when the session arrives.
 
 Start-up, measured on the emulator as the debug bridge reports it (`state`: `first_list_ms`, `first_room_ms`, `session_ms`, and `marks`, named points in ms from the process start; the e2e `a_relaunch_shows_where_you_left_off...` prints them): the Rust core (the first UniFFI call loads JNA and checks every binding) and the camera driver start on a thread of their own from `Application.onCreate`, `MainActivity` makes the model when the first frame composes instead of in `onCreate`, the list of the last run is the channel list's first value (no skeleton frame), and the push registration waits for the first frame. First list: 802 ms, then about 580 ms. About 220 ms of that is the system starting the process before `Application.onCreate`; the rest is the activity and the first composition (about 100 ms).
+
+## Timing on a real phone
+
+Debug numbers mislead (no R8, Compose tooling on): the chat flow measured 244 to 1066 ms per step in the debug build and 26 to 159 ms in the benchmark build. For timing use
+`just android-native-build-phone-bench` (the release code with the test bridge: minified, not debuggable, under the dev app's ID, signed with the debug key; the APK is
+`target/phone-apk-bench/app-debug.apk`) and run in lane phone2 with `MORPHEUS_APK=$PWD/target/phone-apk-bench/app-debug.apk MORPHEUS_FLOW_RELEASE_LIKE=1 just e2e-android-native-run android_flows the_chat_flow`.
+The bridge's `timed` request measures from the finger lifting to the frame that shows the result and `timed_stages` lists the stages the app marked on the way (`AppState.stage`).
+Do not run the emulator lane in the same checkout while a phone build runs: both write app/build/outputs, and an arm64 APK installed on the emulator never opens its bridge.

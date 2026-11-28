@@ -309,3 +309,7 @@ android-shots-record: android-check-prep
 android-rules:
     rustc --edition 2021 --test crates/view-model/src/android_rules.rs -o target/android_rules
     target/android_rules
+
+# The benchmark APK for the real phone (arm64): the release code (R8, not debuggable) with the test bridge, under the dev app's ID, signed with the debug key; copied to target/phone-apk-bench
+android-native-build-phone-bench:
+    nix develop .#android-emulator -c bash -c "cd apps/android && gradle assembleBenchmark -PrustAbis=arm64-v8a" && mkdir -p target/phone-apk-bench && cp apps/android/app/build/outputs/apk/benchmark/app-benchmark.apk target/phone-apk-bench/app-debug.apk && cp apps/android/app/build/outputs/apk/benchmark/output-metadata.json target/phone-apk-bench/

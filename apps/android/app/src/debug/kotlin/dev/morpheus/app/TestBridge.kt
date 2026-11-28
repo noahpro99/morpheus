@@ -207,6 +207,7 @@ class TestBridge(private val app: Application) {
         "profile_delay" -> { AppState.profileDelayMs = request.getLong("ms"); true }
         "image_delay" -> { AppState.imageDelayMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
+        "stages_reset" -> { AppState.stages.clear(); true }
         // A tap (or the system back) and the time until something shows or goes: {tag or text or x,y, back, until, gone, timeout_ms} -> ms from the finger lifting to the frame that has it (flow timing).
         "timed" -> timed(request)
         "click" -> onMain { click(find(request)) }
@@ -379,6 +380,7 @@ class TestBridge(private val app: Application) {
                 .put("haptics", AppState.haptics)
                 .put("haptic_log", JSONArray(AppState.hapticLog.toList()))
                 .put("older_scrolls", AppState.olderScrolls)
+                .put("stages", JSONObject(AppState.stages.toMap()))
                 .put("overscroll_effects", JSONArray(AppState.overscrollEffects.toList()))
                 .put("sheet_rows_lag_ms", if (AppState.sheetRowsAt > 0 && AppState.sheetAt > 0) maxOf(0L, AppState.sheetRowsAt - AppState.sheetAt) else -1)
                 .put("sheet_lag_ms", if (AppState.sheetAt >= AppState.touchDownAt && AppState.sheetAt > 0) AppState.sheetAt - AppState.touchDownAt else -1)
@@ -589,7 +591,7 @@ class TestBridge(private val app: Application) {
             val ok = if (until != null) visible(until) else if (gone != null) !visible(gone) else true
             if (ok) {
                 afterFrames(1)
-                return JSONObject().put("ms", SystemClock.uptimeMillis() - start).put("ok", true)
+                return JSONObject().put("ms", SystemClock.uptimeMillis() - start).put("at", start).put("ok", true)
             }
             Thread.sleep(2)
         }

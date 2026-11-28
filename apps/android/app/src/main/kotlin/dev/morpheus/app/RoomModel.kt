@@ -53,6 +53,7 @@ class RoomModel(
             try {
                 if (open == null) throw IllegalStateException("The room could not be opened.")
                 item.run(open)
+                dev.morpheus.app.AppState.stage("send_returned")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -131,13 +132,17 @@ class RoomModel(
         scope.launch {
             try {
                 ready()
+                dev.morpheus.app.AppState.stage("room_ready")
                 val listener = object : TimelineListener {
                     override fun onRows(rows: List<TimelineRow>) {
+                        dev.morpheus.app.AppState.stage("rows_first")
+                        dev.morpheus.app.AppState.stage("rows_last", last = true)
                         _rows.value = rows
                         _live.value = true
                     }
                 }
                 timeline = if (threadRoot == null) morpheus.openRoom(room.id, listener) else morpheus.openThread(room.id, threadRoot, listener)
+                dev.morpheus.app.AppState.stage("room_opened")
                 opened.complete(timeline)
                 typingHandle = timeline?.watchTyping(object : uniffi.morpheus_ffi.TypingListener {
                     override fun onTyping(line: String?) {
@@ -193,6 +198,7 @@ class RoomModel(
     }
 
     fun send(text: String) {
+        dev.morpheus.app.AppState.stage("send_called")
         val editing = _editing.value
         if (editing?.eventId != null) {
             _editing.value = null

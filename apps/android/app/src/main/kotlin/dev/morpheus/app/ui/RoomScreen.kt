@@ -115,6 +115,7 @@ private val MentionGold = Color(0xFFFAA81A)
 @Composable
 fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClose: () -> Unit = { app.closeRoom() }) {
     val model = remember(room.id, threadRoot) { RoomModel(app.morpheus, room, threadRoot, ready = { app.awaitSession() }) }
+    androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.stage("room_screen") }
     var thread by remember(room.id) { mutableStateOf<String?>(null) }
     DisposableEffect(model) { onDispose { model.close() } }
     val allRows by model.rows.collectAsState()
@@ -669,6 +670,7 @@ private fun Composer(
     staged: List<Staged>, onUnstage: (Staged) -> Unit, onReceive: (String, String, ByteArray) -> Unit, onSend: (String) -> Unit,
 ) {
     // What is typed is kept with its cursor or selected range for this chat or thread (#460), and comes back when it is opened again.
+    androidx.compose.runtime.SideEffect { dev.morpheus.app.AppState.stage("composer_composed") }
     var field by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
     val current by androidx.compose.runtime.rememberUpdatedState(field)
     DisposableEffect(draftKey) { onDispose { Drafts.put(draftKey, current) } }

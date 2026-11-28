@@ -93,6 +93,17 @@ android {
             // The dev homeserver on the host, from the emulator.
             buildConfigField("String", "DEFAULT_HOMESERVER", "\"http://10.0.2.2:8008\"")
         }
+        // The release code with the test bridge in it, for timing on a real phone (debug numbers mislead: no R8, Compose tooling on): minified and not
+        // debuggable, under the dev app's ID and signed with the debug key. Only for `just android-native-build-phone-bench`.
+        create("benchmark") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "Morpheus Dev"
+            buildConfigField("String", "DEFAULT_HOMESERVER", "\"http://10.0.2.2:8008\"")
+            proguardFiles("proguard-benchmark.pro")
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
         release {
             manifestPlaceholders["appLabel"] = "Morpheus"
             isMinifyEnabled = true
@@ -100,6 +111,11 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfigs.findByName("release")?.let { signingConfig = it }
         }
+    }
+
+    sourceSets["benchmark"].apply {
+        kotlin.srcDir("src/debug/kotlin")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
     }
 
     sourceSets["main"].apply {

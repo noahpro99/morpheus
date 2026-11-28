@@ -1128,6 +1128,14 @@ object AppState {
     val hapticLog: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
 
     /** When the debug bridge's last touch went down, and when a long press opened a sheet (uptime ms; #530). */
+    /** When each stage of a step came (uptime ms, the first time since the last reset; the debug bridge reports them, for flow timing). */
+    val stages: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap()
+
+    fun stage(name: String, last: Boolean = false) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (last) stages[name] = now else stages.putIfAbsent(name, now)
+    }
+
     /** The classes of the overscroll effects the lists that fit use (the debug bridge reports them: they must be the platform's, #573). */
     val overscrollEffects: MutableSet<String> = java.util.Collections.synchronizedSet(LinkedHashSet())
 
