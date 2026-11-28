@@ -1007,6 +1007,9 @@ async fn the_unread_count_is_exact_for_two_messages_and_for_twenty_five() {
     bob.join_room_by_id(&room_id).await.expect("bob joins");
     let syncing = bob.clone();
     tokio::spawn(async move { let _ = syncing.sync(matrix_sdk::config::SyncSettings::default()).await; });
+    // The room is in view, so it is subscribed (a 20-event window): the case where the SDK alone counted 15 of 25.
+    let (rows, _rows_rx) = Feed::new();
+    let _open = app.open_room(id.clone(), rows).await.expect("open");
     let theirs = bob.get_room(&room_id).expect("room");
 
     for (count, label) in [(2usize, "two"), (25, "twenty-five")] {
