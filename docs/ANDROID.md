@@ -118,6 +118,13 @@ Agents on this machine run Android jobs in the android lane (`local-run.sh --lan
 desktop lane, which run at the same time; see the agent rules. The desktop lane uses its own Synapse on :8009
 (`just hs-up-desk`), because the e2e runs prune and re-seed the users alice, bob and carol.
 
+A second Android lane, `local-run.sh --lane android2`, runs at the same time as `android` on its own phone: the AVD `morpheus2` (same
+settings as `morpheus`; `just android-avd` makes the first, a copy of it the second) as `emulator-5556`, with the second Synapse. The app's debug build
+asks `10.0.2.2:8008`; `scripts/android-emulator.sh` with `MORPHEUS_EMULATOR_HS_PORT=8009` (the lane sets it, with `MORPHEUS_EMULATOR_PORT=5556`,
+`MORPHEUS_AVD=morpheus2` and `ANDROID_SERIAL`) adds a NAT rule in that phone (root shell, every start) that sends that address and port to :8009.
+No calls on it (LiveKit exists on the main homeserver only). It queues behind `desktop` jobs (one :8009). A lane job is never killed from
+outside: killing its process tree stops the phone's boot script and the Gradle daemon with it.
+
 ```sh
 just android-emulator-headless
 just e2e-android-native                 # build (Gradle skips what did not change), install, run

@@ -89,3 +89,17 @@ if [ "$window" = 0 ] && { [ "$save" = 1 ] || { [ "$ours" = 1 ] && [ ! -d "$snapd
     adbs emu avd snapshot save "$snap" >target/emulator-snapshot.log 2>&1 && echo "emulator: quick-boot snapshot '$snap' saved" \
         || echo "emulator: could not save the snapshot (continuing without)" >&2
 fi
+
+# A second phone (lane android2, MORPHEUS_EMULATOR_HS_PORT=8009) reaches the second Synapse: the app's debug build asks 10.0.2.2:8008 (the host's
+# main homeserver), so inside this phone that address and port are rewritten to the other port (a NAT rule in the guest, which does not
+# survive a boot: it is set every time this script has the phone up).
+hs_port=${MORPHEUS_EMULATOR_HS_PORT:-8008}
+if [ "$hs_port" != 8008 ]; then
+    adbs root >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do booted && break; sleep 0.5; done
+    rule=(-t nat -p tcp -d 10.0.2.2 --dport 8008 -j DNAT --to-destination 10.0.2.2:"$hs_port")
+    if adbs shell iptables -t nat -C OUTPUT "${rule[@]:2}" >/dev/null 2>&1; then :; else
+        adbs shell iptables -t nat -A OUTPUT "${rule[@]:2}"
+    fi
+    echo "emulator: $serial reaches 10.0.2.2:8008 as :$hs_port"
+fi
