@@ -458,6 +458,9 @@ fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () ->
                     for (member in room.call) {
                         val name = callName(member.userId)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                            // Each person with their picture, as the desktop lists them (#477).
+                            val avatars by dev.morpheus.app.People.avatars.collectAsState()
+                            Avatar(avatars[member.userId], name, 24.dp, Modifier.testTag("in-call-avatar-${room.name}-$name"), userId = member.userId)
                             Text(name, Modifier.testTag("in-call-${room.name}-$name"), color = Palette.Muted, style = MaterialTheme.typography.bodyMedium)
                             if (member.muted || member.deafened) GlyphIcon(
                                 if (member.deafened) dev.morpheus.app.R.drawable.ic_ms_headset_off else dev.morpheus.app.R.drawable.ic_ms_mic_off,

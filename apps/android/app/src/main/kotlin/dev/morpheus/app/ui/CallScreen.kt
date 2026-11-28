@@ -31,6 +31,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -234,14 +235,17 @@ fun CallScreen(calls: CallModel, snapshot: CallSnapshot, onChat: () -> Unit = {}
 @Composable
 private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, videoHidden: Boolean, focus: () -> Unit, openVolume: (String) -> Unit) {
     val person = snapshot.people.firstOrNull { it.userId == card.userId }
+    val cardColour = personCardColour(card.avatar)
     Box(
         Modifier
             .fillMaxWidth()
             .aspectRatio(if (card.kind == CardKind.PERSON) 1f else 16f / 9f)
             .clip(RoundedCornerShape(12.dp))
-            .background(Palette.Raised)
+            .background(cardColour ?: Palette.Raised)
             .pointerInput(card.kind) { if (card.kind != CardKind.UNWATCHED_SCREEN) detectTapGestures(onTap = { focus() }) }
             .border(if (card.speaking) 4.dp else 0.dp, if (card.speaking) speakingGreen else Color.Transparent, RoundedCornerShape(12.dp))
+            // The ring says who is speaking; the card says it to a screen reader and a test too (no dot by the name, #476).
+            .semantics { if (card.speaking) stateDescription = t("Speaking") }
             .testTag(if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) "card-screen-${card.name}" else "card-${card.name}"),
         contentAlignment = Alignment.Center,
     ) {
@@ -275,7 +279,6 @@ private fun Card(calls: CallModel, snapshot: CallSnapshot, card: CallCard, video
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (card.speaking) Box(Modifier.size(8.dp).clip(CircleShape).background(speakingGreen).testTag("speaking-${card.name}"))
             Text(
                 if (card.kind == CardKind.SCREEN || card.kind == CardKind.UNWATCHED_SCREEN) t("%{name}'s screen", "name" to dev.morpheus.app.Streamer.name(card.name)) else dev.morpheus.app.Streamer.name(card.name),
                 color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -576,4 +579,31 @@ fun PipCall(calls: CallModel, snapshot: CallSnapshot, modifier: Modifier = Modif
             else -> Avatar(card.avatar, card.name, 64.dp)
         }
     }
+}
+
+/**
+ * The colour of a person's card (#475): the desktop's rule, through the core (`call_card_colour`: the picture's dominant colour, made into a
+ * card white text reads on), so a card looks the same on both. Null while there is no picture to take it from: the usual card colour.
+ */
+@Composable
+private fun personCardColour(avatar: uniffi.morpheus_ffi.MediaHandle?): Color? {
+    var colour by remember(avatar?.key()) { mutableStateOf<Color?>(null) }
+    LaunchedEffect(avatar?.key()) {
+        colour = avatar?.let { media ->
+            withContext(Dispatchers.Default) {
+                val picture = Images.load(media, 72, 72) ?: return@withContext null
+                val pixels = IntArray(picture.width * picture.height)
+                picture.readPixels(pixels)
+                val rgba = ByteArray(pixels.size * 4)
+                pixels.forEachIndexed { i, argb ->
+                    rgba[i * 4] = (argb shr 16).toByte()
+                    rgba[i * 4 + 1] = (argb shr 8).toByte()
+                    rgba[i * 4 + 2] = argb.toByte()
+                    rgba[i * 4 + 3] = (argb ushr 24).toByte()
+                }
+                uniffi.morpheus_ffi.callCardColour(rgba)?.let { Color(0xFF000000.toInt() or it.toInt()) }
+            }
+        }
+    }
+    return colour
 }

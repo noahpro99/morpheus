@@ -25,6 +25,7 @@ mod accounts;
 mod bridges;
 mod calls;
 mod channels;
+mod cards;
 mod composer;
 mod crop;
 mod discover;
