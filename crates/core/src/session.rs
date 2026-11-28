@@ -775,6 +775,70 @@ impl Core {
             }))
         })
     }
+
+    /// Send `body` (markdown) to a room from a process with no app running (a notification's Reply): the saved session
+    /// is restored, the message sent through the room (encrypted when it is), nothing synced.
+    pub fn reply_from_push(&self, room_id: String, body: String) -> CoreFuture<()> {
+        let core = self.clone();
+        self.run(async move {
+            let (client, room_id) = core.restored_for_push(&room_id).await?;
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::Other(format!("room {room_id} is not known")))?;
+            let content =
+                matrix_sdk::ruma::events::room::message::RoomMessageEventContent::from(
+                    crate::emotes::message_content(&body, &[]),
+                );
+            room.send(content).await?;
+            Ok(())
+        })
+    }
+
+    /// Send a read receipt for `event_id` from a process with no app running (a notification's Mark as read), and clear
+    /// the room's manual unread flag.
+    pub fn read_from_push(&self, room_id: String, event_id: String) -> CoreFuture<()> {
+        let core = self.clone();
+        self.run(async move {
+            use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+            use matrix_sdk::ruma::events::receipt::ReceiptThread;
+            let event_id: matrix_sdk::ruma::OwnedEventId = event_id
+                .parse()
+                .map_err(|_| Error::Other(format!("not an event id: {event_id}")))?;
+            let (client, room_id) = core.restored_for_push(&room_id).await?;
+            let room = client
+                .get_room(&room_id)
+                .ok_or_else(|| Error::Other(format!("room {room_id} is not known")))?;
+            room.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone())
+                .await?;
+            room.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id)
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// The saved session's client, restored without syncing, and the parsed room id.
+    async fn restored_for_push(&self, room_id: &str) -> Result<(Client, crate::OwnedRoomId)> {
+        let room_id: crate::OwnedRoomId = room_id
+            .parse()
+            .map_err(|_| Error::Other(format!("not a room id: {room_id}")))?;
+        let blocking = self.clone();
+        let (dir, stored) =
+            crate::rt::spawn_blocking(move || -> Result<(PathBuf, Option<StoredSession>)> {
+                let dir = blocking.active_account_dir();
+                let stored = session_store::resolve(&dir, blocking.session_store_kind()).load()?;
+                Ok((dir, stored))
+            })
+            .await??;
+        let Some(stored) = stored else {
+            return Err(Error::Other("nobody is signed in".into()));
+        };
+        let client = build_client(&dir, &stored.homeserver, Some(&stored.store_passphrase)).await?;
+        client
+            .matrix_auth()
+            .restore_session(stored.session, RoomLoadSettings::default())
+            .await?;
+        Ok((client, room_id))
+    }
 }
 
 /// A brand-new account's first device becomes its first verified one (see

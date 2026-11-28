@@ -31,6 +31,7 @@
         </service>
 
         <receiver android:name=".Ringer$RingActionReceiver" android:exported="false" />
+        <receiver android:name=".push.NotificationActionReceiver" android:exported="false" />
         <service android:name=".CallService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".ScreenShareService" android:exported="false" android:foregroundServiceType="mediaProjection" />
 

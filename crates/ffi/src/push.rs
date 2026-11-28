@@ -73,3 +73,19 @@ pub fn push_enabled(data_dir: String) -> bool {
 pub fn push_sounds(data_dir: String) -> bool {
     settings::message_sounds_enabled(std::path::Path::new(&data_dir))
 }
+
+/// A notification's Reply, with no app running: sends `text` to the room from the saved session.
+#[uniffi::export]
+pub async fn reply_from_push(data_dir: String, room_id: String, text: String) -> Result<(), FfiError> {
+    let core = Core::with_session_store(data_dir, SessionStoreKind::File)?;
+    core.reply_from_push(room_id, text).await?;
+    Ok(())
+}
+
+/// A notification's Mark as read, with no app running: a read receipt for the room's newest event.
+#[uniffi::export]
+pub async fn read_from_push(data_dir: String, room_id: String, event_id: String) -> Result<(), FfiError> {
+    let core = Core::with_session_store(data_dir, SessionStoreKind::File)?;
+    core.read_from_push(room_id, event_id).await?;
+    Ok(())
+}

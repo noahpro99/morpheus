@@ -73,7 +73,7 @@ pub use media::MediaHandle;
 pub use settings::{Appearance, LanguageChoice, MaterialItem, NotifyDefaults, PaletteItem, SettingHit, SettingsGroup, ThemeChoice, search_settings, settings_groups};
 pub use room_info::{PreviewCard, PreviewSettings, HitItem, MemberItem, MemberRow, ProfileCard, TypingListener};
 pub use people::{RailRowItem, DirectoryItem, DirectoryPage, FriendItem, InviteItem};
-pub use push::{PushNotice, preview_push};
+pub use push::{PushNotice, preview_push, read_from_push, reply_from_push};
 pub use rings::{IncomingRing, RingListener};
 pub use security::{
     ButtonKind, IncomingVerificationListener, PanelButton, PanelCode, PanelEmoji, PanelTone, RecoveryKind,
