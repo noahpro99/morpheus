@@ -125,6 +125,15 @@ asks `10.0.2.2:8008`; `scripts/android-emulator.sh` with `MORPHEUS_EMULATOR_HS_P
 No calls on it (LiveKit exists on the main homeserver only). It queues behind `desktop` jobs (one :8009). A lane job is never killed from
 outside: killing its process tree stops the phone's boot script and the Gradle daemon with it.
 
+A real phone, `local-run.sh --lane phone2`: the dedicated test phone, a Pixel 6 Pro, found by `model:Pixel_6_Pro` in `adb devices -l` when the job
+starts (USB or wifi, the serial changes; it waits up to 10 minutes for it and skips under 20% battery). It runs the debug app only
+(`dev.morpheus.mobile.debug`, "Morpheus Dev", beside any release app), built for arm64 with `just android-native-build-phone` (copied to
+`target/phone-apk`, the emulators' x86_64 build untouched; the lane's script takes it from `MORPHEUS_APK`). The homeserver is :8009 through `adb reverse`
+and the app is told `http://localhost:8009` (the harness types it at sign-in from `MORPHEUS_APP_HOMESERVER`), so it queues with `android2` and
+`desktop`. The lane wakes the phone (`KEYCODE_WAKEUP`, `wm dismiss-keyguard`; no screen lock), keeps it on for the job and puts the screen timeout
+back after. `scripts/phone-guard/adb` is first on PATH: it refuses any command naming `dev.morpheus.mobile` (not `.debug`) and any real device
+other than the lane's. Any other phone (the user's daily Pixel 8 Pro) is never used by a lane.
+
 ```sh
 just android-emulator-headless
 just e2e-android-native                 # build (Gradle skips what did not change), install, run

@@ -17,7 +17,7 @@ case "$ANDROID_SERIAL" in
     emulator-*) ;;
     *) # a real phone: the guard adb first on PATH, and only a debug-suffixed build goes on it
         export PATH=$PWD/scripts/phone-guard:$PATH
-        grep -q '"applicationId": *"dev.morpheus.mobile.debug"' apps/android/app/build/outputs/apk/debug/output-metadata.json || { echo "refusing: the debug APK is not dev.morpheus.mobile.debug" >&2; exit 1; } ;;
+        grep -q '"applicationId": *"dev.morpheus.mobile.debug"' "$(dirname "${MORPHEUS_APK:-apps/android/app/build/outputs/apk/debug/app-debug.apk}")/output-metadata.json" || { echo "refusing: the debug APK is not dev.morpheus.mobile.debug" >&2; exit 1; } ;;
 esac
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/target/android-host}
 
@@ -25,7 +25,7 @@ cargo build -q -p morpheus-ffi --example call_peer
 
 # Install the APK unless this very one is on the phone already (a test-only change): `adb install` of the
 # 190 MB library takes 5 to 15 s. The phone's copy is the file itself, so its size says whether it is the same.
-apk=apps/android/app/build/outputs/apk/debug/app-debug.apk
+apk=${MORPHEUS_APK:-apps/android/app/build/outputs/apk/debug/app-debug.apk} # a phone needs arm64: `just android-native-build-phone` copies its APK to target/phone-apk
 stamp=target/.android-installed-$ANDROID_SERIAL
 sum=$(sha256sum "$apk" | cut -d' ' -f1)
 installed=$(adb shell pm path $pkg 2>/dev/null | head -n 1 | cut -d: -f2 | tr -d "\r" || true)

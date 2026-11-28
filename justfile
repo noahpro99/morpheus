@@ -164,6 +164,10 @@ android-reinstall: sweep
 android-native-build abi="x86_64":
     nix develop .#android-emulator -c bash -c "cd apps/android && gradle assembleDebug -PrustAbis={{abi}}"
 
+# The debug APK for a real phone (arm64 only), copied to target/phone-apk (the emulators' x86_64 build is untouched): then `MORPHEUS_APK=target/phone-apk/app-debug.apk` for scripts/android-e2e-run.sh (lane phone2 sets it)
+android-native-build-phone:
+    nix develop .#android-emulator -c bash -c "cd apps/android && gradle assembleDebug -PrustAbis=arm64-v8a" && mkdir -p target/phone-apk && cp apps/android/app/build/outputs/apk/debug/app-debug.apk apps/android/app/build/outputs/apk/debug/output-metadata.json target/phone-apk/
+
 # Create the virtual phone (once; downloads the emulator and a system image, a few GB): a Pixel-sized Android 14 device in ~/.android/avd
 android-avd:
     nix develop .#android-emulator -c bash -c 'echo no | avdmanager create avd --force -n morpheus -d pixel_7 -k "system-images;android-34;google_apis;x86_64"'

@@ -9,6 +9,11 @@ serial=${ANDROID_SERIAL:-}
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[i]}" = -s ] && serial=${args[i + 1]:-}; done
 case "$serial" in emulator-*) exec "$real" "$@" ;; esac
+# A real device is allowed only when a lane named it (MORPHEUS_ALLOWED_PHONE: the dedicated test phone); any other is refused outright.
+if [ -z "${MORPHEUS_ALLOWED_PHONE:-}" ] || [ "$serial" != "$MORPHEUS_ALLOWED_PHONE" ]; then
+    case " $* " in *" devices "* | *" start-server "* | *" kill-server "*) exec "$real" "$@" ;; esac
+    echo "phone-guard: refused, $serial is not the lane's test phone (${MORPHEUS_ALLOWED_PHONE:-none}): adb $*" >&2; exit 1
+fi
 all=" $* "
 # the release id, not followed by .debug or another id character
 if printf '%s' "$all" | grep -Eq 'dev\.morpheus\.mobile($|[^.A-Za-z0-9_])|dev\.morpheus\.mobile\.[^d]|dev\.morpheus\.mobile\.d[^e]'; then
