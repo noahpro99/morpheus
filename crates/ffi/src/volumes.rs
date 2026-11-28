@@ -369,9 +369,9 @@ impl Morpheus {
     }
 
     /// Choose automatic, or a threshold in dBFS (-100: off); kept, and used by the next call.
-    pub fn set_input_sensitivity(&self, auto: bool, threshold_db: f32) {
+    pub fn set_input_sensitivity(&self, automatic: bool, threshold_db: f32) {
         let db = threshold_db.clamp(morpheus_call::GATE_MIN_DB, morpheus_call::GATE_MAX_DB);
-        let _ = std::fs::write(self.dir.join(SENSITIVITY_FILE), serde_json::json!({ "auto": auto, "db": db }).to_string());
+        let _ = std::fs::write(self.dir.join(SENSITIVITY_FILE), serde_json::json!({ "auto": automatic, "db": db }).to_string());
     }
 
     /// What the call going measures: the voice's level, the gate's threshold and whether it is open.

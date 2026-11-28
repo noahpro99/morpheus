@@ -102,3 +102,40 @@ fn symbols_are_hidden_or_labelled() {
             .then_some("symbol without accessibility")
     }));
 }
+
+/// 7. No exported ffi function takes a parameter named like a C keyword (`auto`, `register`, ...): the generated C
+/// header would not compile for iOS (it broke the build twice, `open` and `auto`).
+#[test]
+fn ffi_parameters_are_not_c_keywords() {
+    const KEYWORDS: [&str; 12] = ["auto", "register", "static", "extern", "typedef", "volatile", "signed", "unsigned", "union", "inline", "restrict", "default"];
+    let mut found = Vec::new();
+    let mut files = Vec::new();
+    swift_files_ext(Path::new("crates/ffi/src"), "rs", &mut files);
+    for file in files {
+        let text = std::fs::read_to_string(&file).unwrap();
+        for (i, line) in text.lines().enumerate() {
+            let t = line.trim_start();
+            if !(t.starts_with("pub fn ") || t.starts_with("pub async fn ") || t.starts_with("fn ") || t.starts_with("async fn ")) {
+                continue;
+            }
+            let Some(open) = t.find('(') else { continue };
+            for word in KEYWORDS {
+                if t[open..].contains(&format!("({word}: ")) || t[open..].contains(&format!(", {word}: ")) {
+                    found.push(format!("{}:{}: {}", file.display(), i + 1, t));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "C keywords as ffi parameter names\n{}", found.join("\n"));
+}
+
+fn swift_files_ext(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).expect("read dir").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            swift_files_ext(&path, ext, out);
+        } else if path.extension().is_some_and(|e| e == ext) {
+            out.push(path);
+        }
+    }
+}
