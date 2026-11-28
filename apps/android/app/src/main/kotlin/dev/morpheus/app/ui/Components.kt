@@ -54,7 +54,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun UnreadBadge(count: ULong, tag: String, muted: Boolean = false, modifier: Modifier = Modifier) {
     val fill = if (muted) Palette.Raised else Palette.Accent
-    Pill(count.toString(), fill, if (muted) Palette.Muted else onColour(fill), tag, modifier)
+    Pill(if (count > 99UL) "99+" else count.toString(), fill, if (muted) Palette.Muted else onColour(fill), tag, modifier)
 }
 
 /** A mention count: the danger fill, so it reads before an unread one. */

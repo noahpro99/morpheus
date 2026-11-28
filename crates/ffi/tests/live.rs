@@ -1012,7 +1012,9 @@ async fn the_unread_count_is_exact_for_two_messages_and_for_twenty_five() {
     let _open = app.open_room(id.clone(), rows).await.expect("open");
     let theirs = bob.get_room(&room_id).expect("room");
 
-    for (count, label) in [(2usize, "two"), (25, "twenty-five")] {
+    for (count, label) in [(2usize, "two"), (25, "twenty-five"), (120, "a hundred and twenty")] {
+        // A flood past the look-back (100) is counted up to it: the phone shows 99+.
+        let want = count.min(100);
         for n in 1..=count {
             theirs.send(RoomMessageEventContent::text_plain(format!("{label} {n}"))).await.expect("send");
         }
@@ -1022,18 +1024,18 @@ async fn the_unread_count_is_exact_for_two_messages_and_for_twenty_five() {
             loop {
                 let s = sidebar_rx.recv().await.expect("sidebar");
                 seen = unread_of(&s).unwrap_or(0);
-                if seen as usize >= count {
+                if seen as usize >= want {
                     return;
                 }
             }
         })
         .await;
-        assert!(settled.is_ok(), "{label}: the count never reached {count}, the list says {seen}");
+        assert!(settled.is_ok(), "{label}: the count never reached {want}, the list says {seen}");
         tokio::time::sleep(Duration::from_secs(2)).await;
         while let Ok(s) = sidebar_rx.try_recv() {
             seen = unread_of(&s).unwrap_or(seen);
         }
-        assert_eq!(seen as usize, count, "{label}: the list's unread count is exact");
+        assert!(seen as usize >= want && seen as usize <= count, "{label}: the list's unread count is exact (or at the look-back): {seen} of {count}");
         app.mark_rooms_read(vec![id.clone()]).await.expect("mark read");
         until(&mut sidebar_rx, "read", |s: &Sidebar| unread_of(s) == Some(0)).await;
     }

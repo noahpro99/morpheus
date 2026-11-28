@@ -255,6 +255,7 @@ impl RoomSummary {
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| room.room_id().to_string());
         let counts = room.unread_notification_counts();
+        top_up_unread(&room);
         let parent_spaces = parent_spaces(&room).await;
         let (space_children, can_edit_children) = if room.is_space() {
             let children = space_children(&room)
@@ -1023,4 +1024,52 @@ impl Session {
             Ok(())
         })
     }
+}
+
+/// When a room's unread count was last completed (a room is topped up at most once in ten seconds).
+static TOPPED_UP: std::sync::Mutex<Option<HashMap<OwnedRoomId, std::time::Instant>>> = std::sync::Mutex::new(None);
+
+/// The most unread messages the count looks back for (the phone shows "99+" beyond).
+const UNREAD_LOOKBACK: u64 = 100;
+
+/// The SDK counts unread messages among the events it holds after the read receipt. Under sliding sync a flood
+/// arrives as a limited timeline (the newest events, a gap before them), so only those are counted: 15 of 25 on the
+/// phone (Synapse's sliding sync sends `notification_count` 0 whatever is unread, so there is no server count to take).
+/// Walk back through the gap, a page at a time and for a bounded while, until the count stops growing (the receipt was
+/// reached) or it passes [`UNREAD_LOOKBACK`]; the count then updates itself as the older events join the cache.
+fn top_up_unread(room: &Room) {
+    if room.state() != RoomState::Joined || room.num_unread_messages() == 0 {
+        return;
+    }
+    let id = room.room_id().to_owned();
+    {
+        let mut guard = TOPPED_UP.lock().unwrap_or_else(|e| e.into_inner());
+        let map = guard.get_or_insert_with(HashMap::new);
+        if map.get(&id).is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(10)) {
+            return;
+        }
+        map.insert(id, std::time::Instant::now());
+    }
+    let room = room.clone();
+    crate::rt::spawn(async move {
+        let Ok((cache, _handles)) = room.event_cache().await else {
+            return;
+        };
+        let pagination = cache.pagination();
+        let mut last = room.num_unread_messages();
+        for _ in 0..6 {
+            if last >= UNREAD_LOOKBACK {
+                break;
+            }
+            let step = crate::rt::timeout(std::time::Duration::from_secs(10), pagination.run_backwards_once(20)).await;
+            let Ok(Ok(outcome)) = step else {
+                break;
+            };
+            let now = room.num_unread_messages();
+            if now == last || outcome.reached_start {
+                break;
+            }
+            last = now;
+        }
+    });
 }
