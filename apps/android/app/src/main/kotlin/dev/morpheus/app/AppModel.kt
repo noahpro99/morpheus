@@ -1127,6 +1127,9 @@ object AppState {
     val hapticLog: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
 
     /** When the debug bridge's last touch went down, and when a long press opened a sheet (uptime ms; #530). */
+    /** The classes of the overscroll effects the lists that fit use (the debug bridge reports them: they must be the platform's, #573). */
+    val overscrollEffects: MutableSet<String> = java.util.Collections.synchronizedSet(LinkedHashSet())
+
     /** How often a scroll towards older messages started with an empty box (#526; the debug bridge reports it). */
     @Volatile
     var olderScrolls: Int = 0

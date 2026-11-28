@@ -138,11 +138,11 @@ private fun ActionSheet(model: AppModel, request: dev.morpheus.app.SheetRequest,
         androidx.compose.ui.viewinterop.AndroidView(factory = { c -> android.view.View(c).also { inSheet[0] = it } }, modifier = Modifier.size(0.dp))
         // What a tap on a message has always shown is tagged "actions" (the old tests look for it).
         if (live && request.quickReactions.isNotEmpty()) Box(Modifier.size(1.dp).testTag("actions"))
-        var shown by remember { mutableStateOf<List<MenuRow>>(request.rows) }
+        var shown by remember(request.rows) { mutableStateOf<List<MenuRow>>(request.rows) }
         var trail by remember { mutableStateOf<List<MenuRow>>(emptyList()) }
         val sheetList = androidx.compose.foundation.lazy.rememberLazyListState()
-        // The rows arrive after the sheet is up: show them at the top level when they do.
-        LaunchedEffect(request.rows) { if (trail.isEmpty()) shown = request.rows }
+        // The rows arrive after the sheet is up: the list starts at its top with them (rows inserted above the one it was anchored on would leave it scrolled, #568).
+        LaunchedEffect(request.rows) { sheetList.scrollToItem(0) }
         // Back goes up one level of a submenu, and closes the sheet from the top (Material's own goes from full to half first).
         androidx.activity.compose.BackHandler(enabled = live) {
             if (trail.isEmpty()) model.closeSheet()

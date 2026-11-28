@@ -599,4 +599,16 @@ fn no_drawable_moves_its_path_with_an_attribute_only_a_group_has() {
         .map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
     bad.sort();
     assert!(bad.is_empty(), "drawables whose <path> has translateY/translateX (ignored: the icon draws off canvas; wrap the path in <group android:translateY=\"960\">): {bad:?}");
+
+#[test]
+fn the_stretch_is_the_platforms_and_not_one_of_our_own() {
+    // #573: a list that fits is given the platform's overscroll effect (fed by nested scroll); nothing scales or springs the list by hand.
+    let files = kotlin_files();
+    let (_, text) = files.iter().find(|(f, _)| f.ends_with("ui/Stretch.kt")).expect("ui/Stretch.kt");
+    let (code, _) = lex(text);
+    let code = String::from_utf8_lossy(&code);
+    assert!(code.contains("ScrollableDefaults.overscrollEffect()"), "the stretch uses the platform's overscroll effect");
+    for own in ["graphicsLayer", "scaleY", "spring(", "Animatable"] {
+        assert!(!code.contains(own), "ui/Stretch.kt draws its own effect ({own}): use the platform's (#573)");
+    }
 }

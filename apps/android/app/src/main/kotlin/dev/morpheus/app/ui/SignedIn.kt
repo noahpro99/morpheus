@@ -187,14 +187,20 @@ private fun ListsPane(model: AppModel, tab: Tab, state: Screen.SignedIn, onOpenR
     }) {
         val width = constraints.maxWidth
         val at = place.value
-        if (at < 1f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset((-at * width).toInt(), 0) }.testTag("dms-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(2, it.positionInWindow().x) }) { DmsPane(model, onOpenRoom) }
-        if (at > 0f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(((1f - at) * width).toInt(), 0) }.testTag("servers-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(3, it.positionInWindow().x) }) { ServersPane(model, onOpenRoom) }
+        // Only what is above the search bar moves with the finger; the bar stays where it is (#565).
+        Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        if (at < 1f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset((-at * width).toInt(), 0) }.testTag("dms-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(2, it.positionInWindow().x) }) { DmsPane(model, onOpenRoom, withBar = false) }
+        if (at > 0f) Box(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(((1f - at) * width).toInt(), 0) }.testTag("servers-pane").onGloballyPositioned { dev.morpheus.app.AppState.slide(3, it.positionInWindow().x) }) { ServersPane(model, onOpenRoom, withBar = false) }
+        }
+        SharedListBar(model, dms = at < 0.5f)
+        }
     }
 }
 
 /** The rail of servers and the channels of the one it points at, with the search bar under them (the quick switcher, #500). */
 @Composable
-fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier = Modifier, selectedRoom: String? = null) {
+fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modifier = Modifier, selectedRoom: String? = null, withBar: Boolean = true) {
     val sidebar by model.sidebar.collectAsState()
     val key by model.scopeKey.collectAsState()
     val bar = sidebar
@@ -204,7 +210,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
                 Column(Modifier.weight(1f).fillMaxHeight().background(Palette.Surface).padding(top = Space.xl)) { SkeletonRows(8, avatars = false) }
                 Box(Modifier.width(Size.rail).fillMaxHeight().background(Palette.Background))
             }
-            ListSearchBar(model, t("Search"))
+            if (withBar) ListSearchBar(model, t("Search"))
         }
         return
     }
@@ -213,10 +219,9 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     LaunchedEffect(scopes.size) { model.refreshRail() }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
     // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
-    val serverRows: suspend (ScopeItem) -> List<uniffi.morpheus_ffi.MenuRow> = { shown ->
-            (if (shown.kind == ScopeKind.SERVER) model.morpheus.serverMenuRows(shown.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder-channels:${shown.key.removePrefix("space:")}", "Reorder channels", t("Reorder channels"), "move", false, false, false, null, emptyList()) else emptyList()) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
-    }
-    val manage: (ScopeItem) -> Unit = { shown -> model.openSheet(shown.title) { model.menu("scope:${shown.key}") { serverRows(shown) } } }
+    val serverMenu = rememberServerMenu(model)
+    val serverRows = serverMenu.rows
+    val manage = serverMenu.open
     Column(modifier.fillMaxSize().background(Palette.Background)) {
         Row(Modifier.weight(1f).fillMaxWidth()) {
             if (scope == null) {
@@ -227,14 +232,16 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
             }
             Rail(scopes, railRows, scope?.key, { f -> model.openSheet(f.name) { model.morpheus.folderMenuRows(f.id, f.name) } }, onReorder = { model.setRailOrder(it) }, onManage = manage, closeSheet = { model.closeSheet() }, onPress = { shown -> model.prefetchMenu("scope:${shown.key}") { serverRows(shown) } }) { model.selectScope(it.key) }
         }
-        if (scope == null) ListSearchBar(model, t("Search"))
-        else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
+        if (withBar) {
+            if (scope == null) ListSearchBar(model, t("Search"))
+            else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
+        }
     }
 }
 
 /** Direct messages: one list of people, the same row as a channel, newest at the bottom, with the search bar under it. */
 @Composable
-fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
+fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, withBar: Boolean = true) {
     val bar by model.sidebar.collectAsState()
     val scope = bar?.scopes?.firstOrNull { it.kind == ScopeKind.DMS }
     // The DM a swipe right would open is marked like a server's last channel (#509); it follows the record, so it changes as soon as another is viewed.
@@ -246,7 +253,7 @@ fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
         } else {
             ChannelList(scope, emptyList(), model, onOpenRoom, Modifier.weight(1f).fillMaxWidth(), lastDm)
         }
-        ListSearchBar(model, t("Search DMs")) { MeButton(model) }
+        if (withBar) ListSearchBar(model, t("Search DMs")) { MeButton(model) }
     }
 }
 
@@ -567,3 +574,33 @@ fun InviteCard(invite: InviteItem, model: AppModel, modifier: Modifier = Modifie
 
 /** The channel list's panel: rounded at its two corners on the rail side (the bottom left is square, #551), concentric with what is inside it (#504). */
 internal val channelPanelShape = RoundedCornerShape(topEnd = Radius.lg, bottomEnd = Radius.lg)
+
+/** The menu of a server on the rail and on the bar: what the sheet holds, and opening it (the servers screen is at its end). */
+class ServerMenu(val rows: suspend (ScopeItem) -> List<uniffi.morpheus_ffi.MenuRow>, val open: (ScopeItem) -> Unit)
+
+@Composable
+fun rememberServerMenu(model: AppModel): ServerMenu = remember(model) {
+    val rows: suspend (ScopeItem) -> List<uniffi.morpheus_ffi.MenuRow> = { shown ->
+            (if (shown.kind == ScopeKind.SERVER) model.morpheus.serverMenuRows(shown.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder-channels:${shown.key.removePrefix("space:")}", "Reorder channels", t("Reorder channels"), "move", false, false, false, null, emptyList()) else emptyList()) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
+    }
+    ServerMenu(rows) { shown -> model.openSheet(shown.title) { model.menu("scope:${shown.key}") { rows(shown) } } }
+}
+
+/**
+ * The search bar under the two lists: one bar that stays put while the lists slide (#565), its hint and its button crossfading between the DMs
+ * (your picture) and the server the Servers page is on (its icon).
+ */
+@Composable
+private fun SharedListBar(model: AppModel, dms: Boolean) {
+    val sidebar by model.sidebar.collectAsState()
+    val key by model.scopeKey.collectAsState()
+    val scopes = sidebar?.scopes?.filter { it.kind != ScopeKind.DMS }.orEmpty()
+    val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
+    val menu = rememberServerMenu(model)
+    val hint = if (dms) t("Search DMs") else if (scope == null) t("Search") else t("Search %{name}", "name" to scope.title)
+    ListSearchBar(model, hint) {
+        androidx.compose.animation.Crossfade(dms, label = "bar-button") { forDms ->
+            if (forDms) MeButton(model) else if (scope != null) ServerButton(scope, { menu.open(scope) })
+        }
+    }
+}

@@ -1,71 +1,50 @@
 package dev.morpheus.app.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.overscroll
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
-import kotlinx.coroutines.launch
-import kotlin.math.abs
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 
 /**
- * The stretch when a list is pulled past its end, on every list (#516). A list that scrolls gets the platform's own from its scroll. One that
- * fits its space does not scroll, and Compose draws no stretch for it, so this one watches the drag (it takes nothing from the list or from what
- * is inside it) and stretches what is drawn from the edge being pulled, easing it back with a spring when the finger lets go. (A list that fits is
- * never made non-scrolling: `userScrollEnabled = false` would kill the stretch.) Every `LazyColumn` and `verticalScroll` carries this (the
- * android_rules check). Put it first in the list's modifier.
+ * The platform's stretch when a list is pulled past its end, on every list (#516, #573). A list that scrolls has it from its own scroll. One
+ * that fits its space does not scroll and Compose draws no stretch for it, so it gets the same platform effect (the system's EdgeEffect stretch,
+ * the one the chat has): the pull the list could not use is handed up as nested scroll and fed to that effect, which draws and settles it as it
+ * does for any list. (A list that fits is never made non-scrolling: `userScrollEnabled = false` would kill the stretch.) Every `LazyColumn` and
+ * `verticalScroll` carries this (the android_rules check). Put it first in the list's modifier.
  */
 fun Modifier.stretch(state: LazyListState): Modifier = stretchWhen(!state.canScrollForward && !state.canScrollBackward)
 
 /** The same for a column scrolled by `verticalScroll`. */
 fun Modifier.stretch(state: ScrollState): Modifier = stretchWhen(!state.canScrollForward && !state.canScrollBackward)
 
-/** How far a pull of this fraction of the list's height stretches it: it eases in and never passes about a fifth. */
-private fun stretchOf(pull: Float): Float = 0.2f * abs(pull) / (abs(pull) + 0.5f)
-
+@OptIn(ExperimentalFoundationApi::class)
 @Suppress("ModifierComposed")
 private fun Modifier.stretchWhen(fits: Boolean): Modifier = composed {
     if (!fits) {
         Modifier
     } else {
-        val pull = remember { Animatable(0f) }
-        val scope = rememberCoroutineScope()
-        Modifier
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    var x = 0f
-                    var y = 0f
-                    do {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull() ?: break
-                        x += change.positionChange().x
-                        y += change.positionChange().y
-                        // Only a drag that is mostly vertical, past the touch slop.
-                        if (abs(y) > viewConfiguration.touchSlop && abs(y) > abs(x)) {
-                            val height = size.height.toFloat().coerceAtLeast(1f)
-                            scope.launch { pull.snapTo((y / height).coerceIn(-1f, 1f)) }
-                        }
-                    } while (event.changes.any { it.pressed })
-                    scope.launch { pull.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) }
+        val effect = ScrollableDefaults.overscrollEffect()
+        dev.morpheus.app.AppState.overscrollEffects.add(effect.javaClass.simpleName)
+        val connection = remember(effect) {
+            object : NestedScrollConnection {
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+                    if (source == NestedScrollSource.UserInput && available != Offset.Zero) effect.applyToScroll(available, source) { Offset.Zero } else Offset.Zero
+
+                override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                    effect.applyToFling(available) { Velocity.Zero }
+                    return Velocity.Zero
                 }
             }
-            .graphicsLayer {
-                val stretch = stretchOf(pull.value)
-                scaleY = 1f + stretch
-                // Anchored at the edge that is not being pulled: a pull down stretches from the top.
-                transformOrigin = TransformOrigin(0.5f, if (pull.value >= 0f) 0f else 1f)
-            }
+        }
+        Modifier.overscroll(effect).nestedScroll(connection)
     }
 }

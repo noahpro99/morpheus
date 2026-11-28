@@ -63,7 +63,10 @@ fun ListSearchBar(model: AppModel, hint: String, modifier: Modifier = Modifier, 
     ) {
         // The glyph is centred on the pill's end cap: inset = R - size / 2.
         GlyphIcon(dev.morpheus.app.R.drawable.ic_ms_search, Modifier.padding(start = SearchBarHeight / 2 - 12.dp), tint = muted)
-        Text(hint, Modifier.weight(1f).padding(start = Space.md), color = muted, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        // A different hint (the other list, another server) crossfades.
+        androidx.compose.animation.Crossfade(hint, Modifier.weight(1f).padding(start = Space.md), label = "bar-hint") { shown ->
+            Text(shown, color = muted, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
             Bell(model)
             extra?.invoke()

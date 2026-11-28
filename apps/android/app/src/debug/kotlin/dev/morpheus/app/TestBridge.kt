@@ -377,6 +377,7 @@ class TestBridge(private val app: Application) {
                 .put("haptics", AppState.haptics)
                 .put("haptic_log", JSONArray(AppState.hapticLog.toList()))
                 .put("older_scrolls", AppState.olderScrolls)
+                .put("overscroll_effects", JSONArray(AppState.overscrollEffects.toList()))
                 .put("sheet_rows_lag_ms", if (AppState.sheetRowsAt > 0 && AppState.sheetAt > 0) maxOf(0L, AppState.sheetRowsAt - AppState.sheetAt) else -1)
                 .put("sheet_lag_ms", if (AppState.sheetAt >= AppState.touchDownAt && AppState.sheetAt > 0) AppState.sheetAt - AppState.touchDownAt else -1)
                 .put("image_fetches", AppState.imageFetches)
