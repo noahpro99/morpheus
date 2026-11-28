@@ -1026,29 +1026,49 @@ impl Session {
     }
 }
 
-/// When a room's unread count was last completed (a room is topped up at most once in ten seconds).
-static TOPPED_UP: std::sync::Mutex<Option<HashMap<OwnedRoomId, std::time::Instant>>> = std::sync::Mutex::new(None);
+/// What the unread count of a room was when it was last looked at.
+#[derive(Debug, Clone, Copy, Default)]
+struct UnreadSeen {
+    /// The count at the last update (a room not seen before starts at nothing).
+    count: u64,
+    /// When the room was last walked back through.
+    walked: Option<std::time::Instant>,
+}
+
+static UNREAD_SEEN: std::sync::Mutex<Option<HashMap<OwnedRoomId, UnreadSeen>>> = std::sync::Mutex::new(None);
 
 /// The most unread messages the count looks back for (the phone shows "99+" beyond).
 const UNREAD_LOOKBACK: u64 = 100;
 
-/// The SDK counts unread messages among the events it holds after the read receipt. Under sliding sync a flood
-/// arrives as a limited timeline (the newest events, a gap before them), so only those are counted: 15 of 25 on the
-/// phone (Synapse's sliding sync sends `notification_count` 0 whatever is unread, so there is no server count to take).
-/// Walk back through the gap, a page at a time and for a bounded while, until the count stops growing (the receipt was
-/// reached) or it passes [`UNREAD_LOOKBACK`]; the count then updates itself as the older events join the cache.
+/// A batch that brought this many new unread messages at once may have been limited (a gap before them).
+const FLOOD: u64 = 2;
+
+/// Whether to walk back through a room's history to complete its unread count. The SDK only counts the events it
+/// holds after the read receipt, and sliding sync gives a flood as a limited timeline (the newest events with a gap
+/// before them): 15 of 25 on the phone, and Synapse's sliding sync sends `notification_count` 0, so there is no server
+/// count to take. A room whose count did not grow, grew by one message, or is already at the look-back has no new gap
+/// to fill and costs no request.
+fn needs_walk_back(seen: &UnreadSeen, now: u64) -> bool {
+    let grew = now.saturating_sub(seen.count);
+    now > 0 && now < UNREAD_LOOKBACK && grew >= FLOOD && seen.walked.is_none_or(|at| at.elapsed() >= std::time::Duration::from_secs(10))
+}
+
 fn top_up_unread(room: &Room) {
-    if room.state() != RoomState::Joined || room.num_unread_messages() == 0 {
+    if room.state() != RoomState::Joined {
         return;
     }
+    let now = room.num_unread_messages();
     let id = room.room_id().to_owned();
     {
-        let mut guard = TOPPED_UP.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = UNREAD_SEEN.lock().unwrap_or_else(|e| e.into_inner());
         let map = guard.get_or_insert_with(HashMap::new);
-        if map.get(&id).is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(10)) {
+        let seen = map.entry(id).or_default();
+        let walk = needs_walk_back(seen, now);
+        seen.count = now;
+        if !walk {
             return;
         }
-        map.insert(id, std::time::Instant::now());
+        seen.walked = Some(std::time::Instant::now());
     }
     let room = room.clone();
     crate::rt::spawn(async move {
@@ -1066,10 +1086,42 @@ fn top_up_unread(room: &Room) {
                 break;
             };
             let now = room.num_unread_messages();
+            // A page that added nothing reached the read receipt: the count is whole.
             if now == last || outcome.reached_start {
                 break;
             }
             last = now;
         }
+        // What the walk found is the room's count now: the next growth is measured from it.
+        let mut guard = UNREAD_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(seen) = guard.get_or_insert_with(HashMap::new).get_mut(room.room_id()) {
+            seen.count = seen.count.max(last);
+        }
     });
+}
+
+#[cfg(test)]
+mod unread_walk_tests {
+    use super::*;
+
+    fn seen(count: u64) -> UnreadSeen {
+        UnreadSeen { count, walked: None }
+    }
+
+    #[test]
+    fn a_room_without_a_new_gap_triggers_no_pagination() {
+        assert!(!needs_walk_back(&seen(0), 0), "nothing unread");
+        assert!(!needs_walk_back(&seen(5), 5), "the count did not change: an idle unread room costs nothing");
+        assert!(!needs_walk_back(&seen(5), 6), "one new message came in whole");
+        assert!(!needs_walk_back(&seen(5), 3), "the count went down (read elsewhere)");
+        assert!(!needs_walk_back(&seen(40), 100), "already at the look-back");
+    }
+
+    #[test]
+    fn a_flood_or_a_room_met_with_unread_messages_is_walked_once_in_ten_seconds() {
+        assert!(needs_walk_back(&seen(0), 15), "a room met with 15 unread (a fresh start)");
+        assert!(needs_walk_back(&seen(1), 16), "a batch of 15 at once");
+        let just_walked = UnreadSeen { count: 1, walked: Some(std::time::Instant::now()) };
+        assert!(!needs_walk_back(&just_walked, 16), "not again within ten seconds");
+    }
 }
