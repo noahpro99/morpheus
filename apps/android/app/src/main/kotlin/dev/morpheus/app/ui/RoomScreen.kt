@@ -34,6 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -634,8 +636,11 @@ private fun MessageRow(
 // A long press on the picture opens the message sheet like anywhere on the message (the picture takes its own taps).
 private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit, onLongPress: () -> Unit) {
     val bitmap by produceState<ImageBitmap?>(null, body.media.key()) {
+        if (dev.morpheus.app.AppState.imageDelayMs > 0) kotlinx.coroutines.delay(dev.morpheus.app.AppState.imageDelayMs)
         value = Images.load(body.media, 720, 720)
     }
+    // The picture's own BlurHash, stretched, stands in while it loads (what the desktop does).
+    val blur = remember(body.blurhash) { body.blurhash?.let { uniffi.morpheus_ffi.blurPlaceholderPng(it) }?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
     val shape = RoundedCornerShape(8.dp)
     val ratio = if ((body.width ?: 0u) > 0u && (body.height ?: 0u) > 0u) body.width!!.toFloat() / body.height!!.toFloat() else 1.5f
     val loaded = bitmap
@@ -650,8 +655,9 @@ private fun PictureBody(body: MessageBody.Image, onImage: (MediaHandle) -> Unit,
         if (body.animated) AnimatedPicture(body.media, body.caption, frame) else Image(loaded, body.caption, frame, contentScale = ContentScale.Fit)
     } else {
         Box(
-            Modifier.padding(top = 4.dp).widthIn(max = 280.dp).aspectRatio(ratio.coerceIn(0.4f, 3f)).background(Palette.Raised, shape).testTag("msg-image-loading"),
-        )
+            Modifier.padding(top = 4.dp).widthIn(max = 280.dp).aspectRatio(ratio.coerceIn(0.4f, 3f)).clip(shape).background(Palette.Raised)
+                .semantics { stateDescription = if (blur != null) "blurred" else "" }.testTag("msg-image-loading"),
+        ) { blur?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium) } }
     }
 }
 

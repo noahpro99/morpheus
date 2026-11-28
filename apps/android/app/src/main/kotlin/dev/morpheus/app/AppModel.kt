@@ -1045,6 +1045,10 @@ object AppState {
     @Volatile
     var profileDelayMs: Long = 0L
 
+    /** The e2e bridge holds a message picture back this long (so its blur placeholder can be seen). */
+    @Volatile
+    var imageDelayMs: Long = 0L
+
     @Volatile
     var screen: String = "loading"
 

@@ -13,6 +13,11 @@ const SAMPLE: usize = 64;
 /// A data URL (a tiny PNG) of the picture `hash` describes, for showing
 /// stretched and blurred behind a picture while it loads.
 pub fn placeholder(hash: &str) -> Option<String> {
+    Some(format!("data:image/png;base64,{}", STANDARD.encode(placeholder_png(hash)?)))
+}
+
+/// The same tiny picture as PNG bytes (the phone draws it stretched and blurred).
+pub fn placeholder_png(hash: &str) -> Option<Vec<u8>> {
     const SIZE: u32 = 32;
     let rgba = blurhash::decode(hash, SIZE, SIZE, 1.0).ok()?;
     let mut png = Vec::new();
@@ -23,7 +28,7 @@ pub fn placeholder(hash: &str) -> Option<String> {
         let mut writer = encoder.write_header().ok()?;
         writer.write_image_data(&rgba).ok()?;
     }
-    Some(format!("data:image/png;base64,{}", STANDARD.encode(png)))
+    Some(png)
 }
 
 /// What to send with a picture: its size and BlurHash, when it is one this

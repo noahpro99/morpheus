@@ -55,6 +55,7 @@ pub use error::{Error, Result};
 pub type CoreFuture<T> = rt::BoxFuture<'static, Result<T>>;
 pub use accounts::SavedAccount;
 pub use blur::placeholder as blur_placeholder;
+pub use blur::placeholder_png as blur_placeholder_png;
 pub use calls::{
     CallCredentials, CallKey, CallKeyUpdates, CallMedia, CallMember, IncomingCall, RING_FOR_MS,
     CallMembership, RingUpdates, Ringing, Role as CallRole, foci_to_subscribe,

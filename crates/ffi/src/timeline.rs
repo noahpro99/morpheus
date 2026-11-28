@@ -161,6 +161,8 @@ pub enum MessageBody {
         height: Option<u32>,
         /// A GIF: it moves when drawn (#412).
         animated: bool,
+        /// Its BlurHash: the blurred placeholder drawn while it loads (#547).
+        blurhash: Option<String>,
     },
     /// A file, video or audio clip: a row to tap, which fetches it whole.
     File {
@@ -266,13 +268,14 @@ fn message_item(row: &MessageRow, show_header: bool, read_by: Vec<String>, sessi
             media,
             width,
             height,
-            ..
+            blurhash,
         } => MessageBody::Image {
             caption: body.clone(),
             media: MediaHandle::new(media.clone(), session),
             width: *width,
             height: *height,
             animated: morpheus_view_model::attachments::is_gif(body),
+            blurhash: blurhash.clone(),
         },
         MessageKind::File { body, media, size, .. } => MessageBody::File {
             name: body.clone(),
@@ -598,4 +601,10 @@ pub fn say_hi_offered(is_direct: bool, at_start: bool, message_is_event: Vec<boo
 #[uniffi::export]
 pub fn undo_seconds() -> u64 {
     morpheus_view_model::toast::UNDO_SECS
+}
+
+/// The tiny PNG a picture's BlurHash describes (drawn stretched while the picture loads), or `None` for a hash that does not decode.
+#[uniffi::export]
+pub fn blur_placeholder_png(hash: String) -> Option<Vec<u8>> {
+    morpheus_core::blur_placeholder_png(&hash)
 }

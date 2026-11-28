@@ -205,6 +205,7 @@ class TestBridge(private val app: Application) {
         "clock_offset" -> { AppState.clockOffsetMs = request.getLong("ms"); true }
         "older_delay" -> { AppState.olderDelayMs = request.getLong("ms"); true }
         "profile_delay" -> { AppState.profileDelayMs = request.getLong("ms"); true }
+        "image_delay" -> { AppState.imageDelayMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
         // A tap (or the system back) and the time until something shows or goes: {tag or text or x,y, back, until, gone, timeout_ms} -> ms from the finger lifting to the frame that has it (flow timing).
         "timed" -> timed(request)
