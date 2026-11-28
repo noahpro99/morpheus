@@ -95,11 +95,11 @@ jobs:
           cd apps/ios
           set -o pipefail
           # A hung app is sampled every 45 s (its main thread, in the log): the tests hang after sign-in on the runner.
-          ( while sleep 20; do { date; ps -axo pid,%cpu,etime,comm | grep -i "[m]orpheus"; pid=$(pgrep -f "Morpheus.app/Morpheus" | head -1); [ -n "$pid" ] && sample $pid 3 -mayDie 2>&1 | head -70; } >> "$RUNNER_TEMP/samples.txt" 2>&1; done ) &
+          ( set +e; while sleep 15; do { date; pid=$(ps -axo pid,command | grep "[M]orpheus.app/Morpheus" | head -1 | awk "{print \$1}"); echo "pid=$pid"; [ -n "$pid" ] && sample $pid 3 -mayDie 2>&1 | head -70; } >> "$RUNNER_TEMP/samples.txt" 2>&1; done ) &
           trap 'kill $! 2>/dev/null' EXIT
           xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
             -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
-            -only-testing:MorpheusUITests/ListsTests -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 150 \
+            -only-testing:MorpheusUITests/ListsTests/testSwipingMovesBetweenDirectMessagesAndServers -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 150 \
                         ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep --line-buffered -E "Test Case|error:|SAMPLE|\*\* TEST|Executed|AUDIT"
 
       - name: Results
