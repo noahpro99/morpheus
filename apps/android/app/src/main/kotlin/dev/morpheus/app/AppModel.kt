@@ -148,6 +148,8 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
         val record = uniffi.morpheus_ffi.lastChatsOpened(_lastChats.value, room.id, room.isDm, if (room.isDm) null else serverOf(room.id))
         keep("last-chats", record)
         _lastChats.value = record
+        // The room is in front of the person: its notification has been seen (#553).
+        morpheusApp?.getSystemService(android.app.NotificationManager::class.java)?.cancel(room.id.hashCode())
         AppState.room = room.id
         AppState.screen = "room"
     }

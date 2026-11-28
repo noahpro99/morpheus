@@ -415,14 +415,20 @@ private fun Timeline(
                         androidx.compose.material3.FilledTonalButton({ model.send(uniffi.morpheus_ffi.sayHiGreeting()) }, Modifier.testTag("say-hi")) { Text(t("Say hi! 👋")) }
                     }
                 }
-                TimelineRow.New -> Text(
-                    "NEW",
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("new-divider"),
-                    textAlign = TextAlign.Center,
-                    color = Palette.Danger,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                )
+                // The desktop's: a red line edge to edge with the NEW pill at its right end, centred on it.
+                TimelineRow.New -> Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp, end = 8.dp).testTag("new-divider"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f).height(1.dp).background(Palette.Danger).testTag("new-line"))
+                    Text(
+                        t("NEW"),
+                        Modifier.background(Palette.Danger, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp).testTag("new-pill"),
+                        color = Palette.OnDanger,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 14.sp),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
         // Older messages on their way (#501): skeleton rows above the oldest, so scrolling up never meets a blank edge. They are the last item of
@@ -485,6 +491,8 @@ private fun MessageRow(
     val selecting = selection?.active == true
     val picked = selecting && message.key in selection!!.keys
     // A tap anywhere on a message offers its actions. (Not `clickable`: that
+    // A join, a leave or another room event is one compact line (#559): its icon, the small avatar of the same size, the words.
+    val compact = message.state != null && message.body is MessageBody.Other
     // merges the message into one semantics node, and the tests, like a
     // screen reader, want the parts.)
     Row(
@@ -506,17 +514,18 @@ private fun MessageRow(
             .padding(horizontal = Space.md, vertical = if (message.showHeader) Space.sm else 1.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        if (message.showHeader) {
+        if (compact) {
+        } else if (message.showHeader) {
             Avatar(message.senderAvatar, message.senderName, Size.avatar, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey, userId = message.senderId)
         } else {
             Spacer(Modifier.size(Size.avatar))
         }
         Column(Modifier.weight(1f)) {
-            if (message.showHeader) {
+            if (message.showHeader && !compact) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
                     Text(
                         dev.morpheus.app.Streamer.name(message.senderName),
-                        Modifier.testTag("msg-sender"),
+                        Modifier.testTag("msg-sender").then(senderTaps(message)),
                         color = colourOf(message.senderId),
                         fontWeight = FontWeight.Bold,
                    style = MaterialTheme.typography.bodyLarge,
@@ -555,7 +564,7 @@ private fun MessageRow(
                         TextButton({ onFull(message) }, Modifier.testTag("show-more")) { Text(t("Show more")) }
                     }
                 }
-                is MessageBody.Other -> StateOrText(body.summary, message.state)
+                is MessageBody.Other -> StateOrText(body.summary, message.state) { Avatar(message.senderAvatar, message.senderName, 20.dp, Modifier.testTag("msg-avatar"), key = message.senderAvatarKey, userId = message.senderId) }
                 is MessageBody.Image -> PictureBody(body, onImage) { onActions(latest, true) }
                 is MessageBody.File -> if (body.kind == FileKind.VIDEO) VideoCard(body) { onActions(latest, true) } else Row(
                     Modifier

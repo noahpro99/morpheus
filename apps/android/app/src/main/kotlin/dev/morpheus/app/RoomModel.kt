@@ -247,7 +247,8 @@ class RoomModel(
         emptyList()
     }
 
-    fun markRead() = launchSafely { timeline?.markRead() }
+    // Waits for the room to be open: a room shown from the cache (a notification started the app) has its newest message before it has a timeline (#553).
+    fun markRead() = launchSafely { opened.await()?.markRead() }
 
     suspend fun search(query: String): List<uniffi.morpheus_ffi.HitItem> = try { timeline?.search(query).orEmpty() } catch (_: Exception) { emptyList() }
 

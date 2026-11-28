@@ -80,6 +80,7 @@ private val SYMBOLS: Map<String, String> = mapOf(
     "smile-plus" to "add_reaction",
     "square" to "crop_square",
     "star" to "star",
+    "text-select" to "text_select_start",
     "trash-2" to "delete",
     "user-cog" to "manage_accounts",
     "user-plus" to "person_add",

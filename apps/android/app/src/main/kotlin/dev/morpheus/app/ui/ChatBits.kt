@@ -23,7 +23,7 @@ import uniffi.morpheus_ffi.StateTone
 
 /** A room event's line (#410): the icon of its kind in its tone (green a join or a call, red a leave) and the words; any other line is quiet text. */
 @Composable
-fun StateOrText(summary: String, state: StateLook?) {
+fun StateOrText(summary: String, state: StateLook?, avatar: @Composable () -> Unit = {}) {
     if (state == null) {
         Text(summary, Modifier.testTag("msg-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
         return
@@ -42,6 +42,7 @@ fun StateOrText(summary: String, state: StateLook?) {
     val name = when (state.tone) { StateTone.GOOD -> "good"; StateTone.BAD -> "bad"; StateTone.QUIET -> "quiet" }
     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
         GlyphIcon(drawable, Modifier.semantics { stateDescription = "${state.kind} $name" }.testTag("state-icon"), size = 20.dp, tint = tone)
+        avatar()
         Text(summary, Modifier.testTag("msg-body"), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge)
     }
 }

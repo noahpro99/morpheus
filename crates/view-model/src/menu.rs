@@ -455,6 +455,7 @@ const TABLE: &[(&str, &str)] = &[
         ("Privacy & encryption", "lock"),
         ("Edit profile", "pencil"),
         ("Apply this theme", "palette"),
+        ("Select text", "text-select"),
         ("Copy text", "copy"),
         ("Copy image", "copy"),
         ("Copy message link", "link"),
@@ -873,6 +874,11 @@ mod tests {
     fn without_a_known_room_nothing_needs_one() {
         let items = message_menu(&message(false), None, false, &[], false);
         assert_eq!(labels(&items), ["Reply", "Reply in thread", "Copy text"]);
+    }
+
+    #[test]
+    fn select_text_has_an_icon() {
+        assert_eq!(default_icon("Select text"), Some("text-select"));
     }
 
     #[test]
