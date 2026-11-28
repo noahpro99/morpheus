@@ -23,11 +23,18 @@ struct ListsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                TabView(selection: $page) {
-                    dmList.tag(ListPage.dms)
-                    serverList.tag(ListPage.servers)
+                // Two pages side by side, a horizontal swipe moves between them (a paging TabView hung the app
+                // on the CI simulator while the sidebar updated under it).
+                Group {
+                    if page == .dms { dmList } else { serverList }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .simultaneousGesture(DragGesture(minimumDistance: 40).onEnded { drag in
+                    let across = drag.translation.width
+                    guard abs(across) > abs(drag.translation.height) * 2 else { return }
+                    withAnimation { page = across < 0 ? .servers : .dms }
+                })
                 .accessibilityIdentifier("lists")
                 VStack(spacing: 8) {
                     Picker("List", selection: $page) {
@@ -124,11 +131,18 @@ struct BottomList<Content: View>: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) { content }
-                .padding(.horizontal)
+        // Rows rest at the bottom, where the thumb is: the content is at least as tall as the screen and starts with a spacer.
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    LazyVStack(alignment: .leading, spacing: 0) { content }
+                        .padding(.horizontal)
+                }
+                .frame(minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .defaultScrollAnchor(.bottom)
         .background(model.theme.surface)
     }
 }
