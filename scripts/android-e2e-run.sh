@@ -45,4 +45,13 @@ else
     echo "$sum" > "$stamp"
 fi
 
-MORPHEUS_E2E_ANDROID_NATIVE=1 exec scripts/e2e-cargo.sh --test "$file" -- --nocapture --test-threads=1 "$@"
+# A stale APK must never pass as new: the app on the phone says what it was built from (its version name ends with
+# `+<id>`, scripts/build-id.sh), and that must be what this tree builds.
+want=$(scripts/build-id.sh)
+have=$(adb shell dumpsys package $pkg | tr -d "\r" | sed -n "s/^ *versionName=//p" | head -n 1)
+case "$have" in
+    *"+$want") echo "app: built from $want" ;;
+    *) echo "refusing: the app on $ANDROID_SERIAL was built from '$have', this tree is +$want: build it again (just android-native-build, or android-native-build-phone for a phone)" >&2; exit 1 ;;
+esac
+
+MORPHEUS_BUILD_ID=$want MORPHEUS_E2E_ANDROID_NATIVE=1 exec scripts/e2e-cargo.sh --test "$file" -- --nocapture --test-threads=1 "$@"

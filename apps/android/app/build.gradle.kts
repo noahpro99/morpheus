@@ -13,6 +13,12 @@ plugins {
 // separated; both by default.
 val rustAbis = (findProperty("rustAbis") as String?) ?: "arm64-v8a,x86_64"
 val repoRoot = rootDir.resolve("../..").canonicalFile
+// What this build was made from (scripts/build-id.sh): the debug app's version name ends with it, the test bridge reports it.
+val buildId = try {
+    ProcessBuilder("bash", "scripts/build-id.sh").directory(repoRoot).redirectErrorStream(true).start().inputStream.bufferedReader().readText().trim().ifEmpty { "unknown" }
+} catch (e: Exception) {
+    "unknown"
+}
 // `-PrustPrebuilt=<dir>`: the Kotlin bindings and libwebrtc.jar are already in <dir> (kotlin/, libs/),
 // from scripts/android-check-prep.sh, so nothing is cross-built: lint, detekt and the JVM tests
 // (screenshots, rules) need only the Kotlin side.
@@ -90,6 +96,7 @@ android {
             // Its own app beside the real one (release-signed, the person's account): other ID, other name. Tests only ever touch this one.
             applicationIdSuffix = ".debug"
             manifestPlaceholders["appLabel"] = "Morpheus Dev"
+            versionNameSuffix = "+$buildId"
             // The dev homeserver on the host, from the emulator.
             buildConfigField("String", "DEFAULT_HOMESERVER", "\"http://10.0.2.2:8008\"")
         }
@@ -98,6 +105,7 @@ android {
         create("benchmark") {
             initWith(getByName("release"))
             applicationIdSuffix = ".debug"
+            versionNameSuffix = "+$buildId"
             manifestPlaceholders["appLabel"] = "Morpheus Dev"
             buildConfigField("String", "DEFAULT_HOMESERVER", "\"http://10.0.2.2:8008\"")
             proguardFiles("proguard-benchmark.pro")

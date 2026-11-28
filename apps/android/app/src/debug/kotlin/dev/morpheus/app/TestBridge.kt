@@ -358,6 +358,7 @@ class TestBridge(private val app: Application) {
         "state" -> onMain {
             JSONObject()
                 .put("screen", AppState.screen)
+                .put("build", app.packageManager.getPackageInfo(app.packageName, 0).versionName)
                 .put("pip", AppState.pip)
                 .put("keep_screen_on", AppState.keepScreenOn)
                 .put("pip_armed", AppState.pipArmed)
