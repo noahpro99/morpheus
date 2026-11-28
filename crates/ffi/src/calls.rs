@@ -718,6 +718,7 @@ async fn run_call(
     let members = session.call_members(room_id.clone()).await.unwrap_or_default();
     let mut keyed = devices_of(&members);
     let mut members_checked = std::time::Instant::now();
+    let mut unmapped_checked = std::time::Instant::now();
     // People on other homeservers publish on their own SFUs: this call listens on each of
     // them too, and its own stays the one it publishes on (the desktop does the same).
     let (focus_tx, mut focus_rx) = mpsc::unbounded_channel::<(String, Result<morpheus_core::CallCredentials, String>)>();
@@ -807,12 +808,13 @@ async fn run_call(
                     sync_foci(call, &members, &mut focus_asked);
                 }
             }
-            // Someone speaking whose membership this phone has not seen yet (it arrives after their audio): look again, or they would never be
-            // shown speaking (the set of speakers does not change again, so nothing else would map them).
-            if model.said.speaking.iter().any(|id| !model.people.by_identity.contains_key(id)) {
-                let learned = refresh_people(&session, &room_id, &mut model.people).await;
-                model.show_learned(&learned);
-            }
+        }
+        // Someone speaking whose membership this phone has not seen yet (it arrives after their audio): look again at every turn of this loop
+        // (at most twice a second), or they would never be shown speaking (the set of speakers does not change again, so nothing else maps them).
+        if unmapped_checked.elapsed() >= Duration::from_millis(500) && model.said.speaking.iter().any(|id| !model.people.by_identity.contains_key(id)) {
+            unmapped_checked = std::time::Instant::now();
+            let learned = refresh_people(&session, &room_id, &mut model.people).await;
+            model.show_learned(&learned);
         }
         match next {
             Next::Tick => {}
