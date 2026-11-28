@@ -67,7 +67,7 @@ final class RoomTests: MorpheusTestCase {
         XCTAssertTrue(app.staticTexts["composer-mode"].waitForExistence(timeout: 5), "the composer says it is a reply")
         app.textFields["composer"].typeText("answering")
         app.buttons["send"].tap()
-        XCTAssertTrue(app.otherElements["reply-quote"].firstMatch.waitForExistence(timeout: 30) || app.staticTexts["reply-quote"].firstMatch.waitForExistence(timeout: 5), "the reply quotes its message")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "reply-quote").firstMatch.waitForExistence(timeout: 30), "the reply quotes its message")
 
         longPressMessage(containing: "history 59")
         app.buttons["\u{1F44D}"].tap()

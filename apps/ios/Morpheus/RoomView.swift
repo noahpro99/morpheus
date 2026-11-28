@@ -273,6 +273,7 @@ struct MessageView: View {
                 Text(quoted).font(.footnote).foregroundStyle(model.theme.muted).lineLimit(1)
             }
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("reply-quote")
         }
     }

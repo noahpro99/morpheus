@@ -97,7 +97,7 @@ jobs:
           cd apps/ios
           set -o pipefail
           # A hung app is sampled every 45 s (its main thread, in the log): the tests hang after sign-in on the runner.
-          ( set +e; while sleep 15; do { date; pid=$(ps -axo pid,command | grep "[M]orpheus.app/Morpheus" | head -1 | awk "{print \$1}"); echo "pid=$pid"; [ -n "$pid" ] && sample $pid 3 -mayDie 2>&1 | head -70; } >> "$RUNNER_TEMP/samples.txt" 2>&1; done ) &
+          ( set +e; while sleep 15; do { date; pid=$(ps -axo pid,command | grep "[M]orpheus.app/Morpheus" | head -1 | awk "{print \$1}"); echo "pid=$pid"; [ -n "$pid" ] && sample $pid 3 -mayDie 2>&1 | sed -n "/Call graph/,/Total number/p" | head -45; } >> "$RUNNER_TEMP/samples.txt" 2>&1; done ) &
           trap 'kill $! 2>/dev/null' EXIT
           xcodebuild test -project Morpheus.xcodeproj -scheme Morpheus -destination "id=$SIM" \
             -clonedSourcePackagesDirPath ~/spm -resultBundlePath "$RUNNER_TEMP/result.xcresult" \
@@ -115,7 +115,7 @@ jobs:
         if: failure()
         run: |
           tail -40 "$RUNNER_TEMP/xcodebuild.log" || true
-          head -300 "$RUNNER_TEMP/samples.txt" || true
+          tail -n 400 "$RUNNER_TEMP/samples.txt" || true
           xcrun simctl spawn "$SIM" log show --last 40m --style compact --predicate 'process == "Morpheus"' 2>&1 | tail -80 || true
           grep -B3 -A30 -iE "failed to install|Underlying Error" "$RUNNER_TEMP/xcodebuild.log" | head -80 || true
           grep -A60 "accessibility tree" "$RUNNER_TEMP/xcodebuild.log" | head -150 || true
