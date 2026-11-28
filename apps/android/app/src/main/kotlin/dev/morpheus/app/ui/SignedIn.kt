@@ -209,11 +209,10 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
     LaunchedEffect(scopes.size) { model.refreshRail() }
     val scope = scopes.firstOrNull { it.key == key } ?: scopes.firstOrNull()
     // The desktop's menu for the server, and the phone's way to the servers screen (order, folders) at its end.
-    val manage: (ScopeItem) -> Unit = { shown ->
-        model.openSheet(shown.title) {
+    val serverRows: suspend (ScopeItem) -> List<uniffi.morpheus_ffi.MenuRow> = { shown ->
             (if (shown.kind == ScopeKind.SERVER) model.morpheus.serverMenuRows(shown.key.removePrefix("space:")) + uniffi.morpheus_ffi.MenuRow("reorder-channels:${shown.key.removePrefix("space:")}", "Reorder channels", t("Reorder channels"), "move", false, false, false, null, emptyList()) else emptyList()) + uniffi.morpheus_ffi.MenuRow("reorder", "Reorder servers", t("Reorder servers"), "move", false, false, false, null, emptyList())
-        }
     }
+    val manage: (ScopeItem) -> Unit = { shown -> model.openSheet(shown.title) { model.menu("scope:${shown.key}") { serverRows(shown) } } }
     Column(modifier.fillMaxSize().background(Palette.Background)) {
         Row(Modifier.weight(1f).fillMaxWidth()) {
             if (scope == null) {
@@ -222,7 +221,7 @@ fun ServersPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit, modifier: Modif
                 val record by model.lastChats.collectAsState()
                 ChannelList(scope, bar.invites, model, onOpenRoom, Modifier.weight(1f), selectedRoom ?: model.lastChannelIn(scope.key, record), rounded = true)
             }
-            Rail(scopes, railRows, scope?.key, { f -> model.openSheet(f.name) { model.morpheus.folderMenuRows(f.id, f.name) } }, onReorder = { model.setRailOrder(it) }, onManage = manage, closeSheet = { model.closeSheet() }) { model.selectScope(it.key) }
+            Rail(scopes, railRows, scope?.key, { f -> model.openSheet(f.name) { model.morpheus.folderMenuRows(f.id, f.name) } }, onReorder = { model.setRailOrder(it) }, onManage = manage, closeSheet = { model.closeSheet() }, onPress = { shown -> model.prefetchMenu("scope:${shown.key}") { serverRows(shown) } }) { model.selectScope(it.key) }
         }
         if (scope == null) ListSearchBar(model, t("Search"))
         else ListSearchBar(model, t("Search %{name}", "name" to scope.title)) { ServerButton(scope, { manage(scope) }) }
@@ -248,7 +247,7 @@ fun DmsPane(model: AppModel, onOpenRoom: (RoomItem) -> Unit) {
 }
 
 @Composable
-private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRowItem>, selected: String?, onFolder: (RailEntry.Folder) -> Unit, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, closeSheet: () -> Unit, onSelect: (ScopeItem) -> Unit) {
+private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRowItem>, selected: String?, onFolder: (RailEntry.Folder) -> Unit, onReorder: (List<String>) -> Unit, onManage: (ScopeItem) -> Unit, closeSheet: () -> Unit, onPress: (ScopeItem) -> Unit, onSelect: (ScopeItem) -> Unit) {
     // A long press on a server picks it up: drag it to where it goes. Let go without moving and the servers screen
     // (folders, order) opens. The order is the account's, so every device has it.
     val step = with(androidx.compose.ui.platform.LocalDensity.current) { (Size.railItem + Space.lg).toPx() }
@@ -262,7 +261,7 @@ private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRow
     LazyColumn(
         Modifier.stretch(railList).fillMaxSize(), state = railList, reverseLayout = true,
         // The first server is at the bottom, near the thumb (#503); the same 16 dp under it as under the channel list, so its bottom item is level with the list's.
-        contentPadding = PaddingValues(vertical = Space.lg),
+        contentPadding = PaddingValues(top = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg, Alignment.Bottom),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -283,6 +282,7 @@ private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRow
             val currentScope by androidx.compose.runtime.rememberUpdatedState(scope)
             val manage by androidx.compose.runtime.rememberUpdatedState(onManage)
             val reorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
+            val onPressed by androidx.compose.runtime.rememberUpdatedState(onPress)
             Box(
                 Modifier.size(Size.rail, Size.railItem)
                     .zIndex(if (dragged) 1f else 0f)
@@ -291,6 +291,7 @@ private fun Rail(scopes: List<ScopeItem>, rows: List<uniffi.morpheus_ffi.RailRow
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             held[0] = false
+                            onPressed(currentScope)
                         }
                     }
                     .then(
@@ -394,10 +395,10 @@ private fun ChannelList(
                     items(section.rooms, key = { it.id }) { room ->
                         RoomRow(
                             room, room.id == selectedRoom,
-                            bottomPad = if (index == 0 && room.id == section.rooms.first().id) Space.lg else 0.dp,
                             onOpen = { if (room.isVoice) model.startCall(room.id, room.name) else onOpenRoom(room) },
                             onChat = { onOpenRoom(room) },
-                            onMenu = { model.openSheet(room.name) { model.morpheus.roomMenuRows(room.id) } },
+                            onMenu = { model.openSheet(room.name) { model.menu("room:${room.id}") { model.morpheus.roomMenuRows(room.id) } } },
+                            onPress = { model.prefetchMenu("room:${room.id}") { model.morpheus.roomMenuRows(room.id) } },
                             callName = { id ->
                                 val names by model.callNames.collectAsState()
                                 LaunchedEffect(id) { model.wantName(id) }
@@ -422,9 +423,9 @@ private fun ChannelList(
  * slot, so a name never runs under it), at least 48 dp tall (a DM 60). `callName` names someone in the room's call.
  */
 @Composable
-fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier, onChat: () -> Unit = {}, bottomPad: androidx.compose.ui.unit.Dp = 0.dp) {
+fun RoomRow(room: RoomItem, selected: Boolean, onOpen: () -> Unit, onMenu: () -> Unit, callName: @Composable (String) -> String, modifier: Modifier = Modifier, onChat: () -> Unit = {}, onPress: () -> Unit = {}) {
     val unread = (room.unread > 0UL || room.highlights > 0UL) && !room.muted
-    Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent).padding(bottom = bottomPad)) {
+    Box(modifier.fillMaxWidth().background(if (selected) Palette.Raised else Color.Transparent).pointerInput(room.id) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial); onPress() } }) {
         Column {
             ListRow(
                 if (room.isDm) dev.morpheus.app.Streamer.name(room.name) else room.name, "room-${room.name}",
@@ -558,5 +559,5 @@ fun InviteCard(invite: InviteItem, model: AppModel, modifier: Modifier = Modifie
 
 
 
-/** The channel list's panel: rounded at the three corners that are not at the top left (the rail side, and the bottom left), concentric with what is inside it (#536, #504). */
-internal val channelPanelShape = RoundedCornerShape(topEnd = Radius.lg, bottomEnd = Radius.lg, bottomStart = Radius.lg)
+/** The channel list's panel: rounded at its two corners on the rail side (the bottom left is square, #551), concentric with what is inside it (#504). */
+internal val channelPanelShape = RoundedCornerShape(topEnd = Radius.lg, bottomEnd = Radius.lg)

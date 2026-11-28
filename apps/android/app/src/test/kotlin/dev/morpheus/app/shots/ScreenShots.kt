@@ -68,10 +68,20 @@ class ScreenShots(private val light: Boolean) {
 
     private val mode get() = if (light) "light" else "dark"
 
+    /** Every tappable thing is at least 48 dp each way. The accessibility checker did not flag a full-width row at 44 dp (the guard test below shows it), so the size is checked here directly (#478). */
+    private fun assertTouchTargets() {
+        val density = compose.density.density
+        val small = compose.onAllNodes(androidx.compose.ui.test.hasClickAction()).fetchSemanticsNodes()
+            .filter { it.size.height < 48 * density - 1 || it.size.width < 48 * density - 1 }
+            .map { "${it.size.width / density} x ${it.size.height / density} dp" }
+        org.junit.Assert.assertTrue("tappable things under 48 dp: $small", small.isEmpty())
+    }
+
     private fun shoot(name: String, content: @Composable () -> Unit) {
         Palette.useScheme(if (light) lightColorScheme() else darkColorScheme(), light)
         compose.setContent { MorpheusTheme { content() } }
         compose.onRoot().captureRoboImage("src/test/screenshots/$name-$mode.png")
+        assertTouchTargets()
         // The Accessibility Test Framework over the same screen: touch targets of 48 dp, text and image contrast,
         // content descriptions and the rest of its latest preset. Any error fails the test.
         compose.onRoot().checkRoboAccessibility(
@@ -150,6 +160,26 @@ class ScreenShots(private val light: Boolean) {
         }
     }
 
+    /** The accessibility check itself (#478): a 44 dp tappable row is flagged by the touch-target check the pictures run, so a row that small can never pass the screenshot tests. */
+    @Test
+    fun the_accessibility_check_flags_a_44_dp_row() {
+        Palette.useScheme(if (light) lightColorScheme() else darkColorScheme(), light)
+        compose.setContent {
+            MorpheusTheme {
+                ScreenScaffold("small-row", topBar = {}) { pad ->
+                    Column(Modifier.padding(pad).fillMaxWidth()) { ListRow("general", "small", Modifier.heightIn(max = 44.dp), onClick = {}) }
+                }
+            }
+        }
+        val flagged = try {
+            assertTouchTargets()
+            false
+        } catch (e: AssertionError) {
+            true
+        }
+        org.junit.Assert.assertTrue("a 44 dp row must fail the touch-target check", flagged)
+    }
+
     /** The composer area with the button row shown (#534): the pill and the row stand on the one surface, no band of another fill behind the row. */
     @Test
     fun composer_with_actions() = shoot("composer-with-actions") {
@@ -170,7 +200,7 @@ class ScreenShots(private val light: Boolean) {
         Box(Modifier.fillMaxSize().background(Palette.Background).padding(end = 72.dp)) {
             Column(Modifier.fillMaxSize().clip(dev.morpheus.app.ui.channelPanelShape).background(Palette.Surface), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Bottom) {
                 RoomRow(room("general", unread = 3UL), selected = false, onOpen = {}, onMenu = {}, callName = { it })
-                RoomRow(room("random"), selected = true, onOpen = {}, onMenu = {}, callName = { it }, bottomPad = 16.dp)
+                RoomRow(room("random"), selected = true, onOpen = {}, onMenu = {}, callName = { it })
             }
         }
     }

@@ -206,6 +206,8 @@ class TestBridge(private val app: Application) {
         "older_delay" -> { AppState.olderDelayMs = request.getLong("ms"); true }
         "profile_delay" -> { AppState.profileDelayMs = request.getLong("ms"); true }
         "frames_reset" -> onMain { FrameWatch.reset(); true }
+        // A tap (or the system back) and the time until something shows or goes: {tag or text or x,y, back, until, gone, timeout_ms} -> ms from the finger lifting to the frame that has it (flow timing).
+        "timed" -> timed(request)
         "click" -> onMain { click(find(request)) }
         "type" -> onMain {
             val node = find(request)
@@ -369,6 +371,7 @@ class TestBridge(private val app: Application) {
                 .put("haptics", AppState.haptics)
                 .put("haptic_log", JSONArray(AppState.hapticLog.toList()))
                 .put("older_scrolls", AppState.olderScrolls)
+                .put("sheet_rows_lag_ms", if (AppState.sheetRowsAt > 0 && AppState.sheetAt > 0) maxOf(0L, AppState.sheetRowsAt - AppState.sheetAt) else -1)
                 .put("sheet_lag_ms", if (AppState.sheetAt >= AppState.touchDownAt && AppState.sheetAt > 0) AppState.sheetAt - AppState.touchDownAt else -1)
                 .put("image_fetches", AppState.imageFetches)
                 .put("emotes_drawn", AppState.emotesDrawn)
@@ -380,6 +383,8 @@ class TestBridge(private val app: Application) {
                 .put("slide_log", JSONArray(AppState.slideLog.map { JSONArray().put(it.first).put(it.second.toDouble()) }))
                 .put("avatars_drawn", AppState.avatarsDrawn)
                 .put("max_frame_gap_ms", FrameWatch.max)
+                .put("frame_count", FrameWatch.frames)
+                .put("frame_janks", FrameWatch.janks)
                 .put("loading_seen", AppState.loadingSeen)
                 .put("first_list_ms", AppState.firstListMs)
                 .put("first_room_ms", AppState.firstRoomMs)
@@ -533,6 +538,55 @@ class TestBridge(private val app: Application) {
         event.recycle()
     }
 
+    /** Something with this tag (or, for `text:`, with this text in it) is on the screen. */
+    private fun visible(what: String): Boolean = onMain {
+        val shown = if (what.startsWith("text:")) nodes().firstOrNull { it.boundsInWindow.height > 0f && textOf(it).contains(what.removePrefix("text:")) }
+        else nodes().firstOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == what }
+        shown != null && shown.boundsInWindow.height > 0f
+    }
+
+    private fun afterFrames(count: Int) {
+        val done = java.util.concurrent.CountDownLatch(1)
+        var left = count
+        main.post {
+            val choreographer = android.view.Choreographer.getInstance()
+            choreographer.postFrameCallback(object : android.view.Choreographer.FrameCallback {
+                override fun doFrame(frameTimeNanos: Long) {
+                    if (--left <= 0) done.countDown() else choreographer.postFrameCallback(this)
+                }
+            })
+        }
+        done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    private fun timed(request: JSONObject): JSONObject {
+        val until = request.optString("until").ifEmpty { null }
+        val gone = request.optString("gone").ifEmpty { null }
+        val timeout = request.optLong("timeout_ms", 5000)
+        val point: Pair<Float, Float>? = if (request.optBoolean("back")) null else if (request.has("x")) request.getDouble("x").toFloat() to request.getDouble("y").toFloat() else onMain { boxOf(find(request)).center.let { it.x to it.y } }
+        val down = SystemClock.uptimeMillis()
+        var start: Long
+        if (point == null) {
+            start = SystemClock.uptimeMillis()
+            onMain { pressBack() }
+        } else {
+            touch(MotionEvent.ACTION_DOWN, down, point.first, point.second)
+            Thread.sleep(40)
+            start = SystemClock.uptimeMillis()
+            touch(MotionEvent.ACTION_UP, down, point.first, point.second)
+        }
+        val deadline = start + timeout
+        while (SystemClock.uptimeMillis() < deadline) {
+            val ok = if (until != null) visible(until) else if (gone != null) !visible(gone) else true
+            if (ok) {
+                afterFrames(1)
+                return JSONObject().put("ms", SystemClock.uptimeMillis() - start).put("ok", true)
+            }
+            Thread.sleep(2)
+        }
+        return JSONObject().put("ms", timeout).put("ok", false)
+    }
+
     private fun tap(x: Float, y: Float) {
         val down = SystemClock.uptimeMillis()
         touch(MotionEvent.ACTION_DOWN, down, x, y)
@@ -578,6 +632,7 @@ class TestBridge(private val app: Application) {
         val steps = 12
         AppState.touchDownAt = down
         AppState.sheetAt = 0
+        AppState.sheetRowsAt = 0
         touch(MotionEvent.ACTION_DOWN, down, x1, y1)
         // Held still after the touch-down first: a long press, then the drag.
         if (hold > 0) Thread.sleep(hold)
@@ -603,11 +658,20 @@ object FrameWatch {
     @Volatile
     var max: Long = 0
 
+    /** Frames since the reset, and how many came more than two refresh intervals after the one before (dropped frames). */
+    @Volatile
+    var frames: Int = 0
+
+    @Volatile
+    var janks: Int = 0
+
     private var last = 0L
     private var running = false
 
     fun reset() {
         max = 0
+        frames = 0
+        janks = 0
         last = 0
         start()
     }
@@ -620,6 +684,7 @@ object FrameWatch {
             override fun doFrame(frameTimeNanos: Long) {
                 val now = frameTimeNanos / 1_000_000
                 if (last != 0L && now - last > max) max = now - last
+                if (last != 0L) { frames++; if (now - last > 34) janks++ }
                 last = now
                 choreographer.postFrameCallback(this)
             }

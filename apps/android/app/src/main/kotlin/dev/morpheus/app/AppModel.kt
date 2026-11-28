@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -200,12 +201,27 @@ class AppModel(val morpheus: Morpheus, private val morpheusApp: MorpheusApp? = n
             _sheet.value = request
             try {
                 request.rows = load()
+                AppState.sheetRowsAt = android.os.SystemClock.uptimeMillis()
                 request.loading = false
             } catch (e: Exception) {
                 if (_sheet.value === request) _sheet.value = null
                 _error.value = e.sentence()
             }
         }
+    }
+
+    // The menu of the room being pressed is asked for as the finger goes down, so its items are there when the long press opens the sheet (#554).
+    private var menuPrefetch: Pair<String, kotlinx.coroutines.Deferred<List<uniffi.morpheus_ffi.MenuRow>>>? = null
+
+    fun prefetchMenu(key: String, load: suspend () -> List<uniffi.morpheus_ffi.MenuRow>) {
+        menuPrefetch?.second?.cancel()
+        menuPrefetch = key to viewModelScope.async { load() }
+    }
+
+    suspend fun menu(key: String, load: suspend () -> List<uniffi.morpheus_ffi.MenuRow>): List<uniffi.morpheus_ffi.MenuRow> {
+        val ready = menuPrefetch?.takeIf { it.first == key }
+        menuPrefetch = null
+        return ready?.second?.await() ?: load()
     }
 
     fun closeSheet() {
@@ -1106,6 +1122,10 @@ object AppState {
 
     @Volatile
     var sheetAt: Long = 0
+
+    /** When the open sheet's items arrived (the debug bridge reports how long after the sheet that was; #554). */
+    @Volatile
+    var sheetRowsAt: Long = 0
 
     /** The room on screen (the debug bridge reports it). */
     @Volatile

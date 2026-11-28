@@ -210,9 +210,9 @@ fun RoomScreen(app: AppModel, room: RoomItem, threadRoot: String? = null, onClos
                 onFile = { media, name -> scope.launch { context.open(media, name)?.let { model.fail(it) } } },
                 onFull = { app.openPage(dev.morpheus.app.PageRequest("full-message", room.id, message = it)) },
                 isDm = isDm,
-                onPull = { pulled = true },
-                // Starting to scroll towards older messages with an empty box puts the keyboard away, for more of the conversation (#526).
-                onScrollOlder = { if (boxEmpty) { dev.morpheus.app.AppState.olderScrolls++; androidx.core.view.ViewCompat.getWindowInsetsController(scrollView)?.hide(androidx.core.view.WindowInsetsCompat.Type.ime()); scrollKeyboard?.hide(); scrollFocus.clearFocus() } },
+                onPull = { if (boxEmpty) pulled = true },
+                // Starting to scroll towards older messages puts the keyboard away, for more of the conversation (#526); a draft stays, and the button row stays hidden while it does (#550).
+                onScrollOlder = { dev.morpheus.app.AppState.olderScrolls++; androidx.core.view.ViewCompat.getWindowInsetsController(scrollView)?.hide(androidx.core.view.WindowInsetsCompat.Type.ime()); scrollKeyboard?.hide(); scrollFocus.clearFocus() },
                 listTag = if (threadRoot == null) "timeline" else "thread-timeline",
             )
             }
@@ -385,7 +385,6 @@ private fun Timeline(
     val ignored by People.ignored.collectAsState()
     var revealed by remember { mutableStateOf(setOf<String>()) }
     val dividerAt = items.indexOfFirst { it is TimelineRow.New }
-    val dividerShowing by remember(dividerAt) { derivedStateOf { state.layoutInfo.visibleItemsInfo.any { it.index == dividerAt } } }
     Box(modifier) {
     // Nothing yet: placeholders where the messages will be.
     if (rows.isEmpty()) Column(Modifier.align(Alignment.BottomStart).padding(bottom = Space.lg)) { SkeletonRows(7) }
@@ -430,29 +429,24 @@ private fun Timeline(
         // this bottom-up list, past the one the list is anchored on (#470), so their coming and going moves nothing the person is reading.
         if (waitingForOlder) item(key = "older-skeleton") { Box(Modifier.padding(vertical = Space.md).testTag("older-skeleton")) { SkeletonRows(3) } }
     }
+    // Scrolled away from the newest messages: a way back down (#414), and the only time the handle shows (#555).
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val away by remember { derivedStateOf { uniffi.morpheus_ffi.awayFromPresent(state.firstVisibleItemIndex.toUInt(), state.firstVisibleItemScrollOffset / density) } }
     // A long history has a handle on its right edge with the date under it (#493).
     val dateAt = remember(items) { items.indices.filter { items[it] is TimelineRow.Date } }
     val clock = rememberNow()
-    FastScroll(state, items.size, { i -> dateAt.firstOrNull { it >= i }?.let { dayLabel((items[it] as TimelineRow.Date).timestampMs.toLong(), clock) } })
-    if (dividerAt >= 0 && !dividerShowing) {
-        val scope = androidx.compose.runtime.rememberCoroutineScope()
-        Button(
-            { scope.launch { state.animateScrollToItem(dividerAt) } },
-            Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag("jump-unread"),
-        ) { Text(t("Jump to unread")) }
-    }
-    // Scrolled away from the newest messages: a way back down (#414).
-    val density = androidx.compose.ui.platform.LocalDensity.current.density
-    val away by remember { derivedStateOf { uniffi.morpheus_ffi.awayFromPresent(state.firstVisibleItemIndex.toUInt(), state.firstVisibleItemScrollOffset / density) } }
+    FastScroll(state, items.size, away, { i -> dateAt.firstOrNull { it >= i }?.let { dayLabel((items[it] as TimelineRow.Date).timestampMs.toLong(), clock) } })
     // (The scope lives outside the button: the button goes while the scroll is still on its way.)
     val jumpScope = androidx.compose.runtime.rememberCoroutineScope()
     // How many messages came in while the reader was up in the history: the badge on the button.
     val messageCount = items.count { it is TimelineRow.Message }
+    val unreadBelow by remember(items, dividerAt) { derivedStateOf { if (dividerAt < 0) 0 else items.withIndex().count { (i, row) -> row is TimelineRow.Message && i < minOf(state.firstVisibleItemIndex, dividerAt) } } }
     var countWhenAway by remember { mutableIntStateOf(messageCount) }
     LaunchedEffect(away) { if (away) countWhenAway = messageCount }
     if (away) {
         val scope = jumpScope
-        val fresh = (messageCount - countWhenAway).coerceAtLeast(0)
+        // The unread messages below what is on the screen: those newer than the NEW divider, or what came in while the reader was up here (#556).
+        val fresh = if (dividerAt >= 0) unreadBelow else (messageCount - countWhenAway).coerceAtLeast(0)
         // A small round button with a down arrow at the bottom right, above the composer (#492); a count of what is new below on its corner.
         androidx.compose.material3.BadgedBox(
             { if (fresh > 0) androidx.compose.material3.Badge { Text(if (fresh > 99) "99+" else fresh.toString(), Modifier.testTag("jump-present-count")) } },

@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
  * scrolls (and while it is held) and fades out after a moment; a haptic tick comes with each change of the date shown and on grab and release.
  */
 @Composable
-fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (Int) -> String?, modifier: Modifier = Modifier, minimum: Int = 40) {
+fun BoxScope.FastScroll(state: LazyListState, total: Int, away: Boolean, labelAt: @Composable (Int) -> String?, modifier: Modifier = Modifier, minimum: Int = 40) {
     val scope = rememberCoroutineScope()
     val haptic = androidx.compose.ui.platform.LocalView.current
     var dragging by remember { mutableStateOf(false) }
@@ -58,7 +58,8 @@ fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (
         if (scrolling || dragging) shown = true else { delay(1500); shown = false }
         if (!shown) used = false
     }
-    if (total < minimum) return
+    // Only once the reader has scrolled up far enough (the same rule as the jump button), in a thread as in the chat (#555).
+    if (total < minimum || !away) return
     val handle = with(LocalDensity.current) { 56.dp.roundToPx() }
     val index by remember(state) { androidx.compose.runtime.derivedStateOf { state.firstVisibleItemIndex } }
     val label = labelAt(index)
@@ -80,7 +81,7 @@ fun BoxScope.FastScroll(state: LazyListState, total: Int, labelAt: @Composable (
                     label,
                     Modifier.align(Alignment.TopEnd).offset { IntOffset(0, y + handle / 4) }.padding(end = 56.dp).clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.inverseSurface).padding(horizontal = 12.dp, vertical = 4.dp).testTag("fast-scroll-label"),
-                    color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.labelLarge,
+                    color = readable(MaterialTheme.colorScheme.inverseOnSurface, MaterialTheme.colorScheme.inverseSurface), style = MaterialTheme.typography.labelLarge,
                 )
             }
             Box(
