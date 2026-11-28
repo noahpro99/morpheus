@@ -1,5 +1,3 @@
-          cat "$RUNNER_TEMP/samples.txt" | head -300 || true
-          xcrun simctl spawn "$SIM" log show --last 40m --style compact --predicate 'process == "Morpheus"' 2>&1 | tail -80 || true
 # The native iPhone app (apps/ios, #520): lint and spec rules (fast, first), then the Rust XCFramework, the app and the
 # XCUITests on a simulator against a Synapse started in the job, in parallel with the device build (an unsigned .ipa).
 # Fast-CI rules (#358): cargo and SPM caches, the simulator boots and Synapse installs while Rust builds.
