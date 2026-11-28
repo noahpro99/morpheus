@@ -309,14 +309,14 @@ async fn files_are_sent_listed_and_fetched_whole() {
     room.send_file(name.clone(), "text/plain".into(), b"hello from the phone".to_vec()).await.expect("send the file");
     let rows = until(&mut rows_rx, "the file row", |rows: &Vec<TimelineRow>| {
         rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
-            if matches!(&message.body, MessageBody::File { name: n, .. } if *n == name) && message.event_id.is_some()))
+            if matches!(&message.body, MessageBody::File { file } if file.name == name) && message.event_id.is_some()))
     })
     .await;
     let (kind, size, media) = rows
         .iter()
         .find_map(|row| match row {
             TimelineRow::Message { message } => match &message.body {
-                MessageBody::File { name: n, kind, size, media, .. } if *n == name => Some((*kind, *size, media.clone())),
+                MessageBody::File { file } if file.name == name => Some((file.kind, file.size, file.media.clone())),
                 _ => None,
             },
             _ => None,
@@ -330,7 +330,7 @@ async fn files_are_sent_listed_and_fetched_whole() {
     room.send_file(movie.clone(), "video/mp4".into(), vec![0; 64]).await.expect("send a video");
     until(&mut rows_rx, "the video row", |rows: &Vec<TimelineRow>| {
         rows.iter().any(|row| matches!(row, TimelineRow::Message { message }
-            if matches!(&message.body, MessageBody::File { name: n, kind: FileKind::Video, .. } if *n == movie)))
+            if matches!(&message.body, MessageBody::File { file } if file.name == movie && file.kind == FileKind::Video)))
     })
     .await;
 }
