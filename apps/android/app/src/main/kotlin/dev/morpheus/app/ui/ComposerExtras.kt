@@ -113,7 +113,7 @@ fun EmojiPanel(model: RoomModel, height: androidx.compose.ui.unit.Dp, onPick: (S
             }
         }
         val emojiGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-        LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.stretch(emojiGrid).fillMaxWidth(), state = emojiGrid) {
+        LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.stretch(emojiGrid).fillMaxWidth().testTag("emoji-grid"), state = emojiGrid) {
             for (pack in custom) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(pack.name, Modifier.padding(8.dp), color = Palette.Muted, style = MaterialTheme.typography.bodySmall)
