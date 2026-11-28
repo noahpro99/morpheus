@@ -581,3 +581,22 @@ fn every_vertical_list_has_the_shared_stretch() {
     let bad: Vec<String> = kotlin_files().iter().filter(|(f, _)| !f.ends_with("/Stretch.kt")).flat_map(|(f, t)| lists_without_stretch(t).into_iter().map(move |l| format!("{f}:{l}"))).collect();
     assert!(bad.is_empty(), "vertical lists without the shared stretch overscroll (Modifier.stretch, #516): {bad:?}");
 }
+
+/// The drawables whose `<path>` carries `android:translateY` (#567): a path has no such attribute, so Android ignores it and a Material Symbols
+/// path (drawn in y -960..0) lands above the canvas and the icon is blank. The move belongs on a `<group>` around the path.
+fn paths_with_a_translate(text: &str) -> bool {
+    text.split("<path").skip(1).any(|p| p.split('>').next().is_some_and(|attrs| attrs.contains("translateY") || attrs.contains("translateX")))
+}
+
+#[test]
+fn no_drawable_moves_its_path_with_an_attribute_only_a_group_has() {
+    assert!(paths_with_a_translate(r#"<vector><path android:pathData="M0-960" android:translateY="960" /></vector>"#));
+    assert!(!paths_with_a_translate(r#"<vector><group android:translateY="960"><path android:pathData="M0-960" /></group></vector>"#));
+    let dir = android_src().join("main/res/drawable");
+    let mut bad: Vec<String> = std::fs::read_dir(&dir).expect("drawable dir").filter_map(|e| e.ok()).map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "xml"))
+        .filter(|p| std::fs::read_to_string(p).is_ok_and(|t| paths_with_a_translate(&t)))
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+    bad.sort();
+    assert!(bad.is_empty(), "drawables whose <path> has translateY/translateX (ignored: the icon draws off canvas; wrap the path in <group android:translateY=\"960\">): {bad:?}");
+}
