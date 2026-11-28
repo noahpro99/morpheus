@@ -89,3 +89,85 @@ pub async fn read_from_push(data_dir: String, room_id: String, event_id: String)
     core.read_from_push(room_id, event_id).await?;
     Ok(())
 }
+
+/// One message in a room's notification stack.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct PushLine {
+    pub sender: String,
+    pub text: String,
+    pub at_ms: i64,
+    pub event_id: String,
+}
+
+/// The most messages a room's notification stacks.
+const STACK_LINES: usize = 8;
+
+/// The file of a room's stack: a push often wakes a fresh process, so the stack lives on disk (in the app's files dir).
+fn stack_file(data_dir: &str, room_id: &str) -> std::path::PathBuf {
+    let name: String = room_id.bytes().map(|b| format!("{b:02x}")).collect();
+    std::path::Path::new(data_dir).join("push-stack").join(format!("{name}.json"))
+}
+
+fn read_stack(data_dir: &str, room_id: &str) -> Vec<PushLine> {
+    std::fs::read(stack_file(data_dir, room_id)).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+}
+
+/// Add `line` to the room's stack (a message already in it, by event id, is not added twice), keep the newest 8, and
+/// return the stack, oldest first.
+#[uniffi::export]
+pub fn push_stack_add(data_dir: String, room_id: String, line: PushLine) -> Vec<PushLine> {
+    let mut lines = read_stack(&data_dir, &room_id);
+    if line.event_id.is_empty() || !lines.iter().any(|l| l.event_id == line.event_id) {
+        lines.push(line);
+    }
+    let extra = lines.len().saturating_sub(STACK_LINES);
+    lines.drain(..extra);
+    let file = stack_file(&data_dir, &room_id);
+    if let Some(parent) = file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(bytes) = serde_json::to_vec(&lines) {
+        let _ = std::fs::write(file, bytes);
+    }
+    lines
+}
+
+/// The room is read, answered or open: its stack goes.
+#[uniffi::export]
+pub fn push_stack_clear(data_dir: String, room_id: String) {
+    let _ = std::fs::remove_file(stack_file(&data_dir, &room_id));
+}
+
+/// The event id of the newest message in the room's stack, or empty (what Mark as read sends a receipt for).
+#[uniffi::export]
+pub fn push_stack_newest(data_dir: String, room_id: String) -> String {
+    read_stack(&data_dir, &room_id).iter().rev().find(|l| !l.event_id.is_empty()).map(|l| l.event_id.clone()).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod stack_tests {
+    use super::*;
+
+    fn line(n: usize) -> PushLine {
+        PushLine { sender: "bob".into(), text: format!("m{n}"), at_ms: n as i64, event_id: format!("$e{n}") }
+    }
+
+    #[test]
+    fn the_stack_survives_a_new_process_keeps_eight_and_goes_when_cleared() {
+        let dir = tempfile::tempdir().expect("dir").keep().display().to_string();
+        let room = "!room:server".to_string();
+        for n in 1..=10 {
+            // (each call reads the file: what a fresh process does)
+            push_stack_add(dir.clone(), room.clone(), line(n));
+        }
+        let stack = push_stack_add(dir.clone(), room.clone(), line(10));
+        assert_eq!(stack.len(), 8, "capped at 8, a repeat not added twice");
+        assert_eq!(stack.first().map(|l| l.text.as_str()), Some("m3"));
+        assert_eq!(stack.last().map(|l| l.text.as_str()), Some("m10"));
+        assert_eq!(push_stack_newest(dir.clone(), room.clone()), "$e10");
+        assert!(push_stack_add(dir.clone(), "!other:server".into(), line(1)).len() == 1, "rooms have their own stacks");
+        push_stack_clear(dir.clone(), room.clone());
+        assert_eq!(push_stack_newest(dir.clone(), room.clone()), "");
+        assert_eq!(push_stack_add(dir, room, line(11)).len(), 1);
+    }
+}

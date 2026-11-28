@@ -986,3 +986,52 @@ async fn a_message_lists_who_has_read_it() {
     assert_eq!(read_by.len(), 1, "{read_by:?}");
     assert!(read_by[0].starts_with("@bob:"), "{read_by:?}");
 }
+
+/// The room list's unread count is exact for a few messages and for a flood (the phone shows the number): two, then twenty-five.
+#[tokio::test]
+async fn the_unread_count_is_exact_for_two_messages_and_for_twenty_five() {
+    let Ok(homeserver) = std::env::var("MORPHEUS_TEST_HOMESERVER") else {
+        return;
+    };
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+    let dir = tempfile::tempdir().expect("dir");
+    let app = Morpheus::new(dir.path().display().to_string()).expect("app");
+    app.login(homeserver.clone(), "alice".into(), "alice-password".into()).await.expect("login");
+    let (sidebar, mut sidebar_rx) = Feed::new();
+    let _sidebar = app.watch_sidebar(sidebar).await.expect("watch sidebar");
+    let id = app.create_room(format!("ffi count {}", std::process::id()), String::new()).await.expect("create");
+    let unread_of = |s: &Sidebar| s.scopes.iter().flat_map(|s| &s.sections).flat_map(|s| &s.rooms).find(|r| r.id == id).map(|r| r.unread);
+    until(&mut sidebar_rx, "the room", |s: &Sidebar| unread_of(s).is_some()).await;
+    let bob = bob_client(&homeserver).await;
+    let room_id: matrix_sdk::ruma::OwnedRoomId = id.as_str().try_into().expect("id");
+    bob.join_room_by_id(&room_id).await.expect("bob joins");
+    let syncing = bob.clone();
+    tokio::spawn(async move { let _ = syncing.sync(matrix_sdk::config::SyncSettings::default()).await; });
+    let theirs = bob.get_room(&room_id).expect("room");
+
+    for (count, label) in [(2usize, "two"), (25, "twenty-five")] {
+        for n in 1..=count {
+            theirs.send(RoomMessageEventContent::text_plain(format!("{label} {n}"))).await.expect("send");
+        }
+        // Let the count settle, then read what the list says: it must be exactly what was sent.
+        let mut seen = 0;
+        let settled = timeout(WAIT, async {
+            loop {
+                let s = sidebar_rx.recv().await.expect("sidebar");
+                seen = unread_of(&s).unwrap_or(0);
+                if seen as usize >= count {
+                    return;
+                }
+            }
+        })
+        .await;
+        assert!(settled.is_ok(), "{label}: the count never reached {count}, the list says {seen}");
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        while let Ok(s) = sidebar_rx.try_recv() {
+            seen = unread_of(&s).unwrap_or(seen);
+        }
+        assert_eq!(seen as usize, count, "{label}: the list's unread count is exact");
+        app.mark_rooms_read(vec![id.clone()]).await.expect("mark read");
+        until(&mut sidebar_rx, "read", |s: &Sidebar| unread_of(s) == Some(0)).await;
+    }
+}

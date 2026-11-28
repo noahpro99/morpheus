@@ -75,7 +75,7 @@ object Push {
         val manager = context.getSystemService(NotificationManager::class.java)
         if (payload.unread == 0) {
             manager.cancel(payload.roomId.hashCode())
-            forget(payload.roomId)
+            forget(context, payload.roomId)
             return
         }
         if (visible) return
@@ -110,7 +110,7 @@ object Push {
         val sender = if (notice == null || notice.title == "Morpheus") "" else notice.sender
         val text = notice?.body ?: if (payload.unread > 1) dev.morpheus.app.ui.t("%{count} unread messages", "count" to payload.unread.toString()) else dev.morpheus.app.ui.t("New message")
         val picture = notice?.icon?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-        val history = remember(payload.roomId, Line(sender, text, System.currentTimeMillis(), picture, payload.eventId))
+        val history = uniffi.morpheus_ffi.pushStackAdd(dir, payload.roomId, uniffi.morpheus_ffi.PushLine(sender, text, System.currentTimeMillis(), payload.eventId))
         val builder = Notification.Builder(context, channel)
             .setSmallIcon(dev.morpheus.app.R.drawable.ic_notification)
             .setContentTitle(notice?.title ?: "Morpheus")
@@ -122,10 +122,10 @@ object Push {
             val me = android.app.Person.Builder().setName(dev.morpheus.app.ui.t("You")).build()
             val style = Notification.MessagingStyle(me)
             style.setGroupConversation(notice != null && notice.title.contains(" in "))
-            history.forEach { line ->
+            history.forEachIndexed { i, line ->
                 val who = android.app.Person.Builder().setName(line.sender.ifEmpty { dev.morpheus.app.ui.t("Someone") })
-                line.picture?.let { who.setIcon(android.graphics.drawable.Icon.createWithBitmap(it)) }
-                style.addMessage(line.text, line.at, who.build())
+                if (i == history.lastIndex) picture?.let { who.setIcon(android.graphics.drawable.Icon.createWithBitmap(it)) }
+                style.addMessage(line.text, line.atMs, who.build())
             }
             builder.setStyle(style).setCategory(Notification.CATEGORY_MESSAGE)
             if (notice != null && notice.title != "Morpheus") {
@@ -144,26 +144,11 @@ object Push {
     private const val KEY_REPLY = "reply"
     const val ACTION_REPLY = "dev.morpheus.app.push.REPLY"
     const val ACTION_READ = "dev.morpheus.app.push.READ"
-    private const val MAX_LINES = 8
 
-    /** One message in a room's notification. */
-    class Line(val sender: String, val text: String, val at: Long, val picture: android.graphics.Bitmap?, val eventId: String)
+    private fun dataDir(context: Context) = context.filesDir.resolve("morpheus").absolutePath
 
-    private val recent = HashMap<String, ArrayDeque<Line>>()
-
-    /** The room's last messages with this one added (what the notification shows stacked). */
-    private fun remember(roomId: String, line: Line): List<Line> = synchronized(recent) {
-        val lines = recent.getOrPut(roomId) { ArrayDeque() }
-        if (lines.none { it.eventId.isNotEmpty() && it.eventId == line.eventId }) lines.addLast(line)
-        while (lines.size > MAX_LINES) lines.removeFirst()
-        lines.toList()
-    }
-
-    /** The room is read or answered: its stack starts over. */
-    fun forget(roomId: String) = synchronized(recent) { recent.remove(roomId); Unit }
-
-    /** The newest message of the room that came by push, for the read receipt. */
-    fun newestEvent(roomId: String): String = synchronized(recent) { recent[roomId]?.lastOrNull { it.eventId.isNotEmpty() }?.eventId.orEmpty() }
+    /** The room is read, answered or open: its stack (kept in a small file, a push often wakes a fresh process) goes. */
+    fun forget(context: Context, roomId: String) = uniffi.morpheus_ffi.pushStackClear(dataDir(context), roomId)
 
     private fun actionIntent(context: Context, roomId: String, eventId: String, action: String, mutable: Boolean): PendingIntent =
         PendingIntent.getBroadcast(
@@ -184,11 +169,11 @@ object Push {
                     if (words.isNotEmpty()) runBlocking { uniffi.morpheus_ffi.replyFromPush(dir, room, words) }
                 }
                 ACTION_READ -> {
-                    val event = newestEvent(room).ifEmpty { intent.getStringExtra("event_id").orEmpty() }
+                    val event = uniffi.morpheus_ffi.pushStackNewest(dir, room).ifEmpty { intent.getStringExtra("event_id").orEmpty() }
                     if (event.isNotEmpty()) runBlocking { uniffi.morpheus_ffi.readFromPush(dir, room, event) }
                 }
             }
-            forget(room)
+            forget(context, room)
             manager.cancel(room.hashCode())
         } catch (err: Throwable) {
             Log.w("MorpheusPush", "notification action failed: $err")
