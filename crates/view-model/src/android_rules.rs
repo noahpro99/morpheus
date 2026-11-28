@@ -599,6 +599,7 @@ fn no_drawable_moves_its_path_with_an_attribute_only_a_group_has() {
         .map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
     bad.sort();
     assert!(bad.is_empty(), "drawables whose <path> has translateY/translateX (ignored: the icon draws off canvas; wrap the path in <group android:translateY=\"960\">): {bad:?}");
+}
 
 #[test]
 fn the_stretch_is_the_platforms_and_not_one_of_our_own() {
